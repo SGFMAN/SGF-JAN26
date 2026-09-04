@@ -4,6 +4,7 @@ import {
   NEXT_OUTS_PHASE_OPTIONS,
   NEXT_OUTS_OVERVIEW_OPTIONS,
   NEXT_OUTS_SORT_DIRECTIONS,
+  constrainNextOutsSortToOverviewKeys,
   normalizeManagerSettings,
   normalizeNextOutsSort,
   unusedOverviewSortOptions,
@@ -134,11 +135,13 @@ export default function ManagerSettings() {
       const selected = new Set(prev.nextOutsOverviewKeys);
       if (selected.has(key)) selected.delete(key);
       else selected.add(key);
+      const nextOutsOverviewKeys = NEXT_OUTS_OVERVIEW_OPTIONS.map((item) => item.key).filter((value) =>
+        selected.has(value)
+      );
       return {
         ...prev,
-        nextOutsOverviewKeys: NEXT_OUTS_OVERVIEW_OPTIONS.map((item) => item.key).filter((value) =>
-          selected.has(value)
-        ),
+        nextOutsOverviewKeys,
+        nextOutsSort: constrainNextOutsSortToOverviewKeys(prev.nextOutsSort, nextOutsOverviewKeys),
       };
     });
   }
@@ -157,7 +160,11 @@ export default function ManagerSettings() {
 
   function addSortLevel() {
     commitSettings((prev) => {
-      const remaining = unusedOverviewSortOptions(prev.nextOutsSort);
+      const remaining = unusedOverviewSortOptions(
+        prev.nextOutsSort,
+        undefined,
+        prev.nextOutsOverviewKeys
+      );
       if (remaining.length === 0 || prev.nextOutsSort.some((row) => !row.key)) return prev;
       return {
         ...prev,
@@ -184,7 +191,8 @@ export default function ManagerSettings() {
   const canAddSort =
     !loading &&
     settings.nextOutsSort.every((row) => row.key) &&
-    unusedOverviewSortOptions(settings.nextOutsSort).length > 0;
+    unusedOverviewSortOptions(settings.nextOutsSort, undefined, settings.nextOutsOverviewKeys)
+      .length > 0;
 
   return (
     <div
@@ -291,7 +299,11 @@ export default function ManagerSettings() {
           ) : (
             <>
               {settings.nextOutsSort.map((row, index) => {
-                const options = unusedOverviewSortOptions(settings.nextOutsSort, row.key);
+                const options = unusedOverviewSortOptions(
+                  settings.nextOutsSort,
+                  row.key,
+                  settings.nextOutsOverviewKeys
+                );
                 return (
                   <div
                     key={`sort-${index}`}

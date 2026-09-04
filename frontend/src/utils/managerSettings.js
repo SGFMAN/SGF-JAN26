@@ -83,18 +83,30 @@ export function normalizeNextOutsSort(raw) {
   return out.length > 0 ? out : [{ key: "", direction: fallbackDirection }];
 }
 
-export function unusedOverviewSortOptions(sortLevels, currentKey) {
+export function unusedOverviewSortOptions(sortLevels, currentKey, overviewKeys) {
+  const selected = new Set(overviewKeys || []);
   const used = new Set((sortLevels || []).map((row) => row.key).filter(Boolean));
   if (currentKey) used.delete(currentKey);
-  return NEXT_OUTS_OVERVIEW_OPTIONS.filter((item) => !used.has(item.key));
+  return NEXT_OUTS_OVERVIEW_OPTIONS.filter(
+    (item) => selected.has(item.key) && !used.has(item.key)
+  );
+}
+
+export function constrainNextOutsSortToOverviewKeys(sort, overviewKeys) {
+  const selected = new Set(overviewKeys || []);
+  return normalizeNextOutsSort((sort || []).filter((row) => !row.key || selected.has(row.key)));
 }
 
 export function normalizeManagerSettings(raw) {
   const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const nextOutsOverviewKeys = normalizeNextOutsOverviewKeys(src.nextOutsOverviewKeys);
   return {
     nextOutsIncludedPhases: normalizeNextOutsIncludedPhases(src.nextOutsIncludedPhases),
-    nextOutsOverviewKeys: normalizeNextOutsOverviewKeys(src.nextOutsOverviewKeys),
-    nextOutsSort: normalizeNextOutsSort(src.nextOutsSort),
+    nextOutsOverviewKeys,
+    nextOutsSort: constrainNextOutsSortToOverviewKeys(
+      normalizeNextOutsSort(src.nextOutsSort),
+      nextOutsOverviewKeys
+    ),
   };
 }
 

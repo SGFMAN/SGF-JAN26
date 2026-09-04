@@ -99,12 +99,21 @@ function normalizeNextOutsSort(raw) {
   return out.length > 0 ? out : [{ key: "", direction: fallbackDirection }];
 }
 
+function constrainNextOutsSortToOverviewKeys(sort, overviewKeys) {
+  const selected = new Set(overviewKeys || []);
+  return normalizeNextOutsSort((sort || []).filter((row) => !row.key || selected.has(row.key)));
+}
+
 function parseManagerSettingsColumn(raw) {
   const src = parseJsonObject(raw);
+  const nextOutsOverviewKeys = normalizeNextOutsOverviewKeys(src.nextOutsOverviewKeys);
   return {
     nextOutsIncludedPhases: normalizeNextOutsIncludedPhases(src.nextOutsIncludedPhases),
-    nextOutsOverviewKeys: normalizeNextOutsOverviewKeys(src.nextOutsOverviewKeys),
-    nextOutsSort: normalizeNextOutsSort(src.nextOutsSort),
+    nextOutsOverviewKeys,
+    nextOutsSort: constrainNextOutsSortToOverviewKeys(
+      normalizeNextOutsSort(src.nextOutsSort),
+      nextOutsOverviewKeys
+    ),
   };
 }
 
