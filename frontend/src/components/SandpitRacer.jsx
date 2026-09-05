@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import racingTrack from "../images/racing.png";
 import { getLoggedInUserId, getLoggedInUserName } from "../utils/auth";
 import { getSandpitRaceWsUrl } from "../utils/sandpitRaceWs";
+import { drawDesignedCar } from "../utils/sandpitCarMesh";
 
 const TRACK_W = 1672;
 const TRACK_H = 941;
@@ -48,62 +49,349 @@ function lerpAngle(a, b, t) {
   return a + d * t;
 }
 
-function drawCar(ctx, length, color = DEFAULT_COLOR) {
-  const w = length;
-  const h = length * 0.46;
-  const r = h * 0.22;
+function parseHex(hex) {
+  let h = String(hex || "#888888").replace("#", "");
+  if (h.length === 3) h = `${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`;
+  return {
+    r: Number.parseInt(h.slice(0, 2), 16) || 0,
+    g: Number.parseInt(h.slice(2, 4), 16) || 0,
+    b: Number.parseInt(h.slice(4, 6), 16) || 0,
+  };
+}
 
-  ctx.fillStyle = "rgba(0,0,0,0.28)";
-  ctx.beginPath();
-  ctx.ellipse(2.5, 3.5, w * 0.48, h * 0.42, 0, 0, Math.PI * 2);
-  ctx.fill();
+function rgbStr(r, g, b) {
+  return `rgb(${Math.round(Math.max(0, Math.min(255, r)))},${Math.round(Math.max(0, Math.min(255, g)))},${Math.round(
+    Math.max(0, Math.min(255, b))
+  )})`;
+}
 
-  const wheel = h * 0.2;
-  ctx.fillStyle = "#1a1a1a";
-  for (const [wx, wy] of [
-    [-w * 0.28, -h * 0.52],
-    [-w * 0.28, h * 0.52],
-    [w * 0.28, -h * 0.52],
-    [w * 0.28, h * 0.52],
-  ]) {
+function litHex(hex, light) {
+  const { r, g, b } = parseHex(hex);
+  return rgbStr(r * light, g * light, b * light);
+}
+
+function rotateXY(x, y, heading) {
+  const c = Math.cos(heading);
+  const s = Math.sin(heading);
+  return { x: x * c - y * s, y: x * s + y * c };
+}
+
+function projectCar(x, y, z, heading) {
+  const r = rotateXY(x, y, heading);
+  return { x: r.x, y: r.y * ISO_Y - z * 1.05 };
+}
+
+function quadCentroidY(pts) {
+  return (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
+}
+
+function faceLight(pts) {
+  let nx = 0;
+  let ny = 0;
+  for (let i = 0; i < pts.length; i += 1) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    nx += a.y - b.y;
+    ny += b.x - a.x;
+  }
+  const len = Math.hypot(nx, ny) || 1;
+  nx /= len;
+  ny /= len;
+  const d = nx * -0.42 + ny * -0.78;
+  return 0.38 + 0.7 * Math.max(0, d);
+}
+
+const CAM = { x: 0.12, y: 1, z: 1.08 };
+
+function convexHull(points) {
+  const pts = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i -= 1) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+function isTowardCamera(localX, localY, heading) {
+  const w = rotateXY(localX, localY, heading);
+  return w.x * CAM.x + w.y * CAM.y > 0.02;
+}
+
+function addBoxCorners(points, heading, x0, x1, y0, y1, z0, z1) {
+  for (const x of [x0, x1]) {
+    for (const y of [y0, y1]) {
+      for (const z of [z0, z1]) points.push(projectCar(x, y, z, heading));
+    }
+  }
+}
+
+function worldFaceDot(nx, ny, nz, heading) {
+  const w = rotateXY(nx, ny, heading);
+  return w.x * CAM.x + w.y * CAM.y + nz * CAM.z;
+}
+
+function faceVisible(nx, ny, nz, heading) {
+  return worldFaceDot(nx, ny, nz, heading) > 0.08;
+}
+
+function addBoxTopsAndNearSides(faces, heading, x0, x1, y0, y1, z0, z1, fillHex, strokeHex) {
+  const p = (x, y, z) => projectCar(x, y, z, heading);
+  faces.push({
+    pts: [p(x0, y0, z1), p(x1, y0, z1), p(x1, y1, z1), p(x0, y1, z1)],
+    fillHex,
+    strokeHex,
+  });
+  const sides = [
+    { n: [-1, 0, 0], pts: [p(x0, y0, z0), p(x0, y0, z1), p(x0, y1, z1), p(x0, y1, z0)] },
+    { n: [1, 0, 0], pts: [p(x1, y0, z0), p(x1, y1, z0), p(x1, y1, z1), p(x1, y0, z1)] },
+    { n: [0, -1, 0], pts: [p(x0, y0, z0), p(x1, y0, z0), p(x1, y0, z1), p(x0, y0, z1)] },
+    { n: [0, 1, 0], pts: [p(x0, y1, z0), p(x0, y1, z1), p(x1, y1, z1), p(x1, y1, z0)] },
+  ]
+    .map((side) => ({ ...side, dot: worldFaceDot(side.n[0], side.n[1], side.n[2], heading) }))
+    .filter((side) => side.dot > 0.08)
+    .sort((a, b) => b.dot - a.dot)
+    .slice(0, 2);
+  for (const side of sides) faces.push({ pts: side.pts, fillHex, strokeHex });
+}
+
+function addQuad3(faces, heading, a, b, c, d, fillHex, strokeHex) {
+  const e1x = b.x - a.x;
+  const e1y = b.y - a.y;
+  const e1z = b.z - a.z;
+  const e2x = d.x - a.x;
+  const e2y = d.y - a.y;
+  const e2z = d.z - a.z;
+  const nx = e1y * e2z - e1z * e2y;
+  const ny = e1z * e2x - e1x * e2z;
+  const nz = e1x * e2y - e1y * e2x;
+  if (!faceVisible(nx, ny, nz, heading)) return;
+  const p = (pt) => projectCar(pt.x, pt.y, pt.z, heading);
+  faces.push({ pts: [p(a), p(b), p(c), p(d)], fillHex, strokeHex });
+}
+
+function drawFaces(ctx, faces) {
+  faces.sort((a, b) => quadCentroidY(a.pts) - quadCentroidY(b.pts));
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 0.8;
+  for (const face of faces) {
+    const pts = face.pts;
     ctx.beginPath();
-    ctx.roundRect(wx - wheel, wy - wheel * 0.55, wheel * 2, wheel * 1.1, 2);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = litHex(face.fillHex, faceLight(pts));
+    ctx.fill();
+    ctx.strokeStyle = face.strokeHex || "rgba(0,0,0,0.35)";
+    ctx.stroke();
+  }
+}
+
+function drawCar(ctx, heading, length, color = DEFAULT_COLOR) {
+  const L = length;
+  const W = L * 0.43;
+  const body = color.body || DEFAULT_COLOR.body;
+  const cabin = color.cabin || DEFAULT_COLOR.cabin;
+  const stroke = color.stroke || DEFAULT_COLOR.stroke;
+  const glass = "#1a2228";
+  const rubber = "#141414";
+  const p = (x, y, z) => projectCar(x, y, z, heading);
+
+  const shadow = [
+    p(-L * 0.48, -W * 0.48, 0),
+    p(L * 0.5, -W * 0.48, 0),
+    p(L * 0.5, W * 0.48, 0),
+    p(-L * 0.48, W * 0.48, 0),
+  ];
+  ctx.save();
+  ctx.translate(L * 0.07, L * 0.11);
+  ctx.beginPath();
+  ctx.moveTo(shadow[0].x, shadow[0].y);
+  for (let i = 1; i < 4; i += 1) ctx.lineTo(shadow[i].x, shadow[i].y);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(0,0,0,0.34)";
+  ctx.fill();
+  ctx.restore();
+
+  const wheelW = W * 0.16;
+  const wheelL = L * 0.11;
+  const wheelH = L * 0.09;
+  const zBody = L * 0.22;
+  const zCabin = L * 0.42;
+
+  const hullPts = [];
+  addBoxCorners(hullPts, heading, -L * 0.48, L * 0.5, -W * 0.5, W * 0.5, wheelH * 0.45, zBody);
+  addBoxCorners(hullPts, heading, -L * 0.18, L * 0.16, -W * 0.4, W * 0.4, zBody, zCabin);
+  const hull = convexHull(hullPts);
+  if (hull.length >= 3) {
+    ctx.beginPath();
+    ctx.moveTo(hull[0].x, hull[0].y);
+    for (let i = 1; i < hull.length; i += 1) ctx.lineTo(hull[i].x, hull[i].y);
+    ctx.closePath();
+    ctx.fillStyle = litHex(body, 0.52);
     ctx.fill();
   }
 
-  ctx.fillStyle = color.body;
-  ctx.strokeStyle = color.stroke;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(-w / 2, -h / 2, w, h, r);
-  ctx.fill();
-  ctx.stroke();
+  const faces = [];
+  addBoxTopsAndNearSides(faces, heading, -L * 0.48, L * 0.5, -W * 0.5, W * 0.5, wheelH * 0.45, zBody, body, stroke);
 
-  ctx.fillStyle = color.cabin;
-  ctx.beginPath();
-  ctx.roundRect(-w * 0.12, -h * 0.38, w * 0.42, h * 0.76, r * 0.7);
-  ctx.fill();
+  addQuad3(
+    faces,
+    heading,
+    { x: L * 0.16, y: -W * 0.48, z: zBody },
+    { x: L * 0.5, y: -W * 0.42, z: L * 0.17 },
+    { x: L * 0.5, y: W * 0.42, z: L * 0.17 },
+    { x: L * 0.16, y: W * 0.48, z: zBody },
+    body,
+    stroke
+  );
+  addQuad3(
+    faces,
+    heading,
+    { x: -L * 0.48, y: -W * 0.42, z: L * 0.17 },
+    { x: -L * 0.16, y: -W * 0.48, z: zBody },
+    { x: -L * 0.16, y: W * 0.48, z: zBody },
+    { x: -L * 0.48, y: W * 0.42, z: L * 0.17 },
+    body,
+    stroke
+  );
 
-  ctx.fillStyle = "rgba(170, 220, 255, 0.85)";
-  ctx.beginPath();
-  ctx.moveTo(w * 0.08, -h * 0.28);
-  ctx.lineTo(w * 0.34, -h * 0.22);
-  ctx.lineTo(w * 0.34, h * 0.22);
-  ctx.lineTo(w * 0.08, h * 0.28);
-  ctx.closePath();
-  ctx.fill();
+  addBoxTopsAndNearSides(faces, heading, -L * 0.18, L * 0.16, -W * 0.4, W * 0.4, zBody, zCabin, cabin, stroke);
 
-  ctx.fillStyle = "#ffe08a";
-  ctx.beginPath();
-  ctx.arc(w * 0.44, -h * 0.18, h * 0.08, 0, Math.PI * 2);
-  ctx.arc(w * 0.44, h * 0.18, h * 0.08, 0, Math.PI * 2);
-  ctx.fill();
+  addQuad3(
+    faces,
+    heading,
+    { x: L * 0.16, y: -W * 0.38, z: zCabin },
+    { x: L * 0.32, y: -W * 0.44, z: L * 0.225 },
+    { x: L * 0.32, y: W * 0.44, z: L * 0.225 },
+    { x: L * 0.16, y: W * 0.38, z: zCabin },
+    glass,
+    "#0b1014"
+  );
+  addQuad3(
+    faces,
+    heading,
+    { x: -L * 0.3, y: -W * 0.42, z: L * 0.225 },
+    { x: -L * 0.18, y: -W * 0.38, z: zCabin },
+    { x: -L * 0.18, y: W * 0.38, z: zCabin },
+    { x: -L * 0.3, y: W * 0.42, z: L * 0.225 },
+    glass,
+    "#0b1014"
+  );
+  if (isTowardCamera(0, -W, heading)) {
+    addQuad3(
+      faces,
+      heading,
+      { x: -L * 0.12, y: -W * 0.4, z: L * 0.24 },
+      { x: L * 0.1, y: -W * 0.4, z: L * 0.24 },
+      { x: L * 0.1, y: -W * 0.4, z: L * 0.4 },
+      { x: -L * 0.12, y: -W * 0.4, z: L * 0.4 },
+      glass,
+      "#0b1014"
+    );
+  }
+  if (isTowardCamera(0, W, heading)) {
+    addQuad3(
+      faces,
+      heading,
+      { x: -L * 0.12, y: W * 0.4, z: L * 0.24 },
+      { x: -L * 0.12, y: W * 0.4, z: L * 0.4 },
+      { x: L * 0.1, y: W * 0.4, z: L * 0.4 },
+      { x: L * 0.1, y: W * 0.4, z: L * 0.24 },
+      glass,
+      "#0b1014"
+    );
+  }
 
-  ctx.fillStyle = "#ff4a3a";
-  ctx.beginPath();
-  ctx.arc(-w * 0.44, -h * 0.16, h * 0.07, 0, Math.PI * 2);
-  ctx.arc(-w * 0.44, h * 0.16, h * 0.07, 0, Math.PI * 2);
-  ctx.fill();
+  if (isTowardCamera(L * 0.1, -W, heading)) {
+    addBoxTopsAndNearSides(faces, heading, L * 0.08, L * 0.14, -W * 0.54, -W * 0.4, L * 0.24, L * 0.32, body, stroke);
+  }
+  if (isTowardCamera(L * 0.1, W, heading)) {
+    addBoxTopsAndNearSides(faces, heading, L * 0.08, L * 0.14, W * 0.4, W * 0.54, L * 0.24, L * 0.32, body, stroke);
+  }
+
+  drawFaces(ctx, faces);
+
+  const wheelFaces = [];
+  for (const [wx, wy] of [
+    [L * 0.28, -W * 0.52],
+    [L * 0.28, W * 0.52],
+    [-L * 0.3, -W * 0.52],
+    [-L * 0.3, W * 0.52],
+  ]) {
+    if (!isTowardCamera(wx, wy, heading)) continue;
+    addBoxTopsAndNearSides(
+      wheelFaces,
+      heading,
+      wx - wheelL,
+      wx + wheelL,
+      wy - wheelW,
+      wy + wheelW,
+      0,
+      wheelH,
+      rubber,
+      "#050505"
+    );
+  }
+  drawFaces(ctx, wheelFaces);
+
+  const lampQuads = [
+    [
+      { x: L * 0.5, y: -W * 0.28, z: L * 0.15 },
+      { x: L * 0.5, y: -W * 0.12, z: L * 0.15 },
+      { x: L * 0.5, y: -W * 0.12, z: L * 0.2 },
+      { x: L * 0.5, y: -W * 0.28, z: L * 0.2 },
+    ],
+    [
+      { x: L * 0.5, y: W * 0.12, z: L * 0.15 },
+      { x: L * 0.5, y: W * 0.28, z: L * 0.15 },
+      { x: L * 0.5, y: W * 0.28, z: L * 0.2 },
+      { x: L * 0.5, y: W * 0.12, z: L * 0.2 },
+    ],
+  ];
+  for (const [a, b, c, d] of lampQuads) {
+    if (!faceVisible(1, 0, 0, heading)) continue;
+    const pts = [a, b, c, d].map((pt) => p(pt.x, pt.y, pt.z));
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < 4; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = "#f2e2a8";
+    ctx.fill();
+  }
+  const tailQuads = [
+    [
+      { x: -L * 0.48, y: -W * 0.28, z: L * 0.15 },
+      { x: -L * 0.48, y: -W * 0.12, z: L * 0.15 },
+      { x: -L * 0.48, y: -W * 0.12, z: L * 0.2 },
+      { x: -L * 0.48, y: -W * 0.28, z: L * 0.2 },
+    ],
+    [
+      { x: -L * 0.48, y: W * 0.12, z: L * 0.15 },
+      { x: -L * 0.48, y: W * 0.28, z: L * 0.15 },
+      { x: -L * 0.48, y: W * 0.28, z: L * 0.2 },
+      { x: -L * 0.48, y: W * 0.12, z: L * 0.2 },
+    ],
+  ];
+  for (const [a, b, c, d] of tailQuads) {
+    if (!faceVisible(-1, 0, 0, heading)) continue;
+    const pts = [a, b, c, d].map((pt) => p(pt.x, pt.y, pt.z));
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < 4; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fillStyle = "#c43b32";
+    ctx.fill();
+  }
 }
 
 function drawName(ctx, px, py, carLen, name) {
@@ -115,15 +403,19 @@ function drawName(ctx, px, py, carLen, name) {
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(0,0,0,0.75)";
   ctx.fillStyle = "#fff";
-  ctx.strokeText(name, px, py - carLen * 0.28);
-  ctx.fillText(name, px, py - carLen * 0.28);
+  ctx.strokeText(name, px, py - carLen * 0.55);
+  ctx.fillText(name, px, py - carLen * 0.55);
   ctx.restore();
 }
 
-export default function SandpitRacer({ startRaceRef, onDriversChange }) {
+export default function SandpitRacer({ startRaceRef, onDriversChange, inputPaused = false, carShapes = [] }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const keysRef = useRef(new Set());
+  const inputPausedRef = useRef(inputPaused);
+  inputPausedRef.current = inputPaused;
+  const carShapesRef = useRef(carShapes);
+  carShapesRef.current = carShapes;
   const carRef = useRef(localCar);
   const remotesRef = useRef(remoteCars);
   const localMetaRef = useRef({
@@ -390,6 +682,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
     }
 
     function onKeyDown(e) {
+      if (inputPausedRef.current) return;
       const code = e.code;
       if (
         code === "ArrowUp" ||
@@ -427,14 +720,15 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       return true;
     }
 
-    function paintCar(ctx, view, pose, color, name, carLen) {
+    function paintCar(ctx, view, pose, color, name, carLen, useDesign = false) {
       const px = view.x + pose.x * view.w;
       const py = view.y + pose.y * view.h;
       ctx.save();
       ctx.translate(px, py);
-      ctx.scale(1, ISO_Y);
-      ctx.rotate(pose.heading);
-      drawCar(ctx, carLen, color);
+      const designed = useDesign ? carShapesRef.current : null;
+      if (!designed?.length || !drawDesignedCar(ctx, designed, pose.heading, carLen, color)) {
+        drawCar(ctx, pose.heading, carLen, color);
+      }
       ctx.restore();
       drawName(ctx, px, py, carLen, name);
     }
@@ -481,7 +775,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
         if (!stepRemote(remote, dt, now)) continue;
         paintCar(ctx, view, remote, remote.color, remote.name, carLen);
       }
-      paintCar(ctx, view, car, localMetaRef.current.color, localMetaRef.current.name, carLen);
+      paintCar(ctx, view, car, localMetaRef.current.color, localMetaRef.current.name, carLen, true);
 
       raf = window.requestAnimationFrame(tick);
     }
@@ -520,6 +814,10 @@ export default function SandpitRacer({ startRaceRef, onDriversChange }) {
       }
     };
   }, [startRaceRef]);
+
+  useEffect(() => {
+    if (inputPaused) keysRef.current.clear();
+  }, [inputPaused]);
 
   return (
     <div

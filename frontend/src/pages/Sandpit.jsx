@@ -1,13 +1,36 @@
 import React, { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import SandpitRacer from "../components/SandpitRacer";
+import SandpitDesigner from "../components/SandpitDesigner";
 import { UI } from "../utils/uiThemeTokens.js";
+import { loadDesignerShapes, saveDesignerShapes } from "../utils/sandpitCarMesh";
 
 const PAGE_TEXT = UI.pageText;
+
+const hudButtonStyle = {
+  color: PAGE_TEXT,
+  fontSize: "0.8rem",
+  textDecoration: "none",
+  border: "1px solid rgba(255,255,255,0.4)",
+  borderRadius: 8,
+  padding: "6px 12px",
+  background: "rgba(6, 17, 39, 0.55)",
+  cursor: "pointer",
+  fontFamily: "inherit",
+};
 
 export default function Sandpit() {
   const startRaceRef = useRef(null);
   const [drivers, setDrivers] = useState([]);
+  const [designerOpen, setDesignerOpen] = useState(false);
+  const [carShapes, setCarShapes] = useState(loadDesignerShapes);
+
+  function closeDesigner(shapes) {
+    const next = Array.isArray(shapes) ? shapes : carShapes;
+    saveDesignerShapes(next);
+    setCarShapes(next);
+    setDesignerOpen(false);
+  }
 
   return (
     <div
@@ -17,25 +40,31 @@ export default function Sandpit() {
         background: "#061127",
       }}
     >
-      <SandpitRacer startRaceRef={startRaceRef} onDriversChange={setDrivers} />
-      <Link
-        to="/projects"
+      <SandpitRacer
+        startRaceRef={startRaceRef}
+        onDriversChange={setDrivers}
+        inputPaused={designerOpen}
+        carShapes={carShapes}
+      />
+      <div
         style={{
           position: "absolute",
           top: 16,
           left: 16,
           zIndex: 2,
-          color: PAGE_TEXT,
-          fontSize: "0.8rem",
-          textDecoration: "none",
-          border: "1px solid rgba(255,255,255,0.4)",
-          borderRadius: 8,
-          padding: "6px 12px",
-          background: "rgba(6, 17, 39, 0.55)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-start",
+          gap: 8,
         }}
       >
-        Back to Projects
-      </Link>
+        <Link to="/projects" style={hudButtonStyle}>
+          Back to Projects
+        </Link>
+        <button type="button" onClick={() => setDesignerOpen(true)} style={hudButtonStyle}>
+          Designer
+        </button>
+      </div>
       <button
         type="button"
         onClick={(e) => {
@@ -51,7 +80,6 @@ export default function Sandpit() {
           fontSize: "0.8rem",
           fontWeight: 700,
           cursor: "pointer",
-          tabIndex: -1,
           border: "1px solid rgba(255,255,255,0.4)",
           borderRadius: 8,
           padding: "6px 14px",
@@ -101,6 +129,7 @@ export default function Sandpit() {
       >
         W / ↑ accelerate · X / ↓ brake · A D or ← → steer
       </div>
+      {designerOpen ? <SandpitDesigner initialShapes={carShapes} onClose={closeDesigner} /> : null}
     </div>
   );
 }
