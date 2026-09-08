@@ -259,6 +259,12 @@ function ringSignedAreaXZ(ring) {
   return area * 0.5;
 }
 
+export function footprintRingAreaM2(ring) {
+  const clean = sanitizeFootprintRing(ring);
+  if (clean.length < 3) return 0;
+  return Math.abs(ringSignedAreaXZ(clean));
+}
+
 function pointInRingXZ(x, z, ring) {
   if (!Array.isArray(ring) || ring.length < 3) return false;
   let inside = false;
@@ -1248,6 +1254,33 @@ export function buildFootprintWeatherboardParts(
   }
 
   return parts;
+}
+
+/** Lineal metres of weatherboard runs (openings notched), matching the 3D boards. */
+export function sumFootprintWeatherboardLinealM(
+  ring,
+  bottomYM,
+  topYM,
+  openings = [],
+  thicknessM = WEATHERBOARD_THICKNESS_M,
+  options = {}
+) {
+  const parts = buildFootprintWeatherboardParts(
+    ring,
+    bottomYM,
+    topYM,
+    openings,
+    thicknessM,
+    options
+  );
+  let total = 0;
+  for (const part of parts) {
+    total += Number(part.lengthM) || 0;
+    if (part.geometry && typeof part.geometry.dispose === "function") {
+      part.geometry.dispose();
+    }
+  }
+  return total;
 }
 
 /** Duragroove sheet: 10 mm thick, vertical grooves 5 mm wide at 170 mm centres. */

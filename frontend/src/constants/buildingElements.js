@@ -38,7 +38,6 @@ export const BUILDING_ELEMENT_VISIBILITY_WALL_EXTRA = [
 ];
 
 export const BUILDING_ELEMENT_VISIBILITY_OTHER = [
-  { key: "roof", label: "Affordable Roof" },
   { key: "deck", label: "Deck" },
   { key: "kitchen", label: "Kitchen" },
   { key: "robes", label: "Robes" },
@@ -87,6 +86,11 @@ export const BUILDING_ELEMENT_VISIBILITY_GROUPS = [
     items: [{ key: "cladding", label: "Cladding" }],
   },
   {
+    id: "roof",
+    label: "Roof",
+    items: [{ key: "roof", label: "Roof" }],
+  },
+  {
     id: "other",
     label: "Other",
     items: BUILDING_ELEMENT_VISIBILITY_OTHER,
@@ -105,6 +109,33 @@ export function parseCladdingType(raw) {
   return raw === CLADDING_TYPE_DURAGROOVE
     ? CLADDING_TYPE_DURAGROOVE
     : CLADDING_TYPE_WEATHERBOARD;
+}
+
+export const ROOF_TYPE_AFFORDABLE = "affordable";
+export const ROOF_TYPE_SUPERIOR = "superior";
+
+export const ROOF_TYPE_OPTIONS = [
+  { key: ROOF_TYPE_AFFORDABLE, label: "Affordable" },
+  { key: ROOF_TYPE_SUPERIOR, label: "Superior" },
+];
+
+export function parseRoofType(raw) {
+  const key = String(raw || "").trim().toLowerCase();
+  if (key === ROOF_TYPE_SUPERIOR || key === "superiorroof" || key === "superior-roof") {
+    return ROOF_TYPE_SUPERIOR;
+  }
+  return ROOF_TYPE_AFFORDABLE;
+}
+
+/** Saved pref if set; otherwise Superior when that is the only traced roof. */
+export function resolveVisualiserRoofType(savedRoofType, planTrace) {
+  if (savedRoofType != null && String(savedRoofType).trim() !== "") {
+    return parseRoofType(savedRoofType);
+  }
+  const hasSuperior = (planTrace?.superiorRoofPoints?.length ?? 0) >= 3;
+  const hasAffordable = (planTrace?.roofPoints?.length ?? 0) >= 3;
+  if (hasSuperior && !hasAffordable) return ROOF_TYPE_SUPERIOR;
+  return ROOF_TYPE_AFFORDABLE;
 }
 
 export const FOOTING_TYPE_SLAB = "slab";
@@ -147,6 +178,7 @@ export const BUILDING_ELEMENT_VISIBILITY_KEYS = [
   ...BUILDING_ELEMENT_VISIBILITY_LEGACY_KEYS,
   "cladding",
   "footing",
+  "roof",
 ];
 
 /** Visibility keys that do not apply to a slab subfloor. */
@@ -299,14 +331,20 @@ export function loadVisualiserViewPrefs(projectId) {
         ? parsed.visibility
         : null;
     const claddingType = parseCladdingType(parsed.claddingType);
-    if (!visibility && !subfloorType && !parsed.claddingType) return null;
-    return { visibility, subfloorType, claddingType };
+    const roofType =
+      parsed.roofType != null && String(parsed.roofType).trim() !== ""
+        ? parseRoofType(parsed.roofType)
+        : null;
+    if (!visibility && !subfloorType && !parsed.claddingType && parsed.roofType == null) {
+      return null;
+    }
+    return { visibility, subfloorType, claddingType, roofType };
   } catch {
     return null;
   }
 }
 
-export function saveVisualiserViewPrefs(projectId, { visibility, subfloorType, claddingType } = {}) {
+export function saveVisualiserViewPrefs(projectId, { visibility, subfloorType, claddingType, roofType } = {}) {
   if (!projectId) return;
   try {
     localStorage.setItem(
@@ -315,6 +353,7 @@ export function saveVisualiserViewPrefs(projectId, { visibility, subfloorType, c
         visibility: normalizeElementVisibility(visibility),
         subfloorType: SUBFLOOR_DRAW_TYPES.has(subfloorType) ? subfloorType : null,
         claddingType: parseCladdingType(claddingType),
+        roofType: parseRoofType(roofType),
       })
     );
   } catch {

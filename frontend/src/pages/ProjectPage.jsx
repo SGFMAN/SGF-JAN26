@@ -16,6 +16,7 @@ import PlanningOld from "./Planning";
 import PlanningMain from "./PlanningMain";
 import Planning from "./PlanningNew";
 import Admin from "./Admin";
+import Costing from "./Costing";
 import Robes from "./Robes";
 import Variations from "./Variations";
 import Payments from "./Payments";
@@ -206,6 +207,7 @@ const MENU_OPTIONS = [
   { label: "Planning", key: "planning" },
   { label: "Variations", key: "variations", adminOnly: true },
   { label: "Admin", key: "admin" },
+  { label: "Costing", key: "costing", adminOnly: true },
 ];
 
 // Construction menu options (simplified)
@@ -217,6 +219,7 @@ const CONSTRUCTION_MENU_OPTIONS = [
   { label: "Variations", key: "variations", adminOnly: true },
   { label: "Payments", key: "payments" },
   { label: "Final Certificates", key: "final-certificates", adminOnly: true },
+  { label: "Costing", key: "costing", adminOnly: true },
 ];
 
 const MOBILE_PROJECT_VIEWS = ["overview", "project-info", "drawings"];
@@ -291,12 +294,13 @@ export default function ProjectPage() {
       ? MOBILE_PROJECT_VIEWS.map((key) => ({ key }))
       : allKeys;
     if (viewParam && allowedKeys.some((opt) => opt.key === viewParam)) {
-      if (isPortalProjectPath && viewParam === "admin") {
+      if (isPortalProjectPath && (viewParam === "admin" || viewParam === "costing")) {
         setActiveView("overview");
       } else if (
         (viewParam === "planning-underconstruction" ||
           viewParam === "variations" ||
-          viewParam === "final-certificates") &&
+          viewParam === "final-certificates" ||
+          viewParam === "costing") &&
         !isAdmin
       ) {
         setActiveView("overview");
@@ -315,7 +319,8 @@ export default function ProjectPage() {
     if (
       (activeView === "planning-underconstruction" ||
         activeView === "variations" ||
-        activeView === "final-certificates") &&
+        activeView === "final-certificates" ||
+        activeView === "costing") &&
       !isAdmin
     ) {
       setActiveView("overview");
@@ -1038,7 +1043,7 @@ export default function ProjectPage() {
             .filter(
               (item) =>
                 !item.hidden &&
-                !(isPortalProjectPath && item.key === "admin") &&
+                !(isPortalProjectPath && (item.key === "admin" || item.key === "costing")) &&
                 !(item.adminOnly && !isAdmin)
             )
             .map((item) => {
@@ -1222,6 +1227,7 @@ export default function ProjectPage() {
                 />
               )}
               {activeView === "admin" && <Admin project={project} onUpdate={updateProject} />}
+              {activeView === "costing" && isAdmin && <Costing project={project} />}
               {activeView === "variations" && isAdmin && <Variations project={project} />}
               {activeView === "payments" && (
                 <Payments

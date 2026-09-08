@@ -1,6 +1,10 @@
 /** Default rectangle unit used when there is no traced plan. Metres. */
 
-import { normalizeElementVisibility, parseCladdingType } from "./buildingElements.js";
+import {
+  normalizeElementVisibility,
+  parseCladdingType,
+  parseRoofType,
+} from "./buildingElements.js";
 
 export const STUMP_STYLE_OPTIONS = [
   { key: "mega_anchors", label: "Mega-Anchors" },
@@ -130,6 +134,7 @@ export const DEFAULT_BUILDING_3D = {
   showSubfloor: true,
   showWall: true,
   claddingType: "weatherboard",
+  roofType: "affordable",
   elementVisibility: normalizeElementVisibility({}),
 };
 
@@ -282,6 +287,7 @@ export function normalizeBuilding3dDefaults(raw) {
     stumpStyle,
     elementVisibility,
     claddingType: parseCladdingType(src.claddingType),
+    roofType: parseRoofType(src.roofType),
     showFence: elementVisibility.fence,
     showSubfloor: elementVisibility.footing,
     showWall: elementVisibility.cladding,
@@ -309,6 +315,7 @@ export function building3dDraftFromDefaults(defaults) {
     stumpStyle: d.stumpStyle,
     elementVisibility: d.elementVisibility,
     claddingType: d.claddingType,
+    roofType: d.roofType,
     showFence: d.showFence,
     showSubfloor: d.showSubfloor,
     showWall: d.showWall,

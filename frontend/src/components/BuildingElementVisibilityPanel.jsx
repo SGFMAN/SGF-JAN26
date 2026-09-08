@@ -3,11 +3,13 @@ import {
   BUILDING_ELEMENT_VISIBILITY_KEYS,
   CLADDING_TYPE_OPTIONS,
   FOOTING_TYPE_OPTIONS,
+  ROOF_TYPE_OPTIONS,
   emptyElementVisibility,
   isSlabHiddenVisibilityKey,
   normalizeElementVisibility,
   parseCladdingType,
   parseFootingType,
+  parseRoofType,
   visibilityAfterSubfloorDrawType,
 } from "../constants/buildingElements.js";
 import { UI } from "../utils/uiThemeTokens.js";
@@ -93,13 +95,16 @@ export default function BuildingElementVisibilityPanel({
   fallback = {},
   subfloorDrawType = null,
   claddingType = null,
+  roofType = null,
   onChange,
   onCladdingTypeChange,
+  onRoofTypeChange,
 }) {
   const vis = normalizeElementVisibility(visibility, fallback);
   const isSlab = subfloorDrawType === "slab";
   const selectedCladding = parseCladdingType(claddingType);
   const selectedFooting = parseFootingType(subfloorDrawType);
+  const selectedRoof = parseRoofType(roofType);
 
   function emitChange(nextVis, nextDrawType) {
     onChange(nextVis, nextDrawType);
@@ -235,6 +240,13 @@ export default function BuildingElementVisibilityPanel({
                     options={CLADDING_TYPE_OPTIONS}
                     selectedKey={selectedCladding}
                     onSelect={onCladdingTypeChange}
+                  />
+                ) : null}
+                {item.key === "roof" ? (
+                  <TypeChoices
+                    options={ROOF_TYPE_OPTIONS}
+                    selectedKey={selectedRoof}
+                    onSelect={onRoofTypeChange}
                   />
                 ) : null}
                 </div>

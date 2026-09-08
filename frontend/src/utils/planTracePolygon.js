@@ -7,6 +7,7 @@ export const DOORS_LAYER_ID = "doors";
 export const SLIDING_DOORS_LAYER_ID = "slidingDoors";
 export const INTERNAL_DOORS_LAYER_ID = "internalDoors";
 export const ROOF_LAYER_ID = "roof";
+export const SUPERIOR_ROOF_LAYER_ID = "superiorRoof";
 export const DECK_LAYER_ID = "deck";
 export const FLOORING_LAYER_ID = "flooring";
 export const KITCHEN_BENCH_LAYER_ID = "kitchenBench";
@@ -50,7 +51,7 @@ export const TRACE_PLAN_LAYERS = [
   },
   {
     id: ROOF_LAYER_ID,
-    label: "Affordable Roof",
+    label: "Roof",
     group: "external",
     stroke: "#475569",
     fillClosed: "rgba(71, 85, 105, 0.25)",
@@ -59,9 +60,21 @@ export const TRACE_PLAN_LAYERS = [
     origin: "#334155",
     saves: true,
     submenu: [
-      { id: "outline", label: "Draw outline" },
-      { id: "pivot", label: "Draw pivot point" },
+      { id: "affordable", label: "Affordable Roof" },
+      { id: "superior", label: "Superior Roof" },
     ],
+  },
+  {
+    id: SUPERIOR_ROOF_LAYER_ID,
+    label: "Superior Roof",
+    group: "external",
+    hidden: true,
+    stroke: "#1e3a5f",
+    fillClosed: "rgba(30, 58, 95, 0.28)",
+    fillOpen: "rgba(30, 58, 95, 0.14)",
+    marker: "#1e3a5f",
+    origin: "#172554",
+    saves: true,
   },
   {
     id: WINDOWS_LAYER_ID,
@@ -612,7 +625,15 @@ export function parsePlanTraceRoofPivotLine(raw) {
 }
 
 export function isRoofTraceLayer(layerId) {
+  return layerId === ROOF_LAYER_ID || layerId === SUPERIOR_ROOF_LAYER_ID;
+}
+
+export function isAffordableRoofTraceLayer(layerId) {
   return layerId === ROOF_LAYER_ID;
+}
+
+export function isSuperiorRoofTraceLayer(layerId) {
+  return layerId === SUPERIOR_ROOF_LAYER_ID;
 }
 
 /** Normalize a deck outline to page 0–1 points (min 3). */
@@ -665,6 +686,7 @@ export function parsePlanTracePolygon(raw) {
     page: 1,
     points: [],
     roofPoints: [],
+    superiorRoofPoints: [],
     roofPivotLine: null,
     roofRidgeAxis: null,
     decks: [],
@@ -705,6 +727,11 @@ export function parsePlanTracePolygon(raw) {
           .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
           .slice(0, MAX_TRACE_POINTS)
       : [];
+    const superiorRoofPoints = Array.isArray(data?.superiorRoofPoints)
+      ? data.superiorRoofPoints
+          .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+          .slice(0, MAX_TRACE_POINTS)
+      : [];
     const flooringPoints = parseFlooringPoints(data?.flooringPoints);
     const kitchenBenches = parsePlanTraceDecks(
       data?.kitchenBenches,
@@ -725,6 +752,7 @@ export function parsePlanTracePolygon(raw) {
     const shared = {
       page: safePage,
       roofPoints,
+      superiorRoofPoints,
       roofPivotLine,
       roofRidgeAxis,
       decks,
@@ -778,7 +806,8 @@ export function serializePlanTracePolygon(
   kitchenBenches = [],
   robes = [],
   kitchenZonePoints = [],
-  roofRidgeAxis = null
+  roofRidgeAxis = null,
+  superiorRoofPoints = []
 ) {
   const round = (v) => Math.round(v * 1e6) / 1e6;
   const payload = {
@@ -794,6 +823,11 @@ export function serializePlanTracePolygon(
     .slice(0, MAX_TRACE_POINTS)
     .map((p) => ({ x: round(p.x), y: round(p.y) }));
   if (normalizedRoof.length >= 3) payload.roofPoints = normalizedRoof;
+  const normalizedSuperiorRoof = (superiorRoofPoints ?? [])
+    .filter((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y))
+    .slice(0, MAX_TRACE_POINTS)
+    .map((p) => ({ x: round(p.x), y: round(p.y) }));
+  if (normalizedSuperiorRoof.length >= 3) payload.superiorRoofPoints = normalizedSuperiorRoof;
   const normalizedFlooring = parseFlooringPoints(flooringPoints).map((p) => ({
     x: round(p.x),
     y: round(p.y),

@@ -40,6 +40,8 @@ import {
   loadVisualiserViewPrefs,
   normalizeElementVisibility,
   parseCladdingType,
+  parseRoofType,
+  resolveVisualiserRoofType,
   saveVisualiserViewPrefs,
   visibilityAfterSubfloorDrawType,
 } from "../constants/buildingElements.js";
@@ -197,6 +199,9 @@ export default function Colours({ project, onUpdate }) {
   const [visualiserCladdingType, setVisualiserCladdingType] = useState(() =>
     parseCladdingType(null)
   );
+  const [visualiserRoofType, setVisualiserRoofType] = useState(() =>
+    parseRoofType(null)
+  );
   const [isAdmin, setIsAdmin] = useState(false);
   const [building3dDefaults, setBuilding3dDefaults] = useState(() => DEFAULT_BUILDING_3D);
   const planTrace = useMemo(
@@ -219,6 +224,7 @@ export default function Colours({ project, onUpdate }) {
   const planTraceCarpetRegions = planTrace.carpetRegions;
   const planTraceInternalWalls = planTrace.internalWallSegments;
   const planTraceRoofPoints = planTrace.roofPoints;
+  const planTraceSuperiorRoofPoints = planTrace.superiorRoofPoints;
   const planTraceRoofPivotLine = planTrace.roofPivotLine;
   const planTraceRoofRidgeAxis = planTrace.roofRidgeAxis;
   const planTraceDecks = planTrace.decks;
@@ -1541,6 +1547,7 @@ export default function Colours({ project, onUpdate }) {
     );
     setVisualiserSubfloorType(drawType);
     setVisualiserCladdingType(parseCladdingType(saved?.claddingType));
+    setVisualiserRoofType(resolveVisualiserRoofType(saved?.roofType, planTrace));
     setVisualiserVisibility(
       drawType === "slab" ? visibilityAfterSubfloorDrawType(vis, "slab") : vis
     );
@@ -1565,7 +1572,8 @@ export default function Colours({ project, onUpdate }) {
     kitchenBenches = [],
     robes = [],
     kitchenZonePoints = [],
-    roofRidgeAxis = null
+    roofRidgeAxis = null,
+    superiorRoofPoints = []
   ) {
     const projectKey = project?.access_token || project?.id;
     if (!projectKey) {
@@ -1598,7 +1606,8 @@ export default function Colours({ project, onUpdate }) {
           kitchenBenches,
           robes,
           kitchenZonePoints,
-          roofRidgeAxis
+          roofRidgeAxis,
+          superiorRoofPoints
         ),
       }),
     });
@@ -2552,10 +2561,12 @@ export default function Colours({ project, onUpdate }) {
           showWall={visualiserVisibility.cladding}
           elementVisibility={visualiserVisibility}
           claddingType={visualiserCladdingType}
+          roofType={visualiserRoofType}
           elementsPanel={
             <BuildingElementVisibilityPanel
               visibility={visualiserVisibility}
               claddingType={visualiserCladdingType}
+              roofType={visualiserRoofType}
               subfloorDrawType={
                 visualiserSubfloorType ?? resolvedSubfloorDrawType(building3dDefaults)
               }
@@ -2567,6 +2578,7 @@ export default function Colours({ project, onUpdate }) {
                   visibility: elementVisibility,
                   subfloorType: nextType,
                   claddingType: visualiserCladdingType,
+                  roofType: visualiserRoofType,
                 });
               }}
               onCladdingTypeChange={(nextCladdingType) => {
@@ -2577,12 +2589,25 @@ export default function Colours({ project, onUpdate }) {
                   subfloorType:
                     visualiserSubfloorType ?? resolvedSubfloorDrawType(building3dDefaults),
                   claddingType: parsed,
+                  roofType: visualiserRoofType,
+                });
+              }}
+              onRoofTypeChange={(nextRoofType) => {
+                const parsed = parseRoofType(nextRoofType);
+                setVisualiserRoofType(parsed);
+                saveVisualiserViewPrefs(project?.id, {
+                  visibility: visualiserVisibility,
+                  subfloorType:
+                    visualiserSubfloorType ?? resolvedSubfloorDrawType(building3dDefaults),
+                  claddingType: visualiserCladdingType,
+                  roofType: parsed,
                 });
               }}
             />
           }
           footprintPoints={planTraceFootprintPoints}
           roofPoints={planTraceRoofPoints}
+          superiorRoofPoints={planTraceSuperiorRoofPoints}
           roofPivotLine={planTraceRoofPivotLine}
           roofRidgeAxis={planTraceRoofRidgeAxis}
           decks={planTraceDecks}

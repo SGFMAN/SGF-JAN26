@@ -74,9 +74,11 @@ import {
 import {
   normalizeElementVisibility,
   parseCladdingType,
+  parseRoofType,
   CLADDING_TYPE_DURAGROOVE,
   CLADDING_TYPE_WEATHERBOARD,
   FOOTING_VISIBILITY_KEYS,
+  ROOF_TYPE_SUPERIOR,
 } from "../constants/buildingElements.js";
 import {
   assignTimberDeckUVs,
@@ -111,6 +113,12 @@ import {
   buildAffordableGableEndPanelMeshData,
   buildAffordableRoofSheetMeshData,
 } from "../utils/affordableRoofGeometry.js";
+import {
+  SUPERIOR_TRUSS_PITCH_DEG,
+  SUPERIOR_TRUSS_THICK_M,
+  SUPERIOR_TRUSS_WIDTH_M,
+  buildSuperiorRoofTrussMembers,
+} from "../utils/superiorRoofTrussGeometry.js";
 import {
   buildSkillionRoofSlabGeometry,
   buildSkillionRoofSlabMeshData,
@@ -231,11 +239,18 @@ function visibilityKeyForPart(type, id) {
   return null;
 }
 
-function applyBuildingElementVisibility(scene, modelGroup, vis, claddingType) {
+function isSuperiorRoofPart(obj) {
+  const id = `${obj.userData?.partType || ""} ${obj.userData?.partId || obj.name || ""}`.toLowerCase();
+  return id.includes("superior-truss") || id.includes("superior-roof");
+}
+
+function applyBuildingElementVisibility(scene, modelGroup, vis, claddingType, roofType) {
   const on = (key) => vis?.[key] !== false;
   const claddingOn = on("cladding") && on("weatherboards") && on("wall");
   const footingOn = on("footing");
+  const roofOn = on("roof");
   const style = parseCladdingType(claddingType);
+  const selectedRoof = parseRoofType(roofType);
   if (modelGroup) {
     modelGroup.traverse((obj) => {
       const key = visibilityKeyForPart(obj.userData?.partType, obj.userData?.partId || obj.name);
@@ -259,6 +274,20 @@ function applyBuildingElementVisibility(scene, modelGroup, vis, claddingType) {
         obj.visible = footingOn && on(key);
         return;
       }
+      if (key === "roof") {
+        if (obj.name === BUILDING_3D_PARTS.ROOF) {
+          obj.visible = roofOn;
+          return;
+        }
+        if (!roofOn) {
+          obj.visible = false;
+          return;
+        }
+        obj.visible = isSuperiorRoofPart(obj)
+          ? selectedRoof === ROOF_TYPE_SUPERIOR
+          : selectedRoof !== ROOF_TYPE_SUPERIOR;
+        return;
+      }
       obj.visible = on(key);
     });
   }
@@ -266,8 +295,8 @@ function applyBuildingElementVisibility(scene, modelGroup, vis, claddingType) {
   if (fence) fence.visible = on("fence");
 }
 
-/** Grass / fence stay this size so building edits do not rebuild the WebGL scene. */
-const SCENE_GROUND_SIZE_M = 80;
+/** Axis-aligned grass/fence rectangle: this many metres outside the building AABB. */
+const GROUND_BORDER_M = 10;
 
 function removeDirectChildByName(parent, name) {
   const child = parent?.children?.find((obj) => obj.name === name);
@@ -322,6 +351,7 @@ function buildingContentKeys(p) {
       p.CLADDING_HEIGHT_M,
       p.footprintKey,
       p.roofPointsKey,
+      p.superiorRoofPointsKey,
       p.roofPivotKey,
       p.roofRidgeAxisKey,
       p.deckPointsKey,
@@ -827,7 +857,66 @@ function addAffordableCutawayFascia(parent, { sheetRing, roofRing, ridgeAxis, sl
   return true;
 }
 
-/** Single rectangular slab: building length × width × slab height, centred on origin. */
+/** 90×45 mm isosceles trusses on the superior roof outline, spanning the short side. */
+function addSuperiorRoofTrusses(parent, { ring, wallTopY }) {
+  try {
+    const data = buildSuperiorRoofTrussMembers(ring, wallTopY);
+    if (!data?.members?.length) return null;
+    const texture = createFramingTimberTexture();
+    const material = createFramingTimberMaterial(texture);
+    data.members.forEach((member, index) => {
+      const dx = member.to.x - member.from.x;
+      const dy = member.to.y - member.from.y;
+      const dz = member.to.z - member.from.z;
+      const len = Math.hypot(dx, dy, dz);
+      if (!(len > 0.04) || !Number.isFinite(len)) return;
+      const dir = new THREE.Vector3(dx / len, dy / len, dz / len);
+      const xAxis = new THREE.Vector3(
+        member.longAxis.x,
+        member.longAxis.y,
+        member.longAxis.z
+      );
+      if (xAxis.lengthSq() < 1e-8) xAxis.set(1, 0, 0);
+      xAxis.normalize();
+      let yAxis = new THREE.Vector3().crossVectors(dir, xAxis);
+      if (yAxis.lengthSq() < 1e-8) {
+        yAxis.crossVectors(new THREE.Vector3(0, 1, 0), dir);
+      }
+      if (yAxis.lengthSq() < 1e-8) return;
+      yAxis.normalize();
+      xAxis.crossVectors(yAxis, dir).normalize();
+      if (xAxis.lengthSq() < 1e-8) return;
+      const geometry = new THREE.BoxGeometry(
+        SUPERIOR_TRUSS_WIDTH_M,
+        SUPERIOR_TRUSS_THICK_M,
+        len
+      );
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(
+        (member.from.x + member.to.x) / 2,
+        (member.from.y + member.to.y) / 2,
+        (member.from.z + member.to.z) / 2
+      );
+      mesh.setRotationFromMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, dir));
+      mesh.name = `${BUILDING_3D_PARTS.ROOF}-superior-truss-${member.kind}-${member.trussIndex + 1}-${index + 1}`;
+      mesh.userData = {
+        partId: BUILDING_3D_PARTS.ROOF,
+        partType: "superior-roof",
+        trussKind: member.kind,
+        widthM: SUPERIOR_TRUSS_WIDTH_M,
+        thickM: SUPERIOR_TRUSS_THICK_M,
+        lengthM: len,
+      };
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+    });
+    return data;
+  } catch (err) {
+    console.warn("Superior roof trusses skipped:", err);
+    return null;
+  }
+}
 function addSubfloorSlabCube(parent, { widthM, depthM, heightM, color, roughness, metalness }) {
   const slabW = Math.max(0.1, Number(widthM) || DEFAULT_BUILDING_3D.widthM);
   const slabD = Math.max(0.1, Number(depthM) || DEFAULT_BUILDING_3D.depthM);
@@ -3548,6 +3637,7 @@ export default function Building3DModal({
   wallHeightM = DEFAULT_BUILDING_3D.wallHeightM,
   footprintPoints = null,
   roofPoints = null,
+  superiorRoofPoints = null,
   roofPivotLine = null,
   roofRidgeAxis = null,
   decks = null,
@@ -3578,6 +3668,7 @@ export default function Building3DModal({
   showWall = DEFAULT_BUILDING_3D.showWall,
   elementVisibility = null,
   claddingType = null,
+  roofType = null,
   subfloorType = DEFAULT_SUBFLOOR_TYPE,
   bearerHeightM = DEFAULT_BUILDING_3D.bearerHeightM,
   joistHeightM = DEFAULT_BUILDING_3D.joistHeightM,
@@ -3632,6 +3723,8 @@ export default function Building3DModal({
   elementVisibilityRef.current = resolvedVisibility;
   const claddingTypeRef = useRef(parseCladdingType(claddingType));
   claddingTypeRef.current = parseCladdingType(claddingType);
+  const roofTypeRef = useRef(parseRoofType(roofType));
+  roofTypeRef.current = parseRoofType(roofType);
   const [error, setError] = useState("");
   const [sideMenuMode, setSideMenuMode] = useState(rightPanel ? "edit" : "elements");
   const [renderBusy, setRenderBusy] = useState(false);
@@ -3646,6 +3739,10 @@ export default function Building3DModal({
     [footprintPoints]
   );
   const roofPointsKey = useMemo(() => JSON.stringify(roofPoints ?? null), [roofPoints]);
+  const superiorRoofPointsKey = useMemo(
+    () => JSON.stringify(superiorRoofPoints ?? null),
+    [superiorRoofPoints]
+  );
   const roofPivotKey = useMemo(() => JSON.stringify(roofPivotLine ?? null), [roofPivotLine]);
   const roofRidgeAxisKey = useMemo(
     () => JSON.stringify(roofRidgeAxis ?? null),
@@ -3772,6 +3869,7 @@ export default function Building3DModal({
     finishes,
     footprintPoints,
     roofPoints,
+    superiorRoofPoints,
     roofPivotLine,
     roofRidgeAxis,
     calibration,
@@ -3795,6 +3893,7 @@ export default function Building3DModal({
     subfloorGapM,
     footprintKey,
     roofPointsKey,
+    superiorRoofPointsKey,
     roofPivotKey,
     roofRidgeAxisKey,
     deckPointsKey,
@@ -3847,11 +3946,10 @@ export default function Building3DModal({
     let animationId = null;
     let resizeObserver = null;
     let renderer = null;
-    const groundSize = SCENE_GROUND_SIZE_M;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87c4ef);
-    scene.fog = new THREE.Fog(0xb7daf5, 48, Math.max(90, groundSize * 2.4));
+    scene.fog = new THREE.Fog(0xb7daf5, 28, 70);
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
     // preserveDrawingBuffer so we can capture the current view for AI render.
@@ -3925,6 +4023,53 @@ export default function Building3DModal({
     modelGroup.name = "building";
     scene.add(modelGroup);
 
+    const grassTexture = textureLoader.load(grassImage);
+    grassTexture.wrapS = THREE.RepeatWrapping;
+    grassTexture.wrapT = THREE.RepeatWrapping;
+    grassTexture.colorSpace = THREE.SRGBColorSpace;
+    grassTexture.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 8;
+    let lastYardKey = "";
+
+    function layoutYard(bounds) {
+      if (!bounds) return;
+      const widthM = Math.max(4, Number(bounds.spanX) + GROUND_BORDER_M * 2);
+      const depthM = Math.max(4, Number(bounds.spanZ) + GROUND_BORDER_M * 2);
+      const centerX = (Number(bounds.minX) + Number(bounds.maxX)) / 2;
+      const centerZ = (Number(bounds.minZ) + Number(bounds.maxZ)) / 2;
+      if (![widthM, depthM, centerX, centerZ].every(Number.isFinite)) return;
+      const key = `${widthM.toFixed(2)}:${depthM.toFixed(2)}:${centerX.toFixed(2)}:${centerZ.toFixed(2)}`;
+      if (key === lastYardKey) return;
+      lastYardKey = key;
+      const oldGround = scene.getObjectByName("grass-ground");
+      const oldFence = scene.getObjectByName("timber-fence");
+      if (oldGround) {
+        scene.remove(oldGround);
+        disposeThreeObject(oldGround);
+      }
+      if (oldFence) {
+        scene.remove(oldFence);
+        disposeThreeObject(oldFence);
+      }
+      grassTexture.repeat.set(Math.max(1, widthM / 4), Math.max(1, depthM / 4));
+      grassTexture.needsUpdate = true;
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(widthM, depthM),
+        new THREE.MeshStandardMaterial({
+          map: grassTexture,
+          roughness: 0.92,
+          metalness: 0.02,
+        })
+      );
+      ground.name = "grass-ground";
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.set(centerX, -0.01, centerZ);
+      ground.receiveShadow = true;
+      scene.add(ground);
+      addTimberBoundaryFence(scene, { widthM, depthM, centerX, centerZ });
+      const far = Math.max(40, Math.hypot(widthM, depthM) * 1.6);
+      scene.fog = new THREE.Fog(0xb7daf5, Math.min(28, far * 0.45), far);
+    }
+
     let envelopeGen = 0;
     let lastContentKeys = { subfloor: null, frame: null, envelope: null };
     let applyCameraLimits = () => {};
@@ -3949,6 +4094,7 @@ export default function Building3DModal({
         finishes,
         footprintPoints,
         roofPoints,
+        superiorRoofPoints,
         roofPivotLine,
         roofRidgeAxis,
         calibration,
@@ -5051,6 +5197,43 @@ export default function Building3DModal({
           }
         }
       }
+      if (Array.isArray(superiorRoofPoints) && superiorRoofPoints.length >= 3) {
+        const superiorResolved = resolveAlignedTraceRing(
+          superiorRoofPoints,
+          Array.isArray(footprintPoints) && footprintPoints.length >= 3
+            ? footprintPoints
+            : superiorRoofPoints,
+          calibration
+        );
+        if (superiorResolved.ring.length >= 3) {
+          let roofGroup = modelGroup.getObjectByName(BUILDING_3D_PARTS.ROOF);
+          if (!roofGroup) {
+            roofGroup = new THREE.Group();
+            roofGroup.name = BUILDING_3D_PARTS.ROOF;
+            roofGroup.userData = {
+              partId: BUILDING_3D_PARTS.ROOF,
+              partType: "roof",
+              pitchDeg: SUPERIOR_TRUSS_PITCH_DEG,
+              timberWidthM: SUPERIOR_TRUSS_WIDTH_M,
+              timberThickM: SUPERIOR_TRUSS_THICK_M,
+            };
+            modelGroup.add(roofGroup);
+          }
+          const superiorTrusses = addSuperiorRoofTrusses(roofGroup, {
+            ring: superiorResolved.ring,
+            wallTopY,
+          });
+          if (superiorTrusses) {
+            hasRoofSlab = true;
+            roofGroup.userData.trussCount = superiorTrusses.count;
+            roofGroup.userData.riseM = superiorTrusses.riseM;
+            const stackM = SUPERIOR_TRUSS_THICK_M + superiorTrusses.riseM;
+            if (!(roofStackM > 0) || stackM > roofStackM) {
+              roofStackM = stackM;
+            }
+          }
+        }
+      }
       modelGroup.userData = {
         ...(modelGroup.userData || {}),
         hasRoofSlab,
@@ -5060,6 +5243,9 @@ export default function Building3DModal({
             ? SKILLION_ROOF_PITCH_DEG
             : isSuperiorHippedRoofStyle(finishes?.roofStyle)
               ? HIPPED_ROOF_PITCH_DEG
+              : Array.isArray(superiorRoofPoints) && superiorRoofPoints.length >= 3 &&
+                  !(Array.isArray(roofPoints) && roofPoints.length >= 3)
+                ? SUPERIOR_TRUSS_PITCH_DEG
               : AFFORDABLE_ROOF_PITCH_DEG
           : 0,
       };
@@ -5621,12 +5807,14 @@ export default function Building3DModal({
           if (obj.isMesh || obj.isInstancedMesh) obj.receiveShadow = false;
         });
 
+        layoutYard(bounds);
         applyVisibilityRef.current = (vis) =>
           applyBuildingElementVisibility(
             scene,
             modelGroup,
             vis,
-            claddingTypeRef.current
+            claddingTypeRef.current,
+            roofTypeRef.current
           );
         applyVisibilityRef.current(elementVisibilityRef.current);
         setError("");
@@ -5637,29 +5825,6 @@ export default function Building3DModal({
       lastContentKeys = keys;
       applyCameraLimits(bounds, p);
     }
-
-    const grassTexture = textureLoader.load(grassImage);
-      grassTexture.wrapS = THREE.RepeatWrapping;
-      grassTexture.wrapT = THREE.RepeatWrapping;
-      grassTexture.colorSpace = THREE.SRGBColorSpace;
-      // ~4 m per tile
-      const grassRepeat = Math.max(6, groundSize * 0.25);
-      grassTexture.repeat.set(grassRepeat, grassRepeat);
-      grassTexture.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 8;
-      const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(groundSize, groundSize),
-        new THREE.MeshStandardMaterial({
-          map: grassTexture,
-          roughness: 0.92,
-          metalness: 0.02,
-        })
-      );
-      ground.name = "grass-ground";
-      ground.rotation.x = -Math.PI / 2;
-      ground.position.y = -0.01;
-      ground.receiveShadow = true;
-      scene.add(ground);
-      addTimberBoundaryFence(scene, groundSize);
 
     const initialP = paramsRef.current;
     const initBounds = footprintBounds(
@@ -6088,6 +6253,7 @@ export default function Building3DModal({
     joistCentresM,
     footprintKey,
     roofPointsKey,
+    superiorRoofPointsKey,
     roofPivotKey,
     roofRidgeAxisKey,
     deckPointsKey,
@@ -6111,7 +6277,7 @@ export default function Building3DModal({
 
   useEffect(() => {
     applyVisibilityRef.current?.(resolvedVisibility);
-  }, [resolvedVisibility, claddingType]);
+  }, [resolvedVisibility, claddingType, roofType]);
 
   function openRenderOptions() {
     if (renderBusy) return;
@@ -6196,14 +6362,18 @@ export default function Building3DModal({
   const footprintLabel = footprintPoints?.length >= 3 ? "traced plan footprint" : `${widthM.toFixed(1)} m × ${depthM.toFixed(1)} m`;
   const wallHeightMm = Math.round(CLADDING_HEIGHT_M * 1000);
   const subfloorHeightMm = Math.round(Number(subfloorHeightM) * 1000);
-  const roofLabel =
+  const roofLabel = [
     roofPoints?.length >= 3
       ? isSuperiorSkillionRoofStyle(finishes?.roofStyle)
         ? ` · Roof: ${SKILLION_ROOF_PITCH_DEG}° skillion slab (400 mm)`
         : isSuperiorHippedRoofStyle(finishes?.roofStyle)
           ? ` · Roof: 150 mm slab + ${HIPPED_ROOF_PITCH_DEG}° planes to ridge per edge`
           : ` · Roof: 100 mm slab + ${AFFORDABLE_ROOF_PITCH_DEG}° dual-fall sheet`
-      : "";
+      : "",
+    superiorRoofPoints?.length >= 3
+      ? ` · Superior roof: ${SUPERIOR_TRUSS_PITCH_DEG}° trusses (90×45 mm)`
+      : "",
+  ].join("");
   const deckLabel =
     resolvedDecks.length
       ? ` · Deck${resolvedDecks.length > 1 ? `s (${resolvedDecks.length})` : ""}: ${subfloorHeightMm} mm + timber top`

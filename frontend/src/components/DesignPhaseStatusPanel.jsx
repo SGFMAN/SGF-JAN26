@@ -106,6 +106,139 @@ function plannerNodeHoverLines({ item, tile, inactive, requirementsByKey, isSour
   return [isGreen ? "Complete" : "In Progress"];
 }
 
+const ROAD_ASPHALT_WIDTH = 14;
+const ROAD_EDGE_WIDTH = 2.2;
+const ROAD_TOTAL_WIDTH = ROAD_ASPHALT_WIDTH + ROAD_EDGE_WIDTH * 2;
+const ROAD_HEAD_LENGTH = 32;
+const ROAD_HEAD_OVERLAP = 6;
+const ROAD_HEAD_WIDTH_SCALE = 3.4;
+
+function parseCubicPath(d) {
+  const nums = String(d || "").match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi)?.map(Number);
+  if (!nums || nums.length < 8) return null;
+  return {
+    p0: { x: nums[0], y: nums[1] },
+    p1: { x: nums[2], y: nums[3] },
+    p2: { x: nums[4], y: nums[5] },
+    p3: { x: nums[6], y: nums[7] },
+  };
+}
+
+function cubicTangent(p0, p1, p2, p3, t) {
+  const mt = 1 - t;
+  const dx =
+    3 * mt * mt * (p1.x - p0.x) + 6 * mt * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x);
+  const dy =
+    3 * mt * mt * (p1.y - p0.y) + 6 * mt * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y);
+  const len = Math.hypot(dx, dy);
+  if (len > 0.001) return { x: dx / len, y: dy / len };
+  const fb = Math.hypot(p3.x - p0.x, p3.y - p0.y) || 1;
+  return { x: (p3.x - p0.x) / fb, y: (p3.y - p0.y) / fb };
+}
+
+function plannerLinkCubic(link) {
+  if (link.self) {
+    const parsed = parseCubicPath(link.d);
+    if (parsed) return parsed;
+  }
+  const x1 = Number(link.x1) || 0;
+  const y1 = Number(link.y1) || 0;
+  const x2 = Number(link.x2) || 0;
+  const y2 = Number(link.y2) || 0;
+  const adx = x2 - x1;
+  const ady = y2 - y1;
+  const dist = Math.hypot(adx, ady) || 1;
+  const sx = adx >= 0 ? 1 : -1;
+  const sy = ady >= 0 ? 1 : -1;
+  const nearlyH = Math.abs(ady) < 10;
+  const nearlyV = Math.abs(adx) < 10;
+  const ox = Number.isFinite(Number(link.ox)) ? Number(link.ox) : nearlyV ? 0 : sx;
+  const oy = Number.isFinite(Number(link.oy)) ? Number(link.oy) : nearlyV ? sy : 0;
+  const ix = Number.isFinite(Number(link.ix)) ? Number(link.ix) : nearlyH ? sx : 0;
+  const iy = Number.isFinite(Number(link.iy)) ? Number(link.iy) : nearlyH ? 0 : sy;
+  if (nearlyH || nearlyV) {
+    const delta = nearlyH ? Math.abs(adx) : Math.abs(ady);
+    const reach = Math.min(dist * 0.5, Math.max(48, delta * 0.5));
+    return {
+      p0: { x: x1, y: y1 },
+      p1: { x: x1 + ox * reach, y: y1 + oy * reach },
+      p2: { x: x2 - ix * reach, y: y2 - iy * reach },
+      p3: { x: x2, y: y2 },
+    };
+  }
+  const handleOut = Math.min(dist * 0.42, Math.max(56, dist * 0.36));
+  const handleIn = Math.min(dist * 0.42, Math.max(56, dist * 0.36));
+  return {
+    p0: { x: x1, y: y1 },
+    p1: { x: x1 + ox * handleOut, y: y1 + oy * handleOut },
+    p2: { x: x2 - ix * handleIn, y: y2 - iy * handleIn },
+    p3: { x: x2, y: y2 },
+  };
+}
+
+function arrivalDirection(link, cubic) {
+  if (Number.isFinite(Number(link?.ix)) && Number.isFinite(Number(link?.iy))) {
+    const len = Math.hypot(link.ix, link.iy) || 1;
+    return { x: link.ix / len, y: link.iy / len };
+  }
+  return cubicTangent(cubic.p0, cubic.p1, cubic.p2, cubic.p3, 1);
+}
+
+function fmtPt(n) {
+  return Number(n).toFixed(2);
+}
+
+function plannerRoadGeometry(link) {
+  const cubic = plannerLinkCubic(link);
+  const tan = arrivalDirection(link, cubic);
+  const span = Math.hypot(cubic.p3.x - cubic.p0.x, cubic.p3.y - cubic.p0.y) || 1;
+  const headLen = Math.min(ROAD_HEAD_LENGTH, Math.max(22, span * 0.32));
+  const tip = {
+    x: cubic.p3.x + tan.x * ROAD_HEAD_OVERLAP,
+    y: cubic.p3.y + tan.y * ROAD_HEAD_OVERLAP,
+  };
+  const end = {
+    x: tip.x - tan.x * headLen,
+    y: tip.y - tan.y * headLen,
+  };
+  const d = `M ${fmtPt(cubic.p0.x)} ${fmtPt(cubic.p0.y)} C ${fmtPt(cubic.p1.x)} ${fmtPt(cubic.p1.y)}, ${fmtPt(cubic.p2.x)} ${fmtPt(cubic.p2.y)}, ${fmtPt(end.x)} ${fmtPt(end.y)}`;
+  const half = (ROAD_TOTAL_WIDTH / 2) * ROAD_HEAD_WIDTH_SCALE;
+  const px = -tan.y;
+  const py = tan.x;
+  const left = { x: end.x + px * half, y: end.y + py * half };
+  const right = { x: end.x - px * half, y: end.y - py * half };
+  const centerStop = {
+    x: end.x + tan.x * headLen * 0.62,
+    y: end.y + tan.y * headLen * 0.62,
+  };
+  return {
+    d,
+    headPoints: `${fmtPt(left.x)},${fmtPt(left.y)} ${fmtPt(tip.x)},${fmtPt(tip.y)} ${fmtPt(right.x)},${fmtPt(right.y)}`,
+    headEdge: `M ${fmtPt(left.x)} ${fmtPt(left.y)} L ${fmtPt(tip.x)} ${fmtPt(tip.y)} L ${fmtPt(right.x)} ${fmtPt(right.y)}`,
+    headCenter: `M ${fmtPt(end.x)} ${fmtPt(end.y)} L ${fmtPt(centerStop.x)} ${fmtPt(centerStop.y)}`,
+  };
+}
+
+function PlannerRoad({ link, layer }) {
+  const geo = plannerRoadGeometry(link);
+  if (layer === "heads") {
+    return (
+      <g className="overview-planner-road">
+        <polygon className="overview-planner-road__head" points={geo.headPoints} />
+        <path className="overview-planner-road__head-edge" d={geo.headEdge} />
+        <path className="overview-planner-road__head-center" d={geo.headCenter} />
+      </g>
+    );
+  }
+  return (
+    <g className="overview-planner-road">
+      <path className="overview-planner-road__edging" d={geo.d} />
+      <path className="overview-planner-road__asphalt" d={geo.d} />
+      <path className="overview-planner-road__center" d={geo.d} />
+    </g>
+  );
+}
+
 function OverviewPlannerBoard({
   tiles,
   layout,
@@ -181,42 +314,9 @@ function OverviewPlannerBoard({
             className="overview-planner-arrows"
             aria-hidden="true"
           >
-            <defs>
-              <marker
-                id="overview-planner-arrow"
-                markerWidth="10"
-                markerHeight="8"
-                refX="9"
-                refY="4"
-                orient="auto"
-                markerUnits="strokeWidth"
-              >
-                <path d="M 0 0 L 10 4 L 0 8 z" fill={UI.textPrimary} />
-              </marker>
-            </defs>
-            {drawnLinks.map((link) =>
-              link.self ? (
-                <path
-                  key={link.id}
-                  d={link.d}
-                  fill="none"
-                  stroke={UI.textPrimary}
-                  strokeWidth="2"
-                  markerEnd="url(#overview-planner-arrow)"
-                />
-              ) : (
-                <line
-                  key={link.id}
-                  x1={link.x1}
-                  y1={link.y1}
-                  x2={link.x2}
-                  y2={link.y2}
-                  stroke={UI.textPrimary}
-                  strokeWidth="2"
-                  markerEnd="url(#overview-planner-arrow)"
-                />
-              )
-            )}
+            {drawnLinks.map((link) => (
+              <PlannerRoad key={link.id} link={link} layer="shafts" />
+            ))}
           </svg>
           {PLANNER_FLOW_ITEMS.map((item) => {
             if (hidden.has(item.key)) return null;
@@ -327,6 +427,16 @@ function OverviewPlannerBoard({
               </div>
             );
           })}
+          <svg
+            width={extent.width}
+            height={extent.height}
+            className="overview-planner-arrows overview-planner-arrows--heads"
+            aria-hidden="true"
+          >
+            {drawnLinks.map((link) => (
+              <PlannerRoad key={`${link.id}-head`} link={link} layer="heads" />
+            ))}
+          </svg>
         </div>
       </div>
       {hoverTip

@@ -390,6 +390,157 @@ function CumulativeRatesLineChart({
   );
 }
 
+function MonthlyCompareLineChart({
+  monthlyData,
+  previousYearData,
+  showVic,
+  showQld,
+  showGreen,
+  showLastYear,
+  formatCurrency,
+}) {
+  const maxJobsRounded = 50;
+  const barAreaHeight = 550;
+  const chartHeight = 600;
+  const bottomOffset = (chartHeight - barAreaHeight) / 2;
+  const svgW = 1200;
+  const padX = 24;
+  const innerW = svgW - padX * 2;
+  const xAt = (i) => padX + ((i + 0.5) / 12) * innerW;
+  const yAt = (count) =>
+    chartHeight - bottomOffset - (Math.min(Math.max(0, Number(count) || 0), maxJobsRounded) / maxJobsRounded) * barAreaHeight;
+
+  const series = [
+    showVic && {
+      key: "vic",
+      label: "VIC",
+      color: VIC_COLORS.darker,
+      getCount: (m) => m?.vicSalesCount || 0,
+      getValue: (m) => m?.vicTotalValue || 0,
+    },
+    showQld && {
+      key: "qld",
+      label: "QLD",
+      color: QLD_COLORS.darker,
+      getCount: (m) => m?.qldSalesCount || 0,
+      getValue: (m) => m?.qldTotalValue || 0,
+    },
+    showGreen && {
+      key: "green",
+      label: "STREAM",
+      color: GREEN_COLORS.darker,
+      getCount: (m) => m?.greenStreamSalesCount || 0,
+      getValue: (m) => m?.greenStreamTotalValue || 0,
+    },
+  ].filter(Boolean);
+
+  const toPoints = (rows, getCount) =>
+    (rows || []).map((m, i) => `${xAt(i).toFixed(1)},${yAt(getCount(m)).toFixed(1)}`).join(" ");
+
+  return (
+    <div style={{ width: "100%", maxWidth: "1240px", position: "relative", display: "flex" }}>
+      <div style={{ width: "60px", flexShrink: 0, position: "relative", height: "600px", marginRight: "8px" }}>
+        {Array.from({ length: maxJobsRounded / 5 + 1 }, (_, i) => {
+          const jobCount = i * 5;
+          const positionFromBottom = (jobCount / maxJobsRounded) * barAreaHeight;
+          const bottomPosition = bottomOffset + positionFromBottom;
+          return (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                bottom: `${bottomPosition}px`,
+                right: "0",
+                display: "flex",
+                alignItems: "flex-end",
+                transform: "translateY(50%)",
+              }}
+            >
+              <div style={{ fontSize: "0.75rem", color: MONUMENT, fontWeight: 600 }}>{jobCount}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+        <svg
+          width="100%"
+          height={chartHeight + 52}
+          viewBox={`0 0 ${svgW} ${chartHeight + 52}`}
+          preserveAspectRatio="xMinYMid meet"
+          role="img"
+          aria-label="Monthly sales line chart for VIC, QLD, and STREAM"
+        >
+          {Array.from({ length: maxJobsRounded / 5 + 1 }, (_, i) => {
+            const jobCount = i * 5;
+            const y = yAt(jobCount);
+            return (
+              <line
+                key={`grid-${jobCount}`}
+                x1={padX}
+                x2={svgW - padX}
+                y1={y}
+                y2={y}
+                stroke="#d0d0d0"
+                strokeWidth="1"
+                opacity="0.7"
+              />
+            );
+          })}
+          {series.map((s) => (
+            <g key={s.key}>
+              {showLastYear && Array.isArray(previousYearData) && previousYearData.length === 12 ? (
+                <polyline
+                  points={toPoints(previousYearData, s.getCount)}
+                  fill="none"
+                  stroke={s.color}
+                  strokeWidth="2.25"
+                  strokeDasharray="7 5"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  opacity="0.42"
+                />
+              ) : null}
+              <polyline
+                points={toPoints(monthlyData, s.getCount)}
+                fill="none"
+                stroke={s.color}
+                strokeWidth="3"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+              {monthlyData.map((m, i) => {
+                const count = s.getCount(m);
+                return (
+                  <circle key={`${s.key}-${i}`} cx={xAt(i)} cy={yAt(count)} r="4.5" fill={s.color}>
+                    <title>
+                      {s.label} · {m.name}: {count}
+                      {formatCurrency ? ` — ${formatCurrency(s.getValue(m))}` : ""}
+                    </title>
+                  </circle>
+                );
+              })}
+            </g>
+          ))}
+          {monthlyData.map((m, i) => (
+            <text
+              key={`lbl-${m.name}`}
+              x={xAt(i)}
+              y={chartHeight + 28}
+              textAnchor="end"
+              fill={MONUMENT}
+              fontSize="13"
+              fontWeight="500"
+              transform={`rotate(-45 ${xAt(i)} ${chartHeight + 28})`}
+            >
+              {m.name.substring(0, 3)}
+            </text>
+          ))}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 export default function SalesAnalytics() {
   const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
@@ -399,7 +550,7 @@ export default function SalesAnalytics() {
     return new Date().getFullYear().toString();
   });
   const [yearView, setYearView] = useState(SALES_YEAR_VIEW.CALENDAR);
-  const [selectedView, setSelectedView] = useState("bar"); // "bar" | "pie" | "rates" | "targets"
+  const [selectedView, setSelectedView] = useState("bar"); // "bar" | "line" | "pie" | "rates" | "targets"
   const [showLastYearOutline, setShowLastYearOutline] = useState(true);
   const [showMonthlyTargets, setShowMonthlyTargets] = useState(false);
   const [showAdjustedTargets, setShowAdjustedTargets] = useState(false);
@@ -807,7 +958,7 @@ export default function SalesAnalytics() {
                 minWidth: "44px",
               }}
             >
-              GREEN
+              {selectedView === "line" ? "STREAM" : "GREEN"}
             </button>
               </>
             )}
@@ -846,7 +997,7 @@ export default function SalesAnalytics() {
             color: MONUMENT,
           }}
         >
-          {/* Bar Graph - Light Blue */}
+          {/* Bar Graph / Line - Light Blue */}
           <div style={{ background: MENU.blue, borderRadius: "10px", padding: "4px", border: `1px solid ${UI.outline}` }}>
             <button
               onClick={() => setSelectedView("bar")}
@@ -870,6 +1021,29 @@ export default function SalesAnalytics() {
               }}
             >
               Bar Graph
+            </button>
+            <button
+              onClick={() => setSelectedView("line")}
+              style={{
+                background: selectedView === "line" ? MENU.blueActive : "transparent",
+                color: selectedView === "line" ? MENU.activeText : UI.textSecondary,
+                border: "none",
+                borderRadius: "10px",
+                padding: "8px 8px",
+                fontSize: "0.95rem",
+                fontWeight: 500,
+                textAlign: "center",
+                textDecoration: "none",
+                letterSpacing: "0.5px",
+                cursor: "pointer",
+                transition: "background 0.18s, color 0.15s",
+                marginBottom: "0px",
+                lineHeight: "1.4",
+                display: "block",
+                width: "100%",
+              }}
+            >
+              Line
             </button>
           </div>
           
@@ -1206,6 +1380,21 @@ export default function SalesAnalytics() {
                     chartTitle={ratesChartTitle}
                     previousYearMonthlyData={previousYearData}
                     showLastYearRates={ratesShowLastYear}
+                  />
+                </>
+              ) : selectedView === "line" ? (
+                <>
+                  <h2 style={{ fontSize: "1.15rem", marginTop: 0, color: MONUMENT, marginBottom: "32px" }}>
+                    Monthly Sales for {periodLabel}
+                  </h2>
+                  <MonthlyCompareLineChart
+                    monthlyData={monthlyData}
+                    previousYearData={previousYearData}
+                    showVic={showBarVic}
+                    showQld={showBarQld}
+                    showGreen={showBarGreen}
+                    showLastYear={showLastYearOutline}
+                    formatCurrency={formatCurrency}
                   />
                 </>
               ) : selectedView === "targets" ? (

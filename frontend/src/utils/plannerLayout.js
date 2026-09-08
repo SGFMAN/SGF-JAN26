@@ -222,6 +222,21 @@ function plannerRectCenter(point, size) {
   };
 }
 
+function unitVec(dx, dy) {
+  const len = Math.hypot(dx, dy);
+  if (len < 0.001) return { x: 1, y: 0 };
+  return { x: dx / len, y: dy / len };
+}
+
+function boxSideNormal(center, edge, size) {
+  const nx = (edge.x - center.x) / Math.max(size.width / 2, 1);
+  const ny = (edge.y - center.y) / Math.max(size.height / 2, 1);
+  if (Math.abs(nx) >= Math.abs(ny)) {
+    return { x: nx >= 0 ? 1 : -1, y: 0 };
+  }
+  return { x: 0, y: ny >= 0 ? 1 : -1 };
+}
+
 function plannerBoxEdgeToward(center, other, size) {
   const dx = other.x - center.x;
   const dy = other.y - center.y;
@@ -270,29 +285,39 @@ export function buildDrawnPlannerLinks(positions, links) {
       const to = plannerRectCenter(positions[link.to], toSize);
       const total = group.length;
       if (link.from === link.to) {
-        const loop = 36 + index * 14;
+        const loop = 56 + index * 16;
         drawn.push({
           id: link.id,
           self: true,
-          d: `M ${from.x + fromSize.width / 2} ${from.y - 10} C ${from.x + fromSize.width / 2 + loop} ${from.y - 28 - index * 8}, ${from.x + fromSize.width / 2 + loop} ${from.y + 28 + index * 8}, ${from.x + fromSize.width / 2} ${from.y + 10}`,
+          d: `M ${from.x + fromSize.width / 2} ${from.y - 10} C ${from.x + fromSize.width / 2 + loop} ${from.y - 44 - index * 10}, ${from.x + fromSize.width / 2 + loop} ${from.y + 44 + index * 10}, ${from.x + fromSize.width / 2} ${from.y + 10}`,
         });
         return;
       }
       const start = plannerBoxEdgeToward(from, to, fromSize);
       const end = plannerBoxEdgeToward(to, from, toSize);
+      const leave = boxSideNormal(from, start, fromSize);
       const dx = end.x - start.x;
       const dy = end.y - start.y;
       const len = Math.hypot(dx, dy) || 1;
       const nx = -dy / len;
       const ny = dx / len;
       const offset = (index - (total - 1) / 2) * 10;
+      const x1 = start.x + nx * offset;
+      const y1 = start.y + ny * offset;
+      const x2 = end.x + nx * offset;
+      const y2 = end.y + ny * offset;
+      const arrive = unitVec(to.x - x2, to.y - y2);
       drawn.push({
         id: link.id,
         self: false,
-        x1: start.x + nx * offset,
-        y1: start.y + ny * offset,
-        x2: end.x + nx * offset,
-        y2: end.y + ny * offset,
+        x1,
+        y1,
+        x2,
+        y2,
+        ox: leave.x,
+        oy: leave.y,
+        ix: arrive.x,
+        iy: arrive.y,
       });
     });
   }

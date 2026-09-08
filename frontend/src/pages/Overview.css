@@ -436,6 +436,56 @@
   overflow: visible;
   pointer-events: none;
   z-index: 1;
+  --road-asphalt: #83868c;
+  --road-marking: #ffffff;
+}
+
+.overview-planner-arrows--heads {
+  z-index: 3;
+}
+
+.overview-planner-road__edging,
+.overview-planner-road__asphalt,
+.overview-planner-road__center,
+.overview-planner-road__head-edge,
+.overview-planner-road__head-center {
+  fill: none;
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+}
+
+.overview-planner-road__edging {
+  stroke: var(--road-marking);
+  stroke-width: 18.4;
+}
+
+.overview-planner-road__asphalt {
+  stroke: var(--road-asphalt);
+  stroke-width: 14;
+}
+
+.overview-planner-road__center {
+  stroke: var(--road-marking);
+  stroke-width: 1.8;
+  stroke-dasharray: 13 9;
+}
+
+.overview-planner-road__head {
+  fill: var(--road-asphalt);
+  stroke: none;
+}
+
+.overview-planner-road__head-edge {
+  stroke: var(--road-marking);
+  stroke-width: 2.2;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 2.4;
+}
+
+.overview-planner-road__head-center {
+  stroke: var(--road-marking);
+  stroke-width: 1.8;
+  stroke-dasharray: 5 6;
 }
 
 .overview-planner-node {

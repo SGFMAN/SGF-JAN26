@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   clamp,
   drawCubePreview,
+  drawFrontArrow,
   projectShapePoint,
   rotateShapeXY,
   shapeHitDepth,
@@ -25,7 +26,39 @@ function newCube() {
     x: 0,
     y: 0,
     z: 0,
+    groundSnap: true,
+    rx: 0,
+    ry: 0,
+    rz: 0,
   };
+}
+
+function newCylinder() {
+  return {
+    id: `cyl-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    type: "cylinder",
+    l: 80,
+    r: 18,
+    x: 0,
+    y: 0,
+    z: 0,
+    groundSnap: true,
+    rx: 0,
+    ry: 0,
+    rz: 0,
+  };
+}
+
+function shapeListLabel(shapes, index) {
+  const shape = shapes[index];
+  const kind = shape.type === "cylinder" ? "Cylinder" : "Cube";
+  const n = shapes.slice(0, index + 1).filter((item) => item.type === shape.type).length;
+  return `${kind} ${n}`;
+}
+
+function nextShapeX(prev) {
+  const last = prev[prev.length - 1];
+  return last ? (Number(last.x) || 0) + 90 : 0;
 }
 
 const overlayStyle = {
@@ -40,8 +73,8 @@ const overlayStyle = {
 };
 
 const modalStyle = {
-  width: "min(1080px, 100%)",
-  height: "min(680px, 100%)",
+  width: "min(1680px, calc(100% - 24px))",
+  height: "min(780px, calc(100% - 24px))",
   background: "#d8d8dc",
   borderRadius: 12,
   display: "flex",
@@ -71,72 +104,45 @@ const inputStyle = {
 
 const sliderRowStyle = {
   display: "grid",
-  gridTemplateColumns: "52px minmax(0, 1fr) 64px",
+  gridTemplateColumns: "58px minmax(120px, 1fr) 64px",
   gap: 8,
   alignItems: "center",
 };
 
-function PercentSlider({ label, name, value, onChange, min = 0, max = 95 }) {
+const sliderRowWithSnapStyle = {
+  ...sliderRowStyle,
+  gridTemplateColumns: "58px minmax(120px, 1fr) 64px 40px",
+};
+
+const PREVIEW_SCALE = 1.7;
+
+function PercentSlider({ label, name, value, onChange, min = 0, max = 95, snap = null, snapRange = 8 }) {
   const pct = Math.round(clamp(value, min / 100, max / 100) * 100);
   const aria = name || label;
+  const snapPct = snap != null ? Math.round(snap * 100) : null;
+  const snapped = snapPct != null;
   return (
-    <div style={sliderRowStyle}>
+    <div style={snapped ? sliderRowWithSnapStyle : sliderRowStyle}>
       <span>{label}</span>
       <input
         type="range"
         min={min}
         max={max}
         value={pct}
-        aria-label={aria}
-        onChange={(e) => onChange(Number(e.target.value) / 100)}
-      />
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={pct}
-        aria-label={`${aria} value`}
-        onChange={(e) => onChange(Number(e.target.value) / 100)}
-        style={inputStyle}
-      />
-    </div>
-  );
-}
-
-function NumberSlider({ label, name, value, onChange, min, max, step = 1, snap = null, snapRange = 10 }) {
-  const v = clamp(Number(value) || 0, min, max);
-  const aria = name || label;
-  const snapped = snap != null;
-  return (
-    <div
-      style={
-        snapped
-          ? { ...sliderRowStyle, gridTemplateColumns: "52px minmax(0, 1fr) 64px 40px" }
-          : sliderRowStyle
-      }
-    >
-      <span>{label}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={v}
         aria-label={aria}
         onChange={(e) => {
           let next = Number(e.target.value);
-          if (snapped && Math.abs(next - snap) <= snapRange) next = snap;
-          onChange(next);
+          if (snapped && Math.abs(next - snapPct) <= snapRange) next = snapPct;
+          onChange(next / 100);
         }}
       />
       <input
         type="number"
         min={min}
         max={max}
-        step={step}
-        value={v}
+        value={pct}
         aria-label={`${aria} value`}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
         style={inputStyle}
       />
       {snapped ? (
@@ -148,14 +154,98 @@ function NumberSlider({ label, name, value, onChange, min, max, step = 1, snap =
             height: 32,
             padding: 0,
             borderRadius: 6,
-            border: v === snap ? "1px solid #323233" : "1px solid #b4b4b8",
-            background: v === snap ? "#fff" : "#e4e4e8",
+            border: pct === snapPct ? "1px solid #323233" : "1px solid #b4b4b8",
+            background: pct === snapPct ? "#fff" : "#e4e4e8",
             fontWeight: 600,
             fontSize: "0.7rem",
             cursor: "pointer",
           }}
         >
           Mid
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function NumberSlider({
+  label,
+  name,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  snap = null,
+  snapRange = 10,
+  snapLabel = "Mid",
+  snapLock = false,
+  onSnapLock,
+}) {
+  const v = clamp(Number(value) || 0, min, max);
+  const aria = name || label;
+  const snapped = snap != null;
+  const locked = Boolean(snapLock);
+  const active = locked || (!onSnapLock && v === snap);
+  return (
+    <div style={snapped ? sliderRowWithSnapStyle : sliderRowStyle}>
+      <span>{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={locked ? snap : v}
+        aria-label={aria}
+        onChange={(e) => {
+          let next = Number(e.target.value);
+          if (snapped && Math.abs(next - snap) <= snapRange) next = snap;
+          if (locked && onSnapLock && next !== snap) onSnapLock(false);
+          onChange(next);
+        }}
+      />
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={locked ? snap : v}
+        aria-label={`${aria} value`}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          if (locked && onSnapLock && next !== snap) onSnapLock(false);
+          onChange(next);
+        }}
+        style={inputStyle}
+      />
+      {snapped ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (onSnapLock) {
+              if (locked) onSnapLock(false);
+              else {
+                onChange(snap);
+                onSnapLock(true);
+              }
+            } else {
+              onChange(snap);
+            }
+          }}
+          aria-label={onSnapLock ? `${aria} snap to ground` : `${aria} snap to middle`}
+          aria-pressed={onSnapLock ? locked : undefined}
+          style={{
+            height: 32,
+            padding: 0,
+            borderRadius: 6,
+            border: active ? "1px solid #323233" : "1px solid #b4b4b8",
+            background: active ? "#fff" : "#e4e4e8",
+            fontWeight: 600,
+            fontSize: "0.7rem",
+            cursor: "pointer",
+          }}
+        >
+          {snapLabel}
         </button>
       ) : null}
     </div>
@@ -217,25 +307,61 @@ export default function SandpitDesigner({ initialShapes = [], onClose }) {
       }
       const ox = cw / 2;
       const oy = ch * 0.62;
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.scale(PREVIEW_SCALE, PREVIEW_SCALE);
+      const ground = [
+        projectShapePoint(-240, -180, 0, heading),
+        projectShapePoint(240, -180, 0, heading),
+        projectShapePoint(240, 180, 0, heading),
+        projectShapePoint(-240, 180, 0, heading),
+      ];
+      ctx.beginPath();
+      ctx.moveTo(ground[0].x, ground[0].y);
+      ground.slice(1).forEach((p) => ctx.lineTo(p.x, p.y));
+      ctx.closePath();
+      ctx.fillStyle = "rgba(92, 112, 64, 0.55)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.28)";
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      for (let gx = -200; gx <= 200; gx += 40) {
+        const a = projectShapePoint(gx, -180, 0, heading);
+        const b = projectShapePoint(gx, 180, 0, heading);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      for (let gy = -160; gy <= 160; gy += 40) {
+        const a = projectShapePoint(-240, gy, 0, heading);
+        const b = projectShapePoint(240, gy, 0, heading);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
       const ordered = shapes.slice().sort((a, b) => {
         const da = rotateShapeXY(Number(a.x) || 0, Number(a.y) || 0, heading).y;
         const db = rotateShapeXY(Number(b.x) || 0, Number(b.y) || 0, heading).y;
         return da - db;
       });
       ordered.forEach((shape) => {
-        const sx = ox + projectShapePoint(Number(shape.x) || 0, Number(shape.y) || 0, 0, heading).x;
-        const sy = oy + projectShapePoint(Number(shape.x) || 0, Number(shape.y) || 0, 0, heading).y;
+        const sx = projectShapePoint(Number(shape.x) || 0, Number(shape.y) || 0, 0, heading).x;
+        const sy = projectShapePoint(Number(shape.x) || 0, Number(shape.y) || 0, 0, heading).y;
         ctx.fillStyle = "rgba(0,0,0,0.16)";
         ctx.beginPath();
         ctx.ellipse(sx + 8, sy + 16, 54, 16, 0, 0, Math.PI * 2);
         ctx.fill();
       });
       ordered.forEach((shape) => {
-        drawCubePreview(ctx, shape, heading, ox, oy, {
+        drawCubePreview(ctx, shape, heading, 0, 0, {
           selected: shape.id === selectedId,
           showLabels: shape.id === selectedId,
         });
       });
+      drawFrontArrow(ctx, heading, shapes);
+      ctx.restore();
     }
 
     draw();
@@ -246,12 +372,14 @@ export default function SandpitDesigner({ initialShapes = [], onClose }) {
 
   function addCube() {
     const cube = newCube();
-    setShapes((prev) => {
-      const last = prev[prev.length - 1];
-      const placed = { ...cube, x: last ? (Number(last.x) || 0) + 90 : 0 };
-      return [...prev, placed];
-    });
+    setShapes((prev) => [...prev, { ...cube, x: nextShapeX(prev) }]);
     setSelectedId(cube.id);
+  }
+
+  function addCylinder() {
+    const cyl = newCylinder();
+    setShapes((prev) => [...prev, { ...cyl, x: nextShapeX(prev) }]);
+    setSelectedId(cyl.id);
   }
 
   function updateSelected(patch) {
@@ -281,8 +409,8 @@ export default function SandpitDesigner({ initialShapes = [], onClose }) {
     const rect = wrap.getBoundingClientRect();
     const ox = rect.width / 2;
     const oy = rect.height * 0.62;
-    const px = e.clientX - rect.left - ox;
-    const py = e.clientY - rect.top - oy;
+    const px = (e.clientX - rect.left - ox) / PREVIEW_SCALE;
+    const py = (e.clientY - rect.top - oy) / PREVIEW_SCALE;
     let best = null;
     shapes.forEach((shape) => {
       const depth = shapeHitDepth(shape, heading, px, py);
@@ -327,7 +455,7 @@ export default function SandpitDesigner({ initialShapes = [], onClose }) {
           </button>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "240px 1fr 280px" }}>
+        <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "220px minmax(0, 1fr) 460px" }}>
           <div
             style={{
               padding: 12,
@@ -338,6 +466,24 @@ export default function SandpitDesigner({ initialShapes = [], onClose }) {
               background: "#ececf0",
             }}
           >
+            <button
+              type="button"
+              onClick={() => {
+                setShapes([]);
+                setSelectedId(null);
+              }}
+              aria-label="Clear model"
+              style={{
+                height: 36,
+                borderRadius: 8,
+                border: "1px solid #8a8a90",
+                background: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Clear
+            </button>
             <button
               type="button"
               onClick={addCube}
@@ -351,6 +497,20 @@ export default function SandpitDesigner({ initialShapes = [], onClose }) {
               }}
             >
               Add cube
+            </button>
+            <button
+              type="button"
+              onClick={addCylinder}
+              style={{
+                height: 36,
+                borderRadius: 8,
+                border: "1px solid #8a8a90",
+                background: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Add cylinder
             </button>
             <div style={{ fontSize: "0.75rem", color: "#5a5a60" }}>Shapes</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, overflow: "auto" }}>
@@ -371,7 +531,7 @@ export default function SandpitDesigner({ initialShapes = [], onClose }) {
                       cursor: "pointer",
                     }}
                   >
-                    Cube {index + 1}
+                    {shapeListLabel(shapes, index)}
                   </button>
                 ))
               )}
@@ -412,7 +572,9 @@ export default function SandpitDesigner({ initialShapes = [], onClose }) {
               overflow: "auto",
             }}
           >
-            <div style={{ fontWeight: 700, color: "#323233" }}>{selected ? "Cube" : "Shape"}</div>
+            <div style={{ fontWeight: 700, color: "#323233" }}>
+              {selected ? (selected.type === "cylinder" ? "Cylinder" : "Cube") : "Shape"}
+            </div>
             {selected ? (
               <>
                 <div style={fieldStyle}>
@@ -438,129 +600,202 @@ export default function SandpitDesigner({ initialShapes = [], onClose }) {
                   <NumberSlider
                     label="Z"
                     name="Position Z"
-                    value={selected.z || 0}
-                    onChange={(value) => updateSelected({ z: value })}
+                    value={selected.groundSnap ? 0 : selected.z || 0}
+                    onChange={(value) => updateSelected({ z: value, groundSnap: false })}
                     min={-100}
                     max={200}
-                  />
-                </div>
-                <label style={fieldStyle}>
-                  Length
-                  <div style={sliderRowStyle}>
-                    <span>L</span>
-                    <input
-                      type="range"
-                      min="8"
-                      max="200"
-                      value={selected.l}
-                      onChange={(e) => updateSelected({ l: Number(e.target.value) })}
-                    />
-                    <input
-                      type="number"
-                      min="8"
-                      max="200"
-                      value={selected.l}
-                      onChange={(e) => updateSelected({ l: Number(e.target.value) })}
-                      style={inputStyle}
-                    />
-                  </div>
-                </label>
-                <label style={fieldStyle}>
-                  Width
-                  <div style={sliderRowStyle}>
-                    <span>W</span>
-                    <input
-                      type="range"
-                      min="8"
-                      max="200"
-                      value={selected.w}
-                      onChange={(e) => updateSelected({ w: Number(e.target.value) })}
-                    />
-                    <input
-                      type="number"
-                      min="8"
-                      max="200"
-                      value={selected.w}
-                      onChange={(e) => updateSelected({ w: Number(e.target.value) })}
-                      style={inputStyle}
-                    />
-                  </div>
-                </label>
-                <label style={fieldStyle}>
-                  Height
-                  <div style={sliderRowStyle}>
-                    <span>H</span>
-                    <input
-                      type="range"
-                      min="8"
-                      max="200"
-                      value={selected.h}
-                      onChange={(e) => updateSelected({ h: Number(e.target.value) })}
-                    />
-                    <input
-                      type="number"
-                      min="8"
-                      max="200"
-                      value={selected.h}
-                      onChange={(e) => updateSelected({ h: Number(e.target.value) })}
-                      style={inputStyle}
-                    />
-                  </div>
-                </label>
-                <div style={fieldStyle}>
-                  End taper horizontal
-                  <PercentSlider
-                    label="End A"
-                    name="Horizontal End A"
-                    value={taperAmountOf(selected, "h", "a")}
-                    onChange={(value) => updateSelected({ taperHA: value })}
-                    min={-95}
-                    max={95}
-                  />
-                  <PercentSlider
-                    label="End B"
-                    name="Horizontal End B"
-                    value={taperAmountOf(selected, "h", "b")}
-                    onChange={(value) => updateSelected({ taperHB: value })}
-                    min={-95}
-                    max={95}
-                  />
-                  <PercentSlider
-                    label="A / B"
-                    name="Horizontal A/B"
-                    value={taperPosOf(selected, "h")}
-                    onChange={(value) => updateSelected({ taperHPos: value })}
-                    min={5}
-                    max={95}
+                    snap={0}
+                    snapRange={8}
+                    snapLabel="Gnd"
+                    snapLock={Boolean(selected.groundSnap)}
+                    onSnapLock={(locked) => updateSelected({ groundSnap: locked, z: locked ? 0 : selected.z || 0 })}
                   />
                 </div>
                 <div style={fieldStyle}>
-                  End taper vertical
-                  <PercentSlider
-                    label="End A"
-                    name="Vertical End A"
-                    value={taperAmountOf(selected, "v", "a")}
-                    onChange={(value) => updateSelected({ taperVA: value })}
-                    min={-95}
-                    max={95}
+                  Rotate
+                  <NumberSlider
+                    label="X"
+                    name="Rotate X"
+                    value={selected.rx || 0}
+                    onChange={(value) => updateSelected({ rx: Math.round(value) })}
+                    min={-180}
+                    max={180}
+                    snap={0}
+                    snapRange={6}
                   />
-                  <PercentSlider
-                    label="End B"
-                    name="Vertical End B"
-                    value={taperAmountOf(selected, "v", "b")}
-                    onChange={(value) => updateSelected({ taperVB: value })}
-                    min={-95}
-                    max={95}
+                  <NumberSlider
+                    label="Y"
+                    name="Rotate Y"
+                    value={selected.ry || 0}
+                    onChange={(value) => updateSelected({ ry: Math.round(value) })}
+                    min={-180}
+                    max={180}
+                    snap={0}
+                    snapRange={6}
                   />
-                  <PercentSlider
-                    label="A / B"
-                    name="Vertical A/B"
-                    value={taperPosOf(selected, "v")}
-                    onChange={(value) => updateSelected({ taperVPos: value })}
-                    min={5}
-                    max={95}
+                  <NumberSlider
+                    label="Z"
+                    name="Rotate Z"
+                    value={selected.rz || 0}
+                    onChange={(value) => updateSelected({ rz: Math.round(value) })}
+                    min={-180}
+                    max={180}
+                    snap={0}
+                    snapRange={6}
                   />
                 </div>
+                {selected.type === "cylinder" ? (
+                  <>
+                    <div style={fieldStyle}>
+                      Length
+                      <NumberSlider
+                        label="L"
+                        name="Length L"
+                        value={selected.l}
+                        onChange={(value) => updateSelected({ l: value })}
+                        min={8}
+                        max={200}
+                      />
+                    </div>
+                    <div style={fieldStyle}>
+                      Radius
+                      <NumberSlider
+                        label="R"
+                        name="Radius"
+                        value={selected.r}
+                        onChange={(value) => updateSelected({ r: value })}
+                        min={4}
+                        max={80}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label style={fieldStyle}>
+                      Length
+                      <div style={sliderRowStyle}>
+                        <span>L</span>
+                        <input
+                          type="range"
+                          min="8"
+                          max="200"
+                          value={selected.l}
+                          onChange={(e) => updateSelected({ l: Number(e.target.value) })}
+                        />
+                        <input
+                          type="number"
+                          min="8"
+                          max="200"
+                          value={selected.l}
+                          onChange={(e) => updateSelected({ l: Number(e.target.value) })}
+                          style={inputStyle}
+                        />
+                      </div>
+                    </label>
+                    <label style={fieldStyle}>
+                      Width
+                      <div style={sliderRowStyle}>
+                        <span>W</span>
+                        <input
+                          type="range"
+                          min="8"
+                          max="200"
+                          value={selected.w}
+                          onChange={(e) => updateSelected({ w: Number(e.target.value) })}
+                        />
+                        <input
+                          type="number"
+                          min="8"
+                          max="200"
+                          value={selected.w}
+                          onChange={(e) => updateSelected({ w: Number(e.target.value) })}
+                          style={inputStyle}
+                        />
+                      </div>
+                    </label>
+                    <label style={fieldStyle}>
+                      Height
+                      <div style={sliderRowStyle}>
+                        <span>H</span>
+                        <input
+                          type="range"
+                          min="8"
+                          max="200"
+                          value={selected.h}
+                          onChange={(e) => updateSelected({ h: Number(e.target.value) })}
+                        />
+                        <input
+                          type="number"
+                          min="8"
+                          max="200"
+                          value={selected.h}
+                          onChange={(e) => updateSelected({ h: Number(e.target.value) })}
+                          style={inputStyle}
+                        />
+                      </div>
+                    </label>
+                    <div style={fieldStyle}>
+                      End taper horizontal
+                      <PercentSlider
+                        label="End A"
+                        name="Horizontal End A"
+                        value={taperAmountOf(selected, "h", "a")}
+                        onChange={(value) => updateSelected({ taperHA: value })}
+                        min={-95}
+                        max={95}
+                        snap={0}
+                      />
+                      <PercentSlider
+                        label="End B"
+                        name="Horizontal End B"
+                        value={taperAmountOf(selected, "h", "b")}
+                        onChange={(value) => updateSelected({ taperHB: value })}
+                        min={-95}
+                        max={95}
+                        snap={0}
+                      />
+                      <PercentSlider
+                        label="L / R"
+                        name="Horizontal left/right"
+                        value={taperPosOf(selected, "h")}
+                        onChange={(value) => updateSelected({ taperHPos: value })}
+                        min={5}
+                        max={95}
+                        snap={0.5}
+                      />
+                    </div>
+                    <div style={fieldStyle}>
+                      End taper vertical
+                      <PercentSlider
+                        label="End A"
+                        name="Vertical End A"
+                        value={taperAmountOf(selected, "v", "a")}
+                        onChange={(value) => updateSelected({ taperVA: value })}
+                        min={-95}
+                        max={95}
+                        snap={0}
+                      />
+                      <PercentSlider
+                        label="End B"
+                        name="Vertical End B"
+                        value={taperAmountOf(selected, "v", "b")}
+                        onChange={(value) => updateSelected({ taperVB: value })}
+                        min={-95}
+                        max={95}
+                        snap={0}
+                      />
+                      <PercentSlider
+                        label="Dn / Up"
+                        name="Vertical bottom/top"
+                        value={taperPosOf(selected, "v")}
+                        onChange={(value) => updateSelected({ taperVPos: value })}
+                        min={5}
+                        max={95}
+                        snap={0.5}
+                      />
+                    </div>
+                  </>
+                )}
               </>
             ) : (
               <div style={{ fontSize: "0.85rem", color: "#6a6a70" }}>Select a shape to edit its specs.</div>

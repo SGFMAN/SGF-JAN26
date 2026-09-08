@@ -16,6 +16,12 @@ import {
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
 import {
+  canonicalDraftspersonName,
+  filterDraftspersonUsers,
+  findDraftspersonUser,
+  unmatchedDraftspersonOption,
+} from "../utils/draftspersonUsers";
+import {
   DESIGN_PHASE,
   PERMIT_PHASE,
   isConstructionPhaseStatus,
@@ -512,7 +518,7 @@ export default function Drawings({
   useEffect(() => {
     if (project) {
       setDrawingsStatus(project.drawings_status || "Not Assigned");
-      setDraftsperson(normalizeDraftspersonField(project.draftsperson));
+      setDraftsperson(canonicalDraftspersonName(project.draftsperson, draftspersonUsers));
       setDrawingsHolder(project.drawings_holder || "design team");
     }
   }, [
@@ -521,6 +527,7 @@ export default function Drawings({
     project?.drawings_status,
     project?.drawings_holder,
     project?.updated_at,
+    draftspersonUsers,
   ]);
 
   useEffect(() => {
@@ -592,17 +599,7 @@ export default function Drawings({
         throw new Error("Failed to fetch users");
       }
       const allUsers = await usersResponse.json();
-      
-      // Filter users who have "Architectural Draftsperson" or "Architectural Graduate" as one of their positions
-      const draftspersons = allUsers.filter((user) => {
-        if (!user.positions || !Array.isArray(user.positions)) return false;
-        return user.positions.some((position) => {
-          const positionName = position.name ? position.name.toLowerCase() : "";
-          return positionName === "architectural draftsperson" || positionName === "architectural graduate";
-        });
-      });
-      
-      setDraftspersonUsers(draftspersons);
+      setDraftspersonUsers(filterDraftspersonUsers(allUsers));
     } catch (error) {
       console.error("Error fetching draftspersons:", error);
       setDraftspersonUsers([]);
@@ -617,8 +614,7 @@ export default function Drawings({
       const response = await fetch(`${API_URL}/api/users`);
       if (!response.ok) return { name: stored, position: "" };
       const users = await response.json();
-      const lower = stored.toLowerCase();
-      const user = users.find((u) => (u.name || "").trim().toLowerCase() === lower);
+      const user = findDraftspersonUser(stored, users);
       if (!user) return { name: stored, position: "" };
       return {
         name: user.name || "",
@@ -4234,6 +4230,10 @@ export default function Drawings({
                       {user.name}
                     </option>
                   ))}
+                  {(() => {
+                    const extra = unmatchedDraftspersonOption(draftsperson, draftspersonUsers);
+                    return extra ? <option value={extra}>{extra}</option> : null;
+                  })()}
                 </select>
               </div>
               <div style={{ marginBottom: "24px" }}>
@@ -4933,6 +4933,13 @@ export default function Drawings({
                   {user.name}
                 </option>
               ))}
+              {(() => {
+                const extra = unmatchedDraftspersonOption(
+                  draftspersonModalChoice,
+                  draftspersonUsers
+                );
+                return extra ? <option value={extra}>{extra}</option> : null;
+              })()}
             </select>
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
               <button

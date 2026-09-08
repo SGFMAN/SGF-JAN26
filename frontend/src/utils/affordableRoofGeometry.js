@@ -157,7 +157,7 @@ function sanitizeRoofRing(ring) {
   return cleaned.length >= 3 ? cleaned : [];
 }
 
-function pointInRoofRing(x, z, ring) {
+export function pointInRoofRing(x, z, ring) {
   if (!Array.isArray(ring) || ring.length < 3) return false;
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {

@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   isExcludedFromProjectLists,
 } from "../utils/projectStatus";
 import { getStateFilter } from "../utils/stateFilter";
 import { projectPath } from "../utils/projectUrl";
-import { isUserAdmin } from "../utils/auth";
+import { getApiHeaders, isUserAdmin } from "../utils/auth";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { FIELD_DEFINITIONS } from "../utils/projectListFilters";
@@ -22,6 +22,7 @@ import {
 import {
   buildDesignPhaseStatusTiles,
 } from "../utils/designPhaseStatusTiles.js";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 
 import StateFilterButtons from "../components/StateFilterButtons";
 import { UI, TEXT, outlineBorder } from "../utils/uiThemeTokens.js";
@@ -34,6 +35,34 @@ const LIGHT_MONUMENT = UI.pageBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
+
+const TO_EMAIL = "ben@superiorgrannyflats.com.au";
+
+function firstSmtpFromAddress(settings) {
+  for (let i = 1; i <= 16; i += 1) {
+    const raw = settings?.[`smtp_user_${i}`];
+    if (raw != null && String(raw).trim()) return String(raw).trim();
+  }
+  return "";
+}
+
+function nextOutsFilterSummaryLines(stateFilter, statusHeadings, tileFilters) {
+  const lines = [`State: ${stateFilter || "All"}`];
+  for (const heading of statusHeadings || []) {
+    lines.push(`${heading.label}: ${tileFilters[heading.key] || "All"}`);
+  }
+  return lines;
+}
+
+function buildNextOutsListEmailBody(filterLines, addresses) {
+  const parts = ["Filters", "", ...filterLines, "", "Projects", ""];
+  if (!addresses.length) {
+    parts.push("No projects.");
+  } else {
+    parts.push(...addresses);
+  }
+  return parts.join("\n");
+}
 
 const TOWN_PLANNING_COMPLETE_FILTER = "Not Required / Complete";
 const TOWN_PLANNING_COMPLETE_GROUP = new Set(["Not Required", "Complete"]);
@@ -195,6 +224,7 @@ const statusPillStyle = {
 
 export default function NextOuts() {
   const logo = useAppLogo();
+  const { runWithEmailOverlay } = useEmailSendOverlay();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -203,6 +233,7 @@ export default function NextOuts() {
   const [sortLevels, setSortLevels] = useState([]);
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [isAdmin, setIsAdmin] = useState(false);
+  const [emailingList, setEmailingList] = useState(false);
   const { hasDrawing } = useDrawingAccess();
 
   useEffect(() => {
@@ -242,6 +273,68 @@ export default function NextOuts() {
 
   function setTileFilter(key, value) {
     setTileFilters((prev) => ({ ...prev, [key]: value }));
+  }
+
+  const displayedProjects = useMemo(() => {
+    let filteredProjects =
+      stateFilter !== "All"
+        ? projects.filter((project) => {
+            const projectState = (project.state || "").toUpperCase();
+            return projectState === stateFilter.toUpperCase();
+          })
+        : projects;
+
+    const activeTileFilters = statusHeadings.filter((heading) => tileFilters[heading.key]);
+    if (activeTileFilters.length > 0) {
+      filteredProjects = filteredProjects.filter((project) => {
+        const byKey = tilesByKey(project);
+        return activeTileFilters.every((heading) =>
+          tileMatchesFilter(byKey[heading.key], tileFilters[heading.key], heading.key)
+        );
+      });
+    }
+
+    return sortNextOutsProjects(filteredProjects, sortLevels);
+  }, [projects, stateFilter, statusHeadings, tileFilters, sortLevels]);
+
+  async function handleEmailList() {
+    if (emailingList || loading) return;
+    setEmailingList(true);
+    try {
+      const settingsRes = await fetch(`${API_URL}/api/settings`);
+      const settings = settingsRes.ok ? await settingsRes.json() : {};
+      const fromAddress = firstSmtpFromAddress(settings);
+      if (!fromAddress) {
+        alert(
+          "No SMTP From address found. Configure at least one SMTP user (e.g. smtp_user_1) in Settings before sending."
+        );
+        return;
+      }
+      const filterLines = nextOutsFilterSummaryLines(stateFilter, statusHeadings, tileFilters);
+      const addresses = displayedProjects.map((project) => projectDisplayName(project));
+      const htmlBody = buildNextOutsListEmailBody(filterLines, addresses);
+      const subject = `Next Outs list (${addresses.length})`;
+      await runWithEmailOverlay(async () => {
+        const res = await fetch(`${API_URL}/api/emails/send`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({
+            to: [TO_EMAIL],
+            from: fromAddress,
+            subject,
+            htmlBody,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+      });
+      alert(`List emailed to ${TO_EMAIL}`);
+    } catch (err) {
+      console.error("Next Outs email list:", err);
+      alert(err.message || "Failed to send email.");
+    } finally {
+      setEmailingList(false);
+    }
   }
 
   const gridLayout = getGridLayout(statusHeadings.length);
@@ -387,6 +480,24 @@ export default function NextOuts() {
           }}
         >
           <StateFilterButtons stateFilter={stateFilter} setStateFilter={setStateFilter} />
+          <button
+            type="button"
+            onClick={handleEmailList}
+            disabled={emailingList || loading}
+            style={{
+              borderRadius: "8px",
+              padding: "10px 16px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              cursor: emailingList || loading ? "wait" : "pointer",
+              color: MONUMENT,
+              background: WHITE,
+              border: outlineBorder,
+              opacity: emailingList || loading ? 0.7 : 1,
+            }}
+          >
+            {emailingList ? "Sending…" : "Email list"}
+          </button>
         </div>
       </div>
 
@@ -565,40 +676,13 @@ export default function NextOuts() {
             )}
             {!loading && !error && (
               <>
-                {(() => {
-                  let filteredProjects = stateFilter !== "All"
-                    ? projects.filter((project) => {
-                        const projectState = (project.state || "").toUpperCase();
-                        return projectState === stateFilter.toUpperCase();
-                      })
-                    : projects;
-
-                  const activeTileFilters = statusHeadings.filter(
-                    (heading) => tileFilters[heading.key]
-                  );
-                  if (activeTileFilters.length > 0) {
-                    filteredProjects = filteredProjects.filter((project) => {
-                      const byKey = tilesByKey(project);
-                      return activeTileFilters.every((heading) =>
-                        tileMatchesFilter(byKey[heading.key], tileFilters[heading.key], heading.key)
-                      );
-                    });
-                  }
-
-                  if (filteredProjects.length === 0) {
-                    return (
-                      <p style={{ color: UI.textMuted }}>No projects found.</p>
-                    );
-                  }
-
-                  const sortedProjects = sortNextOutsProjects(filteredProjects, sortLevels);
-
-                  return (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      {sortedProjects.map((project) => renderProjectRow(project))}
-                    </div>
-                  );
-                })()}
+                {displayedProjects.length === 0 ? (
+                  <p style={{ color: UI.textMuted }}>No projects found.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    {displayedProjects.map((project) => renderProjectRow(project))}
+                  </div>
+                )}
               </>
             )}
           </div>

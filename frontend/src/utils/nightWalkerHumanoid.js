@@ -4,12 +4,35 @@ import * as THREE from "three";
  * Same rig as the Night Walker playable character; optional head-lamp block for the hero only.
  * Each instance owns its own geometries and materials.
  */
-export function createHumanoidRig({ skinColor, clothColor, darkClothColor, jointColor, withHeadLamp }) {
+export function createHumanoidRig({
+  skinColor,
+  clothColor,
+  darkClothColor,
+  jointColor,
+  withHeadLamp,
+  lowPoly = false,
+  cheap = false,
+}) {
   const group = new THREE.Group();
   const bodyMeshes = [];
   const materials = [];
+  const cyl = lowPoly ? 8 : 20;
+  const cylMid = lowPoly ? 8 : 16;
+  const cylArm = lowPoly ? 8 : 14;
+  const sph = lowPoly ? 8 : 16;
+  const sphMid = lowPoly ? 8 : 14;
+  const sphLo = lowPoly ? 6 : 12;
+  const Mat = cheap ? THREE.MeshLambertMaterial : THREE.MeshStandardMaterial;
   const regMat = (params) => {
-    const m = new THREE.MeshStandardMaterial(params);
+    const m = new Mat(
+      cheap
+        ? {
+            color: params.color,
+            emissive: params.emissive,
+            emissiveIntensity: params.emissiveIntensity,
+          }
+        : params
+    );
     materials.push(m);
     return m;
   };
@@ -37,19 +60,19 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     return mesh;
   };
 
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.78, 3.1, 20), clothMat);
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.78, 3.1, cyl), clothMat);
   torso.position.y = 1.55;
   addBodyMesh(torso);
 
-  const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.74, 0.7, 20), darkClothMat);
+  const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.74, 0.7, cyl), darkClothMat);
   hips.position.y = -0.2;
   addBodyMesh(hips);
 
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.55, 16), jointMat);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.3, 0.55, cylMid), jointMat);
   neck.position.y = 3.35;
   addBodyMesh(neck);
 
-  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.9, 20), skinMat);
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.9, cyl), skinMat);
   head.position.y = 4.03;
   addBodyMesh(head);
   const headTopOffsetY = head.position.y + 0.5;
@@ -94,7 +117,7 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     armPivot.position.set(shoulderX, 2.85, 0);
     group.add(armPivot);
 
-    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.26, 18, 16), clothMat), armPivot);
+    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.26, sph, sphMid), clothMat), armPivot);
 
     const upperArmLen = 1.1;
     const elbowDrop = 1.19;
@@ -105,7 +128,7 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     upperArmPivot.rotation.z = upperArmOutwardZ;
 
     const upperArm = addBodyMesh(
-      new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.22, upperArmLen, 14), clothMat),
+      new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.22, upperArmLen, cylArm), clothMat),
       upperArmPivot
     );
     upperArm.position.set(0, -upperArmLen * 0.5, 0);
@@ -114,15 +137,15 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     forearmPivot.position.set(0, -upperArmLen, 0);
     upperArmPivot.add(forearmPivot);
 
-    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.23, 16, 14), clothMat), forearmPivot);
-    addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 1.0, 14), clothMat), forearmPivot).position.set(
+    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.23, sphMid, sphLo), clothMat), forearmPivot);
+    addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 1.0, cylArm), clothMat), forearmPivot).position.set(
       0,
       -0.61,
       0
     );
-    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 12), jointMat), forearmPivot).position.set(0, -1.14, 0);
+    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.18, sphLo, sphLo), jointMat), forearmPivot).position.set(0, -1.14, 0);
 
-    const hand = addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.34, 12), skinMat), forearmPivot);
+    const hand = addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.34, cylArm), skinMat), forearmPivot);
     hand.position.set(0.06 * side, -1.39, 0.02);
     hand.rotation.z = Math.PI / 2;
 
@@ -146,9 +169,9 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     legPivot.position.set(x, -0.58, 0);
     group.add(legPivot);
 
-    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 14), darkClothMat), legPivot);
+    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.25, sphMid, sphLo), darkClothMat), legPivot);
 
-    addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 1.45, 14), darkClothMat), legPivot).position.set(
+    addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 1.45, cylArm), darkClothMat), legPivot).position.set(
       0,
       -0.76,
       0
@@ -158,15 +181,15 @@ export function createHumanoidRig({ skinColor, clothColor, darkClothColor, joint
     lowerLegPivot.position.set(0, -1.52, 0);
     legPivot.add(lowerLegPivot);
 
-    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 14), darkClothMat), lowerLegPivot);
-    addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 1.35, 14), darkClothMat), lowerLegPivot).position.set(
+    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.25, sphMid, sphLo), darkClothMat), lowerLegPivot);
+    addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 1.35, cylArm), darkClothMat), lowerLegPivot).position.set(
       0,
       -0.76,
       0
     );
-    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 12), jointMat), lowerLegPivot).position.set(0, -1.45, 0.06);
+    addBodyMesh(new THREE.Mesh(new THREE.SphereGeometry(0.2, sphLo, sphLo), jointMat), lowerLegPivot).position.set(0, -1.45, 0.06);
 
-    const foot = addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.8, 14), darkClothMat), lowerLegPivot);
+    const foot = addBodyMesh(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.8, cylArm), darkClothMat), lowerLegPivot);
     foot.position.set(0, -1.7, 0.35);
     foot.rotation.x = Math.PI / 2;
 

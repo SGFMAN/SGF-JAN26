@@ -31,6 +31,12 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
+import {
+  canonicalDraftspersonName,
+  filterDraftspersonUsers,
+  findDraftspersonUser,
+  unmatchedDraftspersonOption,
+} from "../utils/draftspersonUsers";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { resolveLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
@@ -420,10 +426,7 @@ export default function DrawingManager() {
   function getDraftspersonDetailsByProject(project) {
     const stored = normalizeDraftspersonField(project?.draftsperson);
     if (!isDraftspersonAssigned(stored)) return { name: "", position: "" };
-    const lower = stored.toLowerCase();
-    const user = draftspersonUsers.find(
-      (u) => (u.name || "").trim().toLowerCase() === lower
-    );
+    const user = findDraftspersonUser(stored, draftspersonUsers);
     if (!user) return { name: stored, position: "" };
     const position = getUserPrimaryPositionName(user);
     return { name: user.name || "", position };
@@ -584,17 +587,7 @@ export default function DrawingManager() {
         throw new Error("Failed to fetch users");
       }
       const allUsers = await usersResponse.json();
-      
-      // Filter users who have "Architectural Draftsperson" or "Architectural Graduate" as one of their positions
-      const draftspersons = allUsers.filter((user) => {
-        if (!user.positions || !Array.isArray(user.positions)) return false;
-        return user.positions.some((position) => {
-          const positionName = position.name ? position.name.toLowerCase() : "";
-          return positionName === "architectural draftsperson" || positionName === "architectural graduate";
-        });
-      });
-      
-      setDraftspersonUsers(draftspersons);
+      setDraftspersonUsers(filterDraftspersonUsers(allUsers));
     } catch (error) {
       console.error("Error fetching draftspersons:", error);
       setDraftspersonUsers([]);
@@ -1051,6 +1044,10 @@ export default function DrawingManager() {
     const projectName =
       suburb && street ? `${suburb} - ${street}` : suburb || street || "Unknown Project";
     const holderDisplay = getHolderDisplay(project);
+    const unmatchedDraftsperson = unmatchedDraftspersonOption(
+      project.draftsperson,
+      draftspersonUsers
+    );
 
     return (
       <React.Fragment key={project.id}>
@@ -1118,7 +1115,7 @@ export default function DrawingManager() {
         </Link>
 
         <select
-          value={normalizeDraftspersonField(project.draftsperson)}
+          value={canonicalDraftspersonName(project.draftsperson, draftspersonUsers)}
           onChange={(e) => handleDraftspersonChange(project, e.target.value)}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
@@ -1143,6 +1140,9 @@ export default function DrawingManager() {
               {dp.name}
             </option>
           ))}
+          {unmatchedDraftsperson ? (
+            <option value={unmatchedDraftsperson}>{unmatchedDraftsperson}</option>
+          ) : null}
         </select>
 
         <div

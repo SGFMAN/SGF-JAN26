@@ -769,7 +769,7 @@ export default function SandpitRacer({ startRaceRef, onDriversChange, inputPause
       sendState();
 
       ctx.clearRect(0, 0, cw, ch);
-      const carLen = view.w * 0.04;
+      const carLen = view.w * 0.034;
 
       for (const remote of remotes.values()) {
         if (!stepRemote(remote, dt, now)) continue;

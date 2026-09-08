@@ -467,6 +467,7 @@ export default function ColourSettings() {
       next.subfloorType === modelDefaults.subfloorType &&
       next.stumpStyle === modelDefaults.stumpStyle &&
       next.claddingType === modelDefaults.claddingType &&
+      next.roofType === modelDefaults.roofType &&
       JSON.stringify(next.elementVisibility) === JSON.stringify(modelDefaults.elementVisibility);
     if (unchanged) return undefined;
     const heightKeys = SUBFLOOR_TYPE_OPTIONS.map((option) => option.heightKey);
@@ -1986,6 +1987,7 @@ export default function ColourSettings() {
               showWall={previewModel.showWall}
               elementVisibility={previewModel.elementVisibility}
               claddingType={previewModel.claddingType}
+              roofType={previewModel.roofType}
               rightPanel={
           <aside
             style={{
@@ -2255,6 +2257,7 @@ export default function ColourSettings() {
             visibility={previewModel.elementVisibility}
             fallback={previewModel}
             claddingType={previewModel.claddingType}
+            roofType={previewModel.roofType}
             subfloorDrawType={resolvedSubfloorDrawType(previewModel)}
             onChange={(elementVisibility, subfloorDrawType) =>
               setModelDraft((prev) => ({
@@ -2269,6 +2272,12 @@ export default function ColourSettings() {
               setModelDraft((prev) => ({
                 ...prev,
                 claddingType: nextCladdingType,
+              }))
+            }
+            onRoofTypeChange={(nextRoofType) =>
+              setModelDraft((prev) => ({
+                ...prev,
+                roofType: nextRoofType,
               }))
             }
           />

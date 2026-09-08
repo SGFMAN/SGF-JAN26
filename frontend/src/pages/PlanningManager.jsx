@@ -11,6 +11,11 @@ import {
   normalizeDraftspersonField,
   isDraftspersonAssigned,
 } from "../utils/draftspersonSentinel";
+import {
+  canonicalDraftspersonName,
+  filterDraftspersonUsers,
+  findDraftspersonUser,
+} from "../utils/draftspersonUsers";
 import { isExcludedFromProjectLists, isCancelledStatus, isOnHoldFlag } from "../utils/projectStatus";
 import { projectPath } from "../utils/projectUrl";
 import {
@@ -629,16 +634,7 @@ export default function PlanningManager() {
         if (!usersResponse.ok) throw new Error("Failed to fetch users");
         const allUsers = await usersResponse.json();
         if (cancelled) return;
-        const draftspersons = (Array.isArray(allUsers) ? allUsers : []).filter((user) => {
-          if (!user.positions || !Array.isArray(user.positions)) return false;
-          return user.positions.some((position) => {
-            const positionName = position.name ? position.name.toLowerCase() : "";
-            return (
-              positionName === "architectural draftsperson" ||
-              positionName === "architectural graduate"
-            );
-          });
-        });
+        const draftspersons = filterDraftspersonUsers(allUsers);
         draftspersons.sort((a, b) =>
           String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
         );
@@ -895,7 +891,7 @@ export default function PlanningManager() {
       if (colIndex === 1) {
         const normalized = normalizeDraftspersonField(project?.draftsperson);
         if (!isDraftspersonAssigned(normalized)) return "";
-        return normalized.toUpperCase();
+        return canonicalDraftspersonName(normalized, draftspersonUsers).toUpperCase();
       }
       const mapping = getPlanningManagerColMapping(colIndex);
       if (mapping?.field) {
@@ -907,7 +903,7 @@ export default function PlanningManager() {
       const stored = sheetCells?.[String(project.id)]?.[String(colIndex)];
       return stored != null ? String(stored) : "";
     },
-    [projects, sheetCells]
+    [projects, sheetCells, draftspersonUsers]
   );
 
   // Copy / paste + arrow-key navigation (skipped while inline-editing).
@@ -2779,6 +2775,7 @@ export default function PlanningManager() {
           {(() => {
             const project = projects.find((p) => p.id === draftspersonMenu.projectId);
             const current = normalizeDraftspersonField(project?.draftsperson);
+            const currentUser = findDraftspersonUser(project?.draftsperson, draftspersonUsers);
             const options = [
               { value: DRAFTSPERSON_UNASSIGNED, label: "None" },
               ...draftspersonUsers.map((dp) => ({
@@ -2787,7 +2784,10 @@ export default function PlanningManager() {
               })),
             ];
             return options.map((opt) => {
-              const active = current === normalizeDraftspersonField(opt.value);
+              const active = currentUser
+                ? (opt.value || "").trim().toLowerCase() ===
+                  String(currentUser.name || "").trim().toLowerCase()
+                : current === normalizeDraftspersonField(opt.value);
               return (
                 <button
                   key={opt.value || "none"}

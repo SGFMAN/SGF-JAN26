@@ -32,6 +32,7 @@ import {
   DOORS_LAYER_ID,
   SLIDING_DOORS_LAYER_ID,
   ROOF_LAYER_ID,
+  SUPERIOR_ROOF_LAYER_ID,
   DECK_LAYER_ID,
   FLOORING_LAYER_ID,
   KITCHEN_BENCH_LAYER_ID,
@@ -155,6 +156,9 @@ function savedLayerHasContent(layerId, saved, page) {
       (saved.roofPoints?.length ?? 0) >= 3 ||
       Boolean(saved.roofPivotLine?.a && saved.roofPivotLine?.b)
     );
+  }
+  if (layerId === SUPERIOR_ROOF_LAYER_ID) {
+    return (saved.superiorRoofPoints?.length ?? 0) >= 3;
   }
   if (layerId === DECK_LAYER_ID) {
     return (saved.decks?.length ?? 0) > 0 || (saved.deckPoints?.length ?? 0) >= 3;
@@ -289,7 +293,7 @@ export default function TracePlanModal({
   const [internalWallTool, setInternalWallTool] = useState("add");
   const [hoveredInternalWallSegmentIndex, setHoveredInternalWallSegmentIndex] = useState(-1);
   const [flooringTool, setFlooringTool] = useState("hybrid");
-  const [roofTool, setRoofTool] = useState("outline");
+  const [roofTool, setRoofTool] = useState("affordable");
   const [roofPivotDraftStart, setRoofPivotDraftStart] = useState(null);
   const [roofPivotPreviewEnd, setRoofPivotPreviewEnd] = useState(null);
   const [roofRidgePicking, setRoofRidgePicking] = useState(false);
@@ -335,8 +339,10 @@ export default function TracePlanModal({
   const isDeckLayerActive = isDeckTraceLayer(activeLayerId);
   const isMultiPolygonLayerActive = isMultiPolygonTraceLayer(activeLayerId);
   const isFlooringLayerActive = isFlooringTraceLayer(activeLayerId);
-  const isRoofLayerActive = activeLayerId === ROOF_LAYER_ID;
-  const isRoofPivotTool = isRoofLayerActive && roofTool === "pivot";
+  const isAffordableRoofActive = activeLayerId === ROOF_LAYER_ID;
+  const isSuperiorRoofActive = activeLayerId === SUPERIOR_ROOF_LAYER_ID;
+  const isRoofLayerActive = isAffordableRoofActive || isSuperiorRoofActive;
+  const isRoofPivotTool = false;
   const activeTrace =
     layerTraces[activeLayerId] ||
     (isLineTraceLayer(activeLayerId)
@@ -347,7 +353,7 @@ export default function TracePlanModal({
           ? { polygons: [], points: [], polygonClosed: false }
           : isFlooringTraceLayer(activeLayerId)
             ? createEmptyLayerTrace(FLOORING_LAYER_ID)
-            : activeLayerId === ROOF_LAYER_ID
+            : isRoofLayerActive
               ? { points: [], polygonClosed: false, pivotLine: null, ridgeAxis: null }
               : { points: [], polygonClosed: false });
   const flooringFinishStyle =
@@ -389,6 +395,7 @@ export default function TracePlanModal({
       layerId === DOORS_LAYER_ID ||
       layerId === SLIDING_DOORS_LAYER_ID ||
       layerId === ROOF_LAYER_ID ||
+      layerId === SUPERIOR_ROOF_LAYER_ID ||
       layerId === DECK_LAYER_ID ||
       layerId === FLOORING_LAYER_ID ||
       layerId === KITCHEN_BENCH_LAYER_ID ||
@@ -501,10 +508,15 @@ export default function TracePlanModal({
       clearPolygonPreview();
     }
     if (layerId === ROOF_LAYER_ID) {
-      setRoofTool("outline");
+      setRoofTool("affordable");
       const roof = layerTraces[ROOF_LAYER_ID];
       const closed = roof?.polygonClosed && (roof.points?.length ?? 0) >= 3;
       setRoofRidgePicking(Boolean(closed && !roof?.ridgeAxis));
+    }
+    if (layerId === SUPERIOR_ROOF_LAYER_ID) {
+      setRoofTool("superior");
+      setRoofRidgePicking(false);
+      setRoofRidgePreviewAxis(null);
     }
     setRoofPivotDraftStart(null);
     setRoofPivotPreviewEnd(null);
@@ -525,7 +537,7 @@ export default function TracePlanModal({
             : layer.id === SLIDING_DOORS_LAYER_ID
               ? "Trace and close External Walls before placing sliding doors."
               : layer.id === ROOF_LAYER_ID
-                ? "Trace and close External Walls before drawing the affordable roof outline or pivot."
+                ? "Trace and close External Walls before drawing a roof."
                 : layer.id === DECK_LAYER_ID
                   ? "Trace and close External Walls before drawing a deck."
                   : layer.id === FLOORING_LAYER_ID
@@ -538,6 +550,13 @@ export default function TracePlanModal({
                           ? "Trace and close External Walls before defining the kitchen."
                         : "Trace and close External Walls before drawing internal walls."
       );
+      return;
+    }
+    if (layer.id === ROOF_LAYER_ID) {
+      if (!isRoofLayerActive) {
+        selectLayer(roofTool === "superior" ? SUPERIOR_ROOF_LAYER_ID : ROOF_LAYER_ID);
+      }
+      setOpenSubmenuLayerId((prev) => (prev === layer.id ? null : layer.id));
       return;
     }
     selectLayer(layer.id);
@@ -648,18 +667,13 @@ export default function TracePlanModal({
       setNearOrigin(false);
     }
     if (layer.id === ROOF_LAYER_ID) {
-      setRoofTool(item.id);
-      setRoofPivotDraftStart(null);
-      setRoofPivotPreviewEnd(null);
+      if (item.id === "superior") {
+        selectLayer(SUPERIOR_ROOF_LAYER_ID);
+      } else {
+        selectLayer(ROOF_LAYER_ID);
+      }
       clearPolygonPreview();
       setNearOrigin(false);
-      if (item.id === "pivot") {
-        setRoofRidgePicking(false);
-      } else {
-        const roof = layerTraces[ROOF_LAYER_ID];
-        const closed = roof?.polygonClosed && (roof.points?.length ?? 0) >= 3;
-        setRoofRidgePicking(Boolean(closed && !roof?.ridgeAxis));
-      }
     }
     setOpenSubmenuLayerId(null);
   }
@@ -1036,7 +1050,8 @@ export default function TracePlanModal({
     }
 
     const referenceAxes =
-      activeLayerId === ROOF_LAYER_ID && hasWalls
+      (activeLayerId === ROOF_LAYER_ID || activeLayerId === SUPERIOR_ROOF_LAYER_ID) &&
+      hasWalls
         ? collectOrthoReferenceAxes(wallPoints)
         : undefined;
     const constructionPoints =
@@ -1179,6 +1194,18 @@ export default function TracePlanModal({
         polygonClosed: true,
         pivotLine: null,
         ridgeAxis: parsePlanTraceRoofRidgeAxis(saved.roofRidgeAxis),
+      };
+    }
+    if (saved.page === pageNumber && saved.superiorRoofPoints?.length >= 3) {
+      next[SUPERIOR_ROOF_LAYER_ID] = {
+        points: denormalizeTracePoints(
+          saved.superiorRoofPoints,
+          sourceCanvas.width,
+          sourceCanvas.height
+        ),
+        polygonClosed: true,
+        pivotLine: null,
+        ridgeAxis: null,
       };
     }
     if (saved.page === pageNumber && (saved.kitchenBenches?.length || saved.kitchenBenchPoints?.length >= 3)) {
@@ -2619,7 +2646,7 @@ export default function TracePlanModal({
         roofTrace?.polygonClosed && (roofTrace.points?.length ?? 0) >= 3;
       const aabb = closedRoof ? roofTraceAabb(roofTrace.points) : null;
       const picking =
-        isRoofLayerActive &&
+        isAffordableRoofActive &&
         !isRoofPivotTool &&
         closedRoof &&
         (roofRidgePicking || !roofTrace?.ridgeAxis);
@@ -3749,7 +3776,7 @@ export default function TracePlanModal({
       }
 
       if (
-        isRoofLayerActive &&
+        isAffordableRoofActive &&
         !isRoofPivotTool &&
         polygonClosed &&
         roofRidgePicking
@@ -3916,7 +3943,7 @@ export default function TracePlanModal({
         return;
       }
       if (
-        isRoofLayerActive &&
+        isAffordableRoofActive &&
         !isRoofPivotTool &&
         polygonClosed &&
         (roofRidgePicking || !layerTraces[ROOF_LAYER_ID]?.ridgeAxis)
@@ -4586,7 +4613,7 @@ export default function TracePlanModal({
       if (interaction.type === "insertOrIdle" && !interaction.moved && event.button === 0) {
         const segment = findSegmentAtScreen(interaction.startX, interaction.startY);
         if (segment) insertNodeOnSegment(segment);
-        else if (isRoofLayerActive && !isRoofPivotTool) {
+        else if (isAffordableRoofActive && !isRoofPivotTool) {
           lockRoofRidgeFromScreen(interaction.startX, interaction.startY);
         }
         if (isDeckLayerActive && editingDeckIndex >= 0) {
@@ -4724,7 +4751,7 @@ export default function TracePlanModal({
       }
       return;
     }
-    if (isRoofLayerActive && !isRoofPivotTool) {
+    if (isAffordableRoofActive && !isRoofPivotTool) {
       if (roofRidgePicking) {
         setRoofRidgePicking(false);
         setRoofRidgePreviewAxis(null);
@@ -4954,7 +4981,7 @@ export default function TracePlanModal({
     setEditingFurnitureIndex(-1);
     setKitchenZoneDraftEnd(null);
     setFlooringTool("hybrid");
-    setRoofTool("outline");
+    setRoofTool("affordable");
     setRoofPivotDraftStart(null);
     setRoofPivotPreviewEnd(null);
     setRoofRidgePicking(false);
@@ -4994,6 +5021,8 @@ export default function TracePlanModal({
           [],
           [],
           [],
+          [],
+          null,
           []
         );
       }
@@ -5092,6 +5121,22 @@ export default function TracePlanModal({
           !hasOutline &&
           ((trace.points?.length ?? 0) > 0 || Boolean(trace.polygonClosed));
         return outlineDirty || pivotDirty || ridgeDirty || draftOnly;
+      }
+      if (layer.id === SUPERIOR_ROOF_LAYER_ID) {
+        if (saved.page !== currentPage) return true;
+        const sourceW = source?.width;
+        const sourceH = source?.height;
+        if (!sourceW || !sourceH) return true;
+        const hasOutline = trace.polygonClosed && (trace.points?.length ?? 0) >= 3;
+        const normalized = hasOutline
+          ? normalizeTracePoints(trace.points, sourceW, sourceH)
+          : [];
+        const outlineDirty =
+          JSON.stringify(normalized) !== JSON.stringify(saved.superiorRoofPoints ?? []);
+        const draftOnly =
+          !hasOutline &&
+          ((trace.points?.length ?? 0) > 0 || Boolean(trace.polygonClosed));
+        return outlineDirty || draftOnly;
       }
       if (
         layer.id === KITCHEN_BENCH_LAYER_ID ||
@@ -5417,6 +5462,11 @@ export default function TracePlanModal({
         roof?.polygonClosed && (roof.points?.length ?? 0) >= 3
           ? normalizeTracePoints(roof.points, source.width, source.height)
           : [];
+      const superiorRoof = layerTraces[SUPERIOR_ROOF_LAYER_ID];
+      const normalizedSuperiorRoof =
+        superiorRoof?.polygonClosed && (superiorRoof.points?.length ?? 0) >= 3
+          ? normalizeTracePoints(superiorRoof.points, source.width, source.height)
+          : [];
       const flushMultiPolygons = (layerId, editingIndex) => {
         const layer = layerTraces[layerId] || {
           polygons: [],
@@ -5544,12 +5594,14 @@ export default function TracePlanModal({
         normalizedKitchenBenches,
         normalizedRobes,
         normalizedKitchenZonePoints,
-        normalizedRoofRidgeAxis
+        normalizedRoofRidgeAxis,
+        normalizedSuperiorRoof
       );
       savedTraceRef.current = {
         page: currentPage,
         points: normalized,
         roofPoints: normalizedRoof,
+        superiorRoofPoints: normalizedSuperiorRoof,
         roofPivotLine: normalizedRoofPivot,
         roofRidgeAxis: normalizedRoofRidgeAxis,
         decks: normalizedDecks,
@@ -5679,10 +5731,14 @@ export default function TracePlanModal({
             : internalWallTool === "edit"
               ? "Edit internal walls: drag endpoints to move them (horizontal/vertical only; shared junctions move together). Ends snap to the centre of external walls. Use the Walls ▸ menu to switch tools."
               : "Add internal walls: click once for each end of a wall line — horizontal or vertical only. A node follows the cursor and snaps to the centre of external walls and to other internal walls (green when snapped). Drag nodes to adjust. Use the Walls ▸ menu to switch tools."
+          : isSuperiorRoofActive
+            ? `Trace the superior roof outline — horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show your stroke axes and external-wall alignments; green guides appear when a side can close at 90° or snaps to a wall line. Click the green origin to close.${
+                polygonClosed
+                  ? " Drag nodes to move them (edges stay H/V), drop onto another node to merge, or click a line to add a node."
+                  : ""
+              }`
           : activeLayerId === ROOF_LAYER_ID
-            ? roofTool === "pivot"
-              ? "Draw pivot point: click once for each end of a horizontal or vertical hinge line (the skillion roof pitches about this line). A second line replaces the first. Undo clears the draft or the placed pivot."
-              : roofRidgePicking || (polygonClosed && !layerTraces[ROOF_LAYER_ID]?.ridgeAxis)
+            ? roofRidgePicking || (polygonClosed && !layerTraces[ROOF_LAYER_ID]?.ridgeAxis)
                 ? "Move toward the left/right or top/bottom of the affordable roof to preview the ridge and fall, then click to lock it in."
               : `Trace the affordable roof outline — horizontal/vertical only (max ${MAX_TRACE_POINTS}). Blue guides show your stroke axes and external-wall alignments; green guides appear when a side can close at 90° or snaps to a wall line. Click the green origin to close.${
                 polygonClosed
@@ -5885,7 +5941,7 @@ export default function TracePlanModal({
             >
               {TRACE_PLAN_GROUPS.map((group, groupIndex) => {
                 const groupLayers = TRACE_PLAN_LAYERS.filter(
-                  (l) => l.group === group.id && !l.auto
+                  (l) => l.group === group.id && !l.auto && !l.hidden
                 );
                 if (groupLayers.length === 0) return null;
                 return (
@@ -5912,8 +5968,17 @@ export default function TracePlanModal({
                     </div>
                     {groupLayers.map((layer) => {
                       const trace = layerTraces[layer.id];
-                      const isActive = layer.id === activeLayerId;
-                      const hasTrace = hasLayerDraft(layer.id, trace);
+                      const isActive =
+                        layer.id === activeLayerId ||
+                        (layer.id === ROOF_LAYER_ID && isRoofLayerActive);
+                      const hasTrace =
+                        layer.id === ROOF_LAYER_ID
+                          ? hasLayerDraft(ROOF_LAYER_ID, layerTraces[ROOF_LAYER_ID]) ||
+                            hasLayerDraft(
+                              SUPERIOR_ROOF_LAYER_ID,
+                              layerTraces[SUPERIOR_ROOF_LAYER_ID]
+                            )
+                          : hasLayerDraft(layer.id, trace);
                       const hasSubmenu = (layer.submenu?.length ?? 0) > 0;
                       const submenuOpen = openSubmenuLayerId === layer.id;
                       return (
@@ -5968,7 +6033,9 @@ export default function TracePlanModal({
                                     : layer.id === SLIDING_DOORS_LAYER_ID
                                       ? slidingDoorTool
                                       : layer.id === ROOF_LAYER_ID
-                                        ? roofTool
+                                        ? roofTool === "superior"
+                                          ? "Superior"
+                                          : "Affordable"
                                         : layer.id === FLOORING_LAYER_ID
                                           ? flooringTool
                                           : layer.id === INTERNAL_WALLS_LAYER_ID

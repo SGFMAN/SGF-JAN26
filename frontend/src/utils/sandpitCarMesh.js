@@ -37,7 +37,7 @@ export function loadDesignerShapes() {
   try {
     const raw = JSON.parse(localStorage.getItem(DESIGNER_SHAPES_KEY) || "[]");
     if (!Array.isArray(raw)) return [];
-    return raw.filter((shape) => shape && shape.type === "cube" && shape.id);
+    return raw.filter((shape) => shape && shape.id && (shape.type === "cube" || shape.type === "cylinder"));
   } catch {
     return [];
   }
@@ -108,13 +108,45 @@ function endScale(taper) {
   return clamp(1 - taper, TAPER_SCALE_MIN, 1 + TAPER_MAX);
 }
 
-function cubeStations(cube) {
+function alignT(pos) {
+  return clamp((pos - 0.05) / 0.9, 0, 1);
+}
+
+function liftZ(shape) {
+  if (shape?.groundSnap) return 0;
+  return Number(shape?.z) || 0;
+}
+
+function degToRad(n) {
+  return ((Number(n) || 0) * Math.PI) / 180;
+}
+
+function rotateLocalPoint(pt, rx, ry, rz) {
+  const ax = degToRad(rx);
+  const ay = degToRad(ry);
+  const az = degToRad(rz);
+  let { x, y, z } = pt;
+  const cx = Math.cos(ax);
+  const sx = Math.sin(ax);
+  let y1 = y * cx - z * sx;
+  let z1 = y * sx + z * cx;
+  y = y1;
+  z = z1;
+  const cy = Math.cos(ay);
+  const sy = Math.sin(ay);
+  const x1 = x * cy + z * sy;
+  z1 = -x * sy + z * cy;
+  x = x1;
+  z = z1;
+  const cz = Math.cos(az);
+  const sz = Math.sin(az);
+  return { x: x * cz - y * sz, y: x * sz + y * cz, z };
+}
+
+function localCubeStations(cube) {
   const l = Math.max(4, Number(cube.l) || 4);
   const w = Math.max(4, Number(cube.w) || 4);
   const h = Math.max(4, Number(cube.h) || 4);
-  const ox = Number(cube.x) || 0;
-  const oy = Number(cube.y) || 0;
-  const oz = Number(cube.z) || 0;
   const hPos = taperPosOf(cube, "h");
   const vPos = taperPosOf(cube, "v");
   const ym = w / 2;
@@ -122,19 +154,113 @@ function cubeStations(cube) {
   const yB = ym * endScale(taperAmountOf(cube, "h", "b"));
   const sizeA = h * endScale(taperAmountOf(cube, "v", "a"));
   const sizeB = h * endScale(taperAmountOf(cube, "v", "b"));
-  return uniqueTs([0, hPos, vPos, 1]).map((t) => {
+  const hT = alignT(hPos);
+  const vT = alignT(vPos);
+  return uniqueTs([0, 0.5, 1]).map((t) => {
     const x = -l / 2 + l * t;
-    const y = profileAt(t, hPos, yA, ym, yB);
-    const size = profileAt(t, vPos, sizeA, h, sizeB);
-    const z0 = (h - size) / 2;
+    const yHalf = profileAt(t, 0.5, yA, ym, yB);
+    const size = profileAt(t, 0.5, sizeA, h, sizeB);
+    const yLeft = -ym + (ym - yHalf) * 2 * hT;
+    const yRight = yLeft + 2 * yHalf;
+    const z0 = (h - size) * vT;
     const z1 = z0 + size;
     return [
-      { x: x + ox, y: -y + oy, z: z0 + oz },
-      { x: x + ox, y: y + oy, z: z0 + oz },
-      { x: x + ox, y: y + oy, z: z1 + oz },
-      { x: x + ox, y: -y + oy, z: z1 + oz },
+      { x, y: yLeft, z: z0 },
+      { x, y: yRight, z: z0 },
+      { x, y: yRight, z: z1 },
+      { x, y: yLeft, z: z1 },
     ];
   });
+}
+
+function localCylinderStations(cyl) {
+  const l = Math.max(4, Number(cyl.l) || 4);
+  const r = Math.max(2, Number(cyl.r) || 2);
+  const sides = 16;
+  return [0, 1].map((t) => {
+    const x = -l / 2 + l * t;
+    const ring = [];
+    for (let i = 0; i < sides; i += 1) {
+      const a = (i / sides) * Math.PI * 2;
+      ring.push({
+        x,
+        y: Math.sin(a) * r,
+        z: r + Math.cos(a) * r,
+      });
+    }
+    return ring;
+  });
+}
+
+function shapePivotZ(shape) {
+  if (shape?.type === "cylinder") return Math.max(2, Number(shape.r) || 2);
+  return Math.max(4, Number(shape.h) || 4) / 2;
+}
+
+function shapeStations(shape) {
+  const local = shape?.type === "cylinder" ? localCylinderStations(shape) : localCubeStations(shape);
+  const rx = Number(shape?.rx) || 0;
+  const ry = Number(shape?.ry) || 0;
+  const rz = Number(shape?.rz) || 0;
+  const ox = Number(shape?.x) || 0;
+  const oy = Number(shape?.y) || 0;
+  const pz = shapePivotZ(shape);
+  const rotated = local.map((ring) =>
+    ring.map((pt) => {
+      const p = rotateLocalPoint({ x: pt.x, y: pt.y, z: pt.z - pz }, rx, ry, rz);
+      return { x: p.x, y: p.y, z: p.z + pz };
+    })
+  );
+  let oz = liftZ(shape);
+  if (shape?.groundSnap) {
+    let minZ = Infinity;
+    rotated.forEach((ring) => {
+      ring.forEach((pt) => {
+        minZ = Math.min(minZ, pt.z);
+      });
+    });
+    oz = Number.isFinite(minZ) ? -minZ : 0;
+  }
+  return rotated.map((ring) => ring.map((pt) => ({ x: pt.x + ox, y: pt.y + oy, z: pt.z + oz })));
+}
+
+function collectRingMeshFaces(stations) {
+  if (!stations.length) return [];
+  const inside = polyCentroid(stations.flat());
+  const first = stations[0];
+  const last = stations[stations.length - 1];
+  const n = first.length;
+  const polys = [first.slice().reverse(), last.slice()];
+  for (let i = 0; i < stations.length - 1; i += 1) {
+    const a = stations[i];
+    const b = stations[i + 1];
+    for (let j = 0; j < n; j += 1) {
+      const k = (j + 1) % n;
+      polys.push([a[j], b[j], b[k], a[k]]);
+    }
+  }
+  return polys.map((pts) => makeOutwardFace(pts, inside)).filter(Boolean);
+}
+
+function collectMeshFaces(shape) {
+  const stations = shapeStations(shape);
+  if (shape?.type === "cylinder") return collectRingMeshFaces(stations);
+  const inside = cubeInsidePoint(stations);
+  const first = stations[0];
+  const last = stations[stations.length - 1];
+  const quads = [
+    [first[0], first[3], first[2], first[1]],
+    [last[0], last[1], last[2], last[3]],
+  ];
+  for (let i = 0; i < stations.length - 1; i += 1) {
+    const a = stations[i];
+    const b = stations[i + 1];
+    quads.push([a[3], b[3], b[2], a[2]]);
+    quads.push([a[0], a[1], b[1], b[0]]);
+    quads.push([a[1], a[2], b[2], b[1]]);
+    quads.push([a[0], b[0], b[3], a[3]]);
+  }
+  return quads.map((pts) => makeOutwardFace(pts, inside)).filter(Boolean);
 }
 
 function applyXf(pt, xf) {
@@ -168,13 +294,8 @@ function polyCentroid(pts) {
   };
 }
 
-function cubeInsidePoint(cube) {
-  const h = Math.max(4, Number(cube.h) || 4);
-  return {
-    x: Number(cube.x) || 0,
-    y: Number(cube.y) || 0,
-    z: (Number(cube.z) || 0) + h / 2,
-  };
+function cubeInsidePoint(stations) {
+  return polyCentroid(stations.flat());
 }
 
 function makeOutwardFace(pts, inside) {
@@ -187,26 +308,6 @@ function makeOutwardFace(pts, inside) {
     pts: pts.slice().reverse(),
     n: { x: -n.x, y: -n.y, z: -n.z },
   };
-}
-
-function collectMeshFaces(cube) {
-  const stations = cubeStations(cube);
-  const inside = cubeInsidePoint(cube);
-  const first = stations[0];
-  const last = stations[stations.length - 1];
-  const quads = [
-    [first[0], first[3], first[2], first[1]],
-    [last[0], last[1], last[2], last[3]],
-  ];
-  for (let i = 0; i < stations.length - 1; i += 1) {
-    const a = stations[i];
-    const b = stations[i + 1];
-    quads.push([a[3], b[3], b[2], a[2]]);
-    quads.push([a[0], a[1], b[1], b[0]]);
-    quads.push([a[1], a[2], b[2], b[1]]);
-    quads.push([a[0], b[0], b[3], a[3]]);
-  }
-  return quads.map((pts) => makeOutwardFace(pts, inside)).filter(Boolean);
 }
 
 function screenArea(pts) {
@@ -274,11 +375,12 @@ function visibleProjectedFaces(cube, heading, xf, minArea = 0.4) {
     .filter((face) => face.facing > 0.004 && Math.abs(screenArea(face.screen)) > minArea);
 }
 
-function shapeIsConvex(cube) {
-  const ha = taperAmountOf(cube, "h", "a");
-  const hb = taperAmountOf(cube, "h", "b");
-  const va = taperAmountOf(cube, "v", "a");
-  const vb = taperAmountOf(cube, "v", "b");
+function shapeIsConvex(shape) {
+  if (shape?.type === "cylinder") return true;
+  const ha = taperAmountOf(shape, "h", "a");
+  const hb = taperAmountOf(shape, "h", "b");
+  const va = taperAmountOf(shape, "v", "a");
+  const vb = taperAmountOf(shape, "v", "b");
   return !(ha < 0 && hb < 0) && !(va < 0 && vb < 0);
 }
 
@@ -289,12 +391,14 @@ export function shapeHitDepth(cube, heading, px, py) {
 }
 
 function fillFace(ctx, screen) {
-  if (screen.length >= 4) {
-    fillPath(ctx, [screen[0], screen[1], screen[2]]);
-    fillPath(ctx, [screen[0], screen[2], screen[3]]);
+  if (!screen || screen.length < 3) return;
+  if (screen.length === 3) {
+    fillPath(ctx, screen);
     return;
   }
-  fillPath(ctx, screen);
+  for (let i = 1; i < screen.length - 1; i += 1) {
+    fillPath(ctx, [screen[0], screen[i], screen[i + 1]]);
+  }
 }
 
 function shade(hex, light) {
@@ -314,6 +418,39 @@ export function projectShapePoint(x, y, z, heading) {
   return projectPoint(x, y, z, heading);
 }
 
+export function drawFrontArrow(ctx, heading, shapes) {
+  const bounds = shapesBounds(shapes);
+  const cy = bounds ? (bounds.minY + bounds.maxY) / 2 : 0;
+  const tipX = bounds ? bounds.maxX + 36 : 56;
+  const tailX = tipX - 58;
+  const tail = projectPoint(tailX, cy, 0, heading);
+  const tip = projectPoint(tipX, cy, 0, heading);
+  const left = projectPoint(tipX - 16, cy - 10, 0, heading);
+  const right = projectPoint(tipX - 16, cy + 10, 0, heading);
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#d61f26";
+  ctx.fillStyle = "#d61f26";
+  ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.moveTo(tail.x, tail.y);
+  ctx.lineTo(tip.x, tip.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(tip.x, tip.y);
+  ctx.lineTo(left.x, left.y);
+  ctx.lineTo(right.x, right.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.font = "700 11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+  ctx.fillText("FRONT", tip.x, tip.y - 8);
+  ctx.restore();
+}
+
 export function drawCubePreview(
   ctx,
   cube,
@@ -325,7 +462,7 @@ export function drawCubePreview(
   const xf = transform;
   const projected = visibleProjectedFaces(cube, heading, xf, minArea).sort((a, b) => a.depth - b.depth);
   const hull = convexHull(
-    cubeStations(cube).flatMap((station) =>
+    shapeStations(cube).flatMap((station) =>
       station.map((pt) => {
         const t = applyXf(pt, xf);
         return projectPoint(t.x, t.y, t.z, heading);
@@ -360,12 +497,18 @@ export function drawCubePreview(
   });
 
   if (showLabels) {
-    const stations = cubeStations(cube).map((station) => station.map((pt) => applyXf(pt, xf)));
+    const stations = shapeStations(cube).map((station) => station.map((pt) => applyXf(pt, xf)));
     const first = stations[0];
     const last = stations[stations.length - 1];
     const oz = applyXf({ x: Number(cube.x) || 0, y: Number(cube.y) || 0, z: Number(cube.z) || 0 }, xf).z;
-    const labelA = projectPoint((first[0].x + first[1].x) / 2, (first[0].y + first[1].y) / 2, oz, heading);
-    const labelB = projectPoint((last[0].x + last[1].x) / 2, (last[0].y + last[1].y) / 2, oz, heading);
+    const midRing = (ring) => ({
+      x: ring.reduce((sum, p) => sum + p.x, 0) / ring.length,
+      y: ring.reduce((sum, p) => sum + p.y, 0) / ring.length,
+    });
+    const a = midRing(first);
+    const b = midRing(last);
+    const labelA = projectPoint(a.x, a.y, oz, heading);
+    const labelB = projectPoint(b.x, b.y, oz, heading);
     ctx.font = "700 12px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -383,8 +526,8 @@ function shapesBounds(shapes) {
   let maxX = -Infinity;
   let maxY = -Infinity;
   let maxZ = -Infinity;
-  (shapes || []).forEach((cube) => {
-    cubeStations(cube).forEach((station) => {
+  (shapes || []).forEach((shape) => {
+    shapeStations(shape).forEach((station) => {
       station.forEach((pt) => {
         minX = Math.min(minX, pt.x);
         minY = Math.min(minY, pt.y);
@@ -419,8 +562,8 @@ export function drawDesignedCar(ctx, shapes, heading, length, color = {}) {
   const minArea = 0.02;
 
   const shadowPts = [];
-  shapes.forEach((cube) => {
-    cubeStations(cube).forEach((station) => {
+  shapes.forEach((shape) => {
+    shapeStations(shape).forEach((station) => {
       station.forEach((pt) => {
         const t = applyXf({ x: pt.x, y: pt.y, z: xf.z0 }, xf);
         shadowPts.push(projectPoint(t.x, t.y, 0, heading));
