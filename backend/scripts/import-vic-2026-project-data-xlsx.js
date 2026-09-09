@@ -472,10 +472,21 @@ function valuesForRow(cells, existingYear) {
     if (!raw) {
       if (field === "year") {
         const keep = String(existingYear || "").trim();
-        out[field] = keep || String(TARGET_YEAR);
+        out[field] = keep || null;
         continue;
       }
       out[field] = null;
+      continue;
+    }
+
+    if (field === "year") {
+      const keep = String(existingYear || "").trim();
+      if (/^\d{4}-\d{2}-\d{2}/.test(keep)) {
+        out[field] = keep;
+        continue;
+      }
+      const parsed = parseDateToken(raw, defaultYear);
+      out[field] = parsed.kind === "date" ? parsed.value : keep || null;
       continue;
     }
 

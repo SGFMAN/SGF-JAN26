@@ -20,6 +20,7 @@ import {
   SALES_YEAR_VIEW,
 } from "../utils/salesTotalsCompute";
 import { isExcludedFromProjectLists } from "../utils/projectStatus";
+import { FALLBACK_STREAMS, fetchStreams } from "../utils/streamsCatalog";
 
 import { STREAM_GROUP_COLORS } from "../utils/streamColors";
 import { UI, MENU, STREAM } from "../utils/uiThemeTokens.js";
@@ -31,16 +32,6 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const { vic: VIC_COLORS, qld: QLD_COLORS, green: GREEN_COLORS } = STREAM_GROUP_COLORS;
-
-// Green streams (for total calculation)
-const GREEN_STREAMS = [
-  "Dual Dwelling",
-  "ATA",
-  "Pumped On Property",
-  "Henderson",
-  "Create Cash Flow",
-  "Fresh Start Advisory",
-];
 
 const MONTHS = [
   "JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE",
@@ -544,6 +535,7 @@ function MonthlyCompareLineChart({
 export default function SalesAnalytics() {
   const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
+  const [streamsCatalog, setStreamsCatalog] = useState(FALLBACK_STREAMS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedYear, setSelectedYear] = useState(() => {
@@ -602,6 +594,16 @@ export default function SalesAnalytics() {
     fetchProjects();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchStreams(API_URL).then((rows) => {
+      if (!cancelled) setStreamsCatalog(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function fetchProjects() {
     try {
       setLoading(true);
@@ -651,8 +653,8 @@ export default function SalesAnalytics() {
   );
 
   const pieValueBreakdown = React.useMemo(
-    () => computePieValueBreakdown(yearFilteredProjects),
-    [yearFilteredProjects]
+    () => computePieValueBreakdown(yearFilteredProjects, streamsCatalog),
+    [yearFilteredProjects, streamsCatalog]
   );
 
   const previousYearPieData = React.useMemo(() => {
@@ -661,17 +663,17 @@ export default function SalesAnalytics() {
       getPreviousPeriodKey(selectedYear, yearView),
       yearView
     );
-    return computePieValueBreakdown(prevProjects);
-  }, [projects, selectedYear, yearView]);
+    return computePieValueBreakdown(prevProjects, streamsCatalog);
+  }, [projects, selectedYear, yearView, streamsCatalog]);
 
   const monthlyData = React.useMemo(
-    () => computeMonthlySalesBreakdown(yearFilteredProjects, selectedYear, yearView),
-    [yearFilteredProjects, selectedYear, yearView]
+    () => computeMonthlySalesBreakdown(yearFilteredProjects, selectedYear, yearView, streamsCatalog),
+    [yearFilteredProjects, selectedYear, yearView, streamsCatalog]
   );
 
   const previousYearData = React.useMemo(
-    () => computePreviousPeriodMonthlyBreakdown(projects, selectedYear, yearView),
-    [projects, selectedYear, yearView]
+    () => computePreviousPeriodMonthlyBreakdown(projects, selectedYear, yearView, streamsCatalog),
+    [projects, selectedYear, yearView, streamsCatalog]
   );
 
   const pieData = React.useMemo(() => {

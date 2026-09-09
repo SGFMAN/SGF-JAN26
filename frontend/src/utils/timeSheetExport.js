@@ -49,3 +49,42 @@ export async function exportTimesheetToServer({
 
   return data;
 }
+
+export async function saveTimesheetToServer({
+  cycleKey,
+  periodDays,
+  dayEntries: dayEntriesOverride,
+}) {
+  const userId = getLoggedInUserId();
+  if (!userId) {
+    throw new Error("You must be logged in to send a time sheet.");
+  }
+
+  const userName = getLoggedInUserName() || "User";
+  const dayEntries =
+    dayEntriesOverride ?? loadPayCycleSheet(userId, cycleKey) ?? createDefaultDayEntries();
+
+  const response = await fetch(`${API_URL}/api/timesheets`, {
+    method: "POST",
+    headers: getApiHeaders(),
+    body: JSON.stringify({
+      userId: Number(userId),
+      userName,
+      cycleKey,
+      periodDays: (Array.isArray(periodDays) ? periodDays : []).map((day) => ({
+        weekday: day.weekday,
+        dateLabel: day.dateLabel,
+        iso: day.iso,
+        date: day.date instanceof Date ? day.date.toISOString() : day.date,
+      })),
+      dayEntries,
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `Save failed (${response.status})`);
+  }
+
+  return data;
+}

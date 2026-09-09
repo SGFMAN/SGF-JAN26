@@ -13,6 +13,47 @@ export const SALES_MONTHS = [
   "DECEMBER",
 ];
 
+function melbourneCalendarDateFromDate(d) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Melbourne",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function slashDateToISO(yearValue) {
+  const parts = yearValue.split("/").map((p) => p.trim());
+  if (parts.length !== 3) return null;
+  const part1 = parts[0];
+  const part2 = parts[1];
+  const part3 = parts[2];
+  if (!/^\d{4}$/.test(part3)) return null;
+  const day = parseInt(part1, 10) > 12 ? part1 : part2;
+  const month = parseInt(part1, 10) > 12 ? part2 : part1;
+  const dd = String(parseInt(day, 10)).padStart(2, "0");
+  const mm = String(parseInt(month, 10)).padStart(2, "0");
+  return `${part3}-${mm}-${dd}`;
+}
+
+/** Calendar start date for month lists. Year-only values have no month and return null. */
+export function parseProjectStartDateISO(yearValue) {
+  if (!yearValue) return null;
+  const v = yearValue.toString().trim();
+  if (!v || /^\d{4}$/.test(v)) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const isoPrefix = v.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoPrefix && (v.includes("T") || /\d{4}-\d{2}-\d{2}\s+\d/.test(v))) {
+    const iso = v.includes("T") ? v : v.replace(" ", "T");
+    const parsed = new Date(/Z$|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`);
+    if (!Number.isNaN(parsed.getTime())) return melbourneCalendarDateFromDate(parsed);
+    return isoPrefix[1];
+  }
+  if (isoPrefix) return isoPrefix[1];
+  if (v.includes("/")) return slashDateToISO(v);
+  return null;
+}
+
 /** Filter projects for a Sales month list (same rules as Sales page, optional partial month cap). */
 export function filterProjectsForSalesMonth(projects, selectedYear, monthIndex0, todayISO = null) {
   const monthNumber = String(monthIndex0 + 1).padStart(2, "0");
@@ -31,49 +72,10 @@ export function filterProjectsForSalesMonth(projects, selectedYear, monthIndex0,
   const monthEndCap = isCurrentPartialMonth ? todayISO : monthEndFull;
 
   return projects.filter((project) => {
-    if (!project.year) return false;
-    const projectYear = project.year.toString().trim();
-    let matchesMonth = false;
-
-    if (projectYear.includes("-")) {
-      const parts = projectYear.split("-");
-      if (parts.length >= 2) {
-        const year = parts[0].trim();
-        const month = parts[1].trim().padStart(2, "0");
-        matchesMonth = year === selectedYear && month === monthNumber;
-      }
-    } else if (projectYear.includes("/")) {
-      const parts = projectYear.split("/");
-      if (parts.length === 3) {
-        const month = parts[0].trim().padStart(2, "0");
-        const year = parts[2].trim();
-        matchesMonth = year === selectedYear && month === monthNumber;
-      }
-    }
-
-    if (!matchesMonth) return false;
-
+    const iso = parseProjectStartDateISO(project.year);
+    if (!iso) return false;
+    if (iso.slice(0, 4) !== String(selectedYear) || iso.slice(5, 7) !== monthNumber) return false;
     if (!isCurrentPartialMonth) return true;
-
-    const iso = normalizeProjectDateToISO(projectYear);
-    if (!iso) return true;
     return iso >= monthStart && iso <= monthEndCap;
   });
-}
-
-function normalizeProjectDateToISO(yearValue) {
-  const v = yearValue.toString().trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  if (/^\d{4}$/.test(v)) return `${v}-01-01`;
-  if (v.includes("/")) {
-    const parts = v.split("/").map((p) => p.trim());
-    if (parts.length === 3 && /^\d{4}$/.test(parts[2])) {
-      const day = parseInt(parts[0], 10) > 12 ? parts[0] : parts[1];
-      const month = parseInt(parts[0], 10) > 12 ? parts[1] : parts[0];
-      const dd = String(parseInt(day, 10)).padStart(2, "0");
-      const mm = String(parseInt(month, 10)).padStart(2, "0");
-      return `${parts[2]}-${mm}-${dd}`;
-    }
-  }
-  return null;
 }

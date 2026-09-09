@@ -365,7 +365,7 @@ export default function FileSettings() {
         <div style={columnStyle}>
           <div style={settingsCard}>
             <h3 style={titleStyle}>Time Sheet Export</h3>
-            <p style={helpStyle}>Folder used when users click Send or Export on time sheets.</p>
+            <p style={helpStyle}>Optional folder for time sheet files. Export emails from Settings → Timesheet.</p>
             <div>
               <label style={labelStyle}>Export folder path</label>
               <input

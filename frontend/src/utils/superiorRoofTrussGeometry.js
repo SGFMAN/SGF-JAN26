@@ -7,11 +7,18 @@ import {
 /** Isosceles truss pitch from the horizontal (degrees). */
 export const SUPERIOR_TRUSS_PITCH_DEG = 15;
 
-/** Plan width of each truss along the long axis (90 mm). */
+/** Plan width used to flush first/last truss faces (90 mm). */
 export const SUPERIOR_TRUSS_WIDTH_M = 0.09;
 
-/** Member thickness in the plane of the truss (45 mm). */
+/** Layout thickness of the bottom chord above the wall (45 mm). */
 export const SUPERIOR_TRUSS_THICK_M = 0.045;
+
+/** Drawn timber: 45 mm along the truss row, 90 mm in the truss plane. */
+export const SUPERIOR_TRUSS_TIMBER_ALONG_ROW_M = SUPERIOR_TRUSS_THICK_M;
+export const SUPERIOR_TRUSS_TIMBER_IN_PLANE_M = SUPERIOR_TRUSS_WIDTH_M;
+
+/** Untrimmed roof sheet over each truss-run slope. */
+export const SUPERIOR_ROOF_SHEET_THICK_M = 0.002;
 
 /** Target centre-to-centre spacing along the long side. */
 export const SUPERIOR_TRUSS_CENTRES_M = 0.9;
@@ -188,11 +195,14 @@ function pushTruss(members, trussState, spanAlongX, cross, start, end, wallYs) {
   });
 }
 
-function addRectTrusses(members, trussState, rect, ring, wallYs, spanAlongX) {
+function addRectTrusses(members, trussState, rect, ring, wallYs, spanAlongX, runs) {
   const minLong = spanAlongX ? rect.minZ : rect.minX;
   const maxLong = spanAlongX ? rect.maxZ : rect.maxX;
   const minRun = spanAlongX ? rect.minX : rect.minZ;
   const maxRun = spanAlongX ? rect.maxX : rect.maxZ;
+  if (runs) {
+    runs.push({ spanAlongX, minLong, maxLong, minRun, maxRun });
+  }
   superiorTrussStationsAlong(minLong, maxLong).forEach((cross) => {
     const spans = clipRoofAxisSpansToRing(spanAlongX, cross, minRun, maxRun, ring);
     const toPlace = spans.length ? spans : [{ start: minRun, end: maxRun }];
@@ -226,7 +236,7 @@ function protrusionStopStation(main, rect, spanAlongX, mainSpanAlongX) {
  * meets the main roof slope. Last truss sits on that line; the rest are
  * respaced from the outer end. Span stays the protrusion width.
  */
-function addProtrusionTrusses(members, trussState, rect, main, ring, wallYs, spanAlongX, mainSpanAlongX) {
+function addProtrusionTrusses(members, trussState, rect, main, ring, wallYs, spanAlongX, mainSpanAlongX, runs) {
   const minRun = spanAlongX ? rect.minX : rect.minZ;
   const maxRun = spanAlongX ? rect.maxX : rect.maxZ;
   const rectMin = spanAlongX ? rect.minZ : rect.minX;
@@ -250,6 +260,9 @@ function addProtrusionTrusses(members, trussState, rect, main, ring, wallYs, spa
   if (!(maxLong > minLong)) {
     minLong = rectMin;
     maxLong = rectMax;
+  }
+  if (runs) {
+    runs.push({ spanAlongX, minLong, maxLong, minRun, maxRun });
   }
   superiorTrussStationsAlong(minLong, maxLong).forEach((cross) => {
     const clipped = clipRoofAxisSpansToRing(spanAlongX, cross, minRun, maxRun, ring)
@@ -284,12 +297,13 @@ export function buildSuperiorRoofTrussMembers(ring, wallTopY) {
     tanP: Math.tan((SUPERIOR_TRUSS_PITCH_DEG * Math.PI) / 180),
   };
   const members = [];
+  const runs = [];
   const trussState = { index: 0, riseM: 0 };
   const rects = decomposeOrthogonalRoofRects(ring);
   const main = rects[0];
   if (!main) return null;
   const mainSpanAlongX = rectSpanAlongX(main);
-  addRectTrusses(members, trussState, main, ring, wallYs, mainSpanAlongX);
+  addRectTrusses(members, trussState, main, ring, wallYs, mainSpanAlongX, runs);
   const protrusionSpanAlongX = !mainSpanAlongX;
   rects.slice(1).forEach((rect) => {
     addProtrusionTrusses(
@@ -300,14 +314,89 @@ export function buildSuperiorRoofTrussMembers(ring, wallTopY) {
       ring,
       wallYs,
       protrusionSpanAlongX,
-      mainSpanAlongX
+      mainSpanAlongX,
+      runs
     );
   });
   if (!members.length) return null;
   return {
     members,
+    sheets: buildSuperiorRoofSheets(runs, wallYs),
     riseM: trussState.riseM,
     pitchDeg: SUPERIOR_TRUSS_PITCH_DEG,
     count: trussState.index,
   };
+}
+
+function skyNormalForSlope(dRun, dY) {
+  let nRun = -dY;
+  let nY = dRun;
+  if (nY < 0) {
+    nRun = -nRun;
+    nY = -nY;
+  }
+  const len = Math.hypot(nRun, nY) || 1;
+  return { run: nRun / len, y: nY / len };
+}
+
+/**
+ * One 2 mm sheet per slope of each truss run. Runs are covered as full
+ * rectangles (no valley / outline trimming).
+ */
+export function buildSuperiorRoofSheets(runs, wallYs) {
+  const thick = SUPERIOR_ROOF_SHEET_THICK_M;
+  const lift = SUPERIOR_TRUSS_TIMBER_IN_PLANE_M / 2 + thick / 2;
+  const sheets = [];
+  (runs || []).forEach((run, runIndex) => {
+    const span = Number(run.maxRun) - Number(run.minRun);
+    const rowLen = Number(run.maxLong) - Number(run.minLong);
+    if (!(span > MIN_SPAN_M) || !(rowLen > 0.02)) return;
+    const half = span / 2;
+    const rise = wallYs.tanP * half;
+    const ridgeRun = (run.minRun + run.maxRun) / 2;
+    const slopeLen = Math.hypot(half, rise);
+    if (!(slopeLen > 0.04)) return;
+    const eaveY = wallYs.chordTop;
+    const ridgeY = wallYs.chordTop + rise;
+    const longAxis = longAxisForSpan(run.spanAlongX);
+    [
+      { side: "a", eaveRun: run.minRun },
+      { side: "b", eaveRun: run.maxRun },
+    ].forEach(({ side, eaveRun }) => {
+      const dRun = ridgeRun - eaveRun;
+      const dY = ridgeY - eaveY;
+      const sLen = Math.hypot(dRun, dY) || 1;
+      const n = skyNormalForSlope(dRun, dY);
+      const midRun = (eaveRun + ridgeRun) / 2;
+      const midLong = (run.minLong + run.maxLong) / 2;
+      const midY = (eaveY + ridgeY) / 2;
+      const posRun = midRun + n.run * lift;
+      const posY = midY + n.y * lift;
+      const posLong = midLong;
+      sheets.push({
+        runIndex,
+        side,
+        widthM: rowLen,
+        lengthM: slopeLen,
+        thickM: thick,
+        position: {
+          x: run.spanAlongX ? posRun : posLong,
+          y: posY,
+          z: run.spanAlongX ? posLong : posRun,
+        },
+        xAxis: longAxis,
+        yAxis: {
+          x: run.spanAlongX ? n.run : 0,
+          y: n.y,
+          z: run.spanAlongX ? 0 : n.run,
+        },
+        zAxis: {
+          x: run.spanAlongX ? dRun / sLen : 0,
+          y: dY / sLen,
+          z: run.spanAlongX ? 0 : dRun / sLen,
+        },
+      });
+    });
+  });
+  return sheets;
 }

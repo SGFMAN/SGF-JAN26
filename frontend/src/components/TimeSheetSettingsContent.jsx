@@ -1,19 +1,20 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { getLoggedInUserId, isUserAdmin } from "../utils/auth";
+import React, { useMemo, useRef, useState } from "react";
+import { getLoggedInUserId } from "../utils/auth";
 import TimeSheetFourColumns from "../pages/timeSheet/TimeSheetFourColumns";
 import TimeSheetSideMenu from "./TimeSheetSideMenu";
+import { useEmailSendOverlay } from "./EmailSendOverlay";
 import { getPayCycleWednesdayForDate, getPayPeriodDays } from "../utils/timeSheetPayCycle";
 import { TIMESHEET_GAP } from "../utils/timesheetLayout";
-import { exportTimesheetToServer } from "../utils/timeSheetExport";
+import { saveTimesheetToServer } from "../utils/timeSheetExport";
 import { prefetchConstructionProjectsForTimeSheet } from "../utils/timeSheetProjects";
 import { TEXT } from "../utils/uiThemeTokens";
 
 export default function TimeSheetSettingsContent() {
   const loggedInUserId = getLoggedInUserId() || "";
   const [resetSignal, setResetSignal] = useState(0);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [sending, setSending] = useState(false);
   const dayEntriesRef = useRef(null);
+  const { runWithEmailOverlay } = useEmailSendOverlay();
 
   const currentCycleWednesday = useMemo(() => getPayCycleWednesdayForDate(), []);
   const currentPeriodDays = useMemo(
@@ -22,44 +23,32 @@ export default function TimeSheetSettingsContent() {
   );
   const cycleKey = currentCycleWednesday.toISOString().slice(0, 10);
 
-  useEffect(() => {
-    let cancelled = false;
-    isUserAdmin().then((admin) => {
-      if (!cancelled) setIsAdmin(admin);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   if (!loggedInUserId) {
     return (
       <p style={{ margin: 0, color: TEXT.dark }}>Could not determine the logged-in user.</p>
     );
   }
 
-  async function handleExport() {
-    if (exporting) return;
+  async function handleSend() {
+    if (sending) return;
     try {
-      setExporting(true);
-      await prefetchConstructionProjectsForTimeSheet();
-      const result = await exportTimesheetToServer({
-        cycleKey,
-        periodDays: currentPeriodDays,
-        cycleWednesday: currentCycleWednesday,
-        dayEntries: dayEntriesRef.current,
+      setSending(true);
+      await runWithEmailOverlay(async () => {
+        await prefetchConstructionProjectsForTimeSheet();
+        await saveTimesheetToServer({
+          cycleKey,
+          periodDays: currentPeriodDays,
+          dayEntries: dayEntriesRef.current,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 700));
       });
-      alert(`Time sheet saved to:\n${result.filePath}`);
+      alert("Time sheet sent.");
     } catch (error) {
-      console.error("Time sheet export:", error);
-      alert(error.message || "Failed to export time sheet.");
+      console.error("Time sheet send:", error);
+      alert(error.message || "Failed to send time sheet.");
     } finally {
-      setExporting(false);
+      setSending(false);
     }
-  }
-
-  function handleSend() {
-    handleExport();
   }
 
   function handleReset() {
@@ -75,13 +64,7 @@ export default function TimeSheetSettingsContent() {
         alignItems: "stretch",
       }}
     >
-      <TimeSheetSideMenu
-        onSend={handleSend}
-        onReset={handleReset}
-        onExport={handleExport}
-        showExport={isAdmin}
-        exporting={exporting}
-      />
+      <TimeSheetSideMenu onSend={handleSend} onReset={handleReset} sending={sending} />
       <TimeSheetFourColumns
         users={[]}
         selectedUserId={loggedInUserId}

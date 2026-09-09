@@ -144,18 +144,26 @@ export function projectMatchesStream(projectStream, streamName, streams) {
   const ps = String(projectStream || "").trim();
   const want = String(streamName || "").trim();
   if (!ps || !want) return false;
-  if (ps === want) return true;
+  if (ps === want || ps.toLowerCase() === want.toLowerCase()) return true;
   const list = Array.isArray(streams) && streams.length ? streams : FALLBACK_STREAMS;
-  const row = list.find((s) => s.name === want);
-  if (row?.aliases?.some((a) => a === ps)) return true;
-  // Legacy hardcoded aliases
-  if (want === "Pumped On Property" && (ps === "Pumped on Property" || ps === "Pumped On Property")) {
+  const row = list.find(
+    (s) => s.name === want || String(s.name || "").toLowerCase() === want.toLowerCase()
+  );
+  if (row?.aliases?.some((a) => a === ps || String(a).toLowerCase() === ps.toLowerCase())) {
     return true;
   }
-  if (want === "Create Cash Flow" && (ps === "Creat Cash Flow" || ps === "Create Cash Flow")) {
+  if (want === "Pumped On Property" && (ps === "Pumped on Property" || ps.toLowerCase() === "pumped on property")) {
+    return true;
+  }
+  if (want === "Create Cash Flow" && (ps === "Creat Cash Flow" || ps.toLowerCase() === "create cash flow")) {
     return true;
   }
   return false;
+}
+
+/** True when the project stream is a non-SGF catalog stream (green sales columns). */
+export function isGreenCatalogStream(projectStream, streams) {
+  return greenSalesStreams(streams).some((name) => projectMatchesStream(projectStream, name, streams));
 }
 
 /** Email Settings keys for a catalog stream (`Name - VIC` / `Name - QLD`, or SGF as-is). */

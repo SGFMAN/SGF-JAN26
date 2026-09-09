@@ -204,6 +204,7 @@ export default function Colours({ project, onUpdate }) {
   );
   const [isAdmin, setIsAdmin] = useState(false);
   const [building3dDefaults, setBuilding3dDefaults] = useState(() => DEFAULT_BUILDING_3D);
+  const [building3dDefaultsReady, setBuilding3dDefaultsReady] = useState(false);
   const planTrace = useMemo(
     () => parsePlanTracePolygon(project?.colours_plan_trace_polygon),
     [project?.colours_plan_trace_polygon]
@@ -435,6 +436,14 @@ export default function Colours({ project, onUpdate }) {
           setCarpetColourOptions(UNWIRED_COLOUR_OPTIONS);
           setCarpetImageByLabel({});
           setFlooringCatalogueReady(true);
+          setKitchenFinishes((prev) =>
+            prev || {
+              cabinetImageUrl: null,
+              cabinetColorHex: null,
+              benchtopImageUrl: null,
+              benchtopColorHex: null,
+            }
+          );
         }
       }
     })();
@@ -574,6 +583,8 @@ export default function Colours({ project, onUpdate }) {
   ]);
 
   const flooringReady = flooringCatalogueReady && projectColoursHydrated && flooringImagesReady;
+  const visualiserDataReady =
+    building3dDefaultsReady && flooringReady && kitchenFinishes != null;
 
   useEffect(() => {
     valuesRef.current = {
@@ -714,10 +725,16 @@ export default function Colours({ project, onUpdate }) {
           headers: getApiHeaders(),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          setBuilding3dDefaults(DEFAULT_BUILDING_3D);
+          return;
+        }
         setBuilding3dDefaults(normalizeBuilding3dDefaults(data.defaults));
       } catch (e) {
         if (!cancelled) setBuilding3dDefaults(DEFAULT_BUILDING_3D);
+      } finally {
+        if (!cancelled) setBuilding3dDefaultsReady(true);
       }
     })();
     return () => {
@@ -1993,6 +2010,7 @@ export default function Colours({ project, onUpdate }) {
                 }}
               >
                 <div style={{ position: "absolute", inset: 8 }}>
+                  {building3dDefaultsReady && projectColoursHydrated ? (
                   <BuildingElevations
                     widthM={building3dDefaults.widthM}
                     depthM={building3dDefaults.depthM}
@@ -2014,6 +2032,21 @@ export default function Colours({ project, onUpdate }) {
                       doorColour,
                     }}
                   />
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: UI.textMuted,
+                        fontSize: "1rem",
+                      }}
+                    >
+                      Loading elevations…
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2539,6 +2572,7 @@ export default function Colours({ project, onUpdate }) {
       {isAdmin && showBuilding3DModal && (
         <Building3DModal
           title="3D Unit"
+          dataReady={visualiserDataReady}
           widthM={building3dDefaults.widthM}
           depthM={building3dDefaults.depthM}
           subfloorHeightM={subfloorHeightForDrawType(

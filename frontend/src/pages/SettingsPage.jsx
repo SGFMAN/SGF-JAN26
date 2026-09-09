@@ -14,6 +14,7 @@ import PaymentsSettings from "./PaymentsSettings";
 import PlanningSettings from "./PlanningSettings";
 import RemindersSettings from "./RemindersSettings";
 import ManagerSettings from "./ManagerSettings";
+import TimesheetSettings from "./TimesheetSettings";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -36,6 +37,7 @@ const menuOptions = [
   { key: "reminders", label: "Reminders" },
   { key: "emailSettings", label: "SMTP Settings" },
   { key: "streams", label: "Streams" },
+  { key: "timesheet", label: "Timesheet" },
   { key: "ui", label: "UI" },
   { key: "users", label: "Users" },
   { key: "permissions", label: "Permissions" },
@@ -91,6 +93,8 @@ export default function SettingsPage() {
         return <PlanningSettings />;
       case "reminders":
         return <RemindersSettings />;
+      case "timesheet":
+        return <TimesheetSettings />;
       case "streams":
         return <StreamsSettings />;
       case "streamSettings":
@@ -135,6 +139,7 @@ export default function SettingsPage() {
     selected === "payments" ||
     selected === "planning" ||
     selected === "reminders" ||
+    selected === "timesheet" ||
     selected === "ui";
 
   return (

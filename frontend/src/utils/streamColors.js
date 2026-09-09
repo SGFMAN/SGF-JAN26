@@ -1,5 +1,10 @@
 import { STREAM } from "./uiThemeTokens.js";
-import { SALES_TOTALS_GREEN_STREAMS } from "./salesTotalsCompute.js";
+import {
+  FALLBACK_STREAMS,
+  SGF_QLD_STREAM,
+  SGF_VIC_STREAM,
+  greenSalesStreams,
+} from "./streamsCatalog.js";
 
 /** @typedef {"vic" | "qld" | "green"} StreamColorGroup */
 
@@ -73,18 +78,17 @@ export function streamColorHover(colorVar) {
 }
 
 /** Sales pages: stream name → { darker, lighter } using themed VIC / QLD / Stream Green. */
-export function buildSalesStreamColors() {
+export function buildSalesStreamColors(streams = FALLBACK_STREAMS) {
+  const catalog = Array.isArray(streams) && streams.length ? streams : FALLBACK_STREAMS;
   const colors = {
-    "SGF - VIC": STREAM_GROUP_COLORS.vic,
-    "SGF - QLD": STREAM_GROUP_COLORS.qld,
+    [SGF_VIC_STREAM]: STREAM_GROUP_COLORS.vic,
+    [SGF_QLD_STREAM]: STREAM_GROUP_COLORS.qld,
     "Green Streams": STREAM_GROUP_COLORS.green,
   };
-  for (const stream of SALES_TOTALS_GREEN_STREAMS) {
+  for (const stream of greenSalesStreams(catalog)) {
     colors[stream] = STREAM_GROUP_COLORS.green;
   }
   colors["Home Office / Studio"] = STREAM_GROUP_COLORS.green;
-  colors["Dual Dwelling"] = STREAM_GROUP_COLORS.green;
-  colors["Creat Cash Flow"] = STREAM_GROUP_COLORS.green;
   return colors;
 }
 

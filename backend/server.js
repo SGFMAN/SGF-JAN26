@@ -94,6 +94,9 @@ const {
 const { setWindowsOutlookClipboard } = require("./emailGeneratorClipboard");
 const { startQuoteReminderScheduler, previewQuoteReminder1, sendQuoteReminder1Manual } = require("./quoteReminders");
 const { parseManagerSettingsColumn } = require("./managerSettings");
+const { parseReminderSettingsColumn } = require("./reminderSettings");
+const { parseTimesheetSettingsColumn } = require("./timesheetSettings");
+const { ensureTimesheetsTable, upsertTimesheet, listTimesheets } = require("./timesheets");
 const {
   listQuoteCallbackLists,
   setQuoteCallbackItemCalled,
@@ -214,6 +217,15 @@ let serverReady = false;
 
 const AI_RENDER_FILENAME = "AI Render.png";
 const AI_3D_RENDER_FILENAME = "AI 3D Render.png";
+
+function melbourneCalendarDate(d = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Melbourne",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
 
 /**
  * Stored paths match Drawings / Colours pages (e.g. Z:\...\file.pdf).
@@ -1449,6 +1461,7 @@ async function ensureSchema() {
     await ensureMapQuoteItemsTable(pool);
     await ensureUserAccessPermissionsTable(pool);
     await ensureUserMessagesTable(pool);
+    await ensureTimesheetsTable(pool);
     await ensureClientPortalTables(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
     await addMissingColumns(pool, "projects", [
@@ -1518,6 +1531,7 @@ async function ensureSchema() {
       "planning_mgr_tp_options_json",
       "reminders_json",
       "manager_settings_json",
+      "timesheet_settings_json",
       "timesheet_export_path",
       "colours_and_finishes_path",
       "holding_amount",
@@ -2173,6 +2187,13 @@ async function ensureSchema() {
     }
   }
   try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN timesheet_settings_json TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column timesheet_settings_json:`, e.message);
+    }
+  }
+  try {
     await pool.query(`ALTER TABLE settings ADD COLUMN planning_manager_layout_json TEXT`);
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
@@ -2313,6 +2334,7 @@ async function ensureSchema() {
   await ensureProjectAccessTokens(pool);
   await ensureUserAccessPermissionsTable(pool);
   await ensureUserMessagesTable(pool);
+  await ensureTimesheetsTable(pool);
   await ensureClientPortalTables(pool);
   await ensureStreamsTable(pool);
   await ensurePolytecColourTables(pool);
@@ -2622,7 +2644,7 @@ app.post("/api/projects/bulk", async (req, res) => {
       // Create project name
       const name = `${suburb} - ${street}`;
       // Start date: always use today when creating a new project
-      const projectDate = new Date().toISOString().split('T')[0];
+      const projectDate = melbourneCalendarDate();
 
       // Create initial project log entry
       const now = new Date();
@@ -2749,7 +2771,7 @@ app.post("/api/projects", async (req, res) => {
     }
 
     // Start date: always use today when creating a new project (sales table uses this for "this month")
-    const projectDate = new Date().toISOString().split('T')[0];
+    const projectDate = melbourneCalendarDate();
 
     // Create initial project log entry
     const now = new Date();
@@ -2757,7 +2779,7 @@ app.post("/api/projects", async (req, res) => {
     const initialLogEntry = `${dateTimeStr} - Project Created`;
 
     // Set default drawings_holder to "design team" for new projects
-    const holderDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const holderDate = melbourneCalendarDate();
     
     const r = await pool.query(
       `INSERT INTO projects (name, status, suburb, street, state, stream, year, deposit, project_cost, salesperson, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_active, client3_active, contract_status, supporting_documents_status, water_authority, water_declaration_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, specs, classification, project_log, drawings_holder, drawings_holder_date, duplicate_source_project_id, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, pre_engagement_required, pre_engagement_paid, deposit_type) 
@@ -2850,9 +2872,9 @@ app.put("/api/projects/:id", async (req, res) => {
         normalizedYear = null;
       } else {
         const yearStr = yearValue.toString().trim();
-        // If only year provided (e.g., "2024"), convert to full date (e.g., "2024-01-01")
+        // Never persist a year-only value. Start date must be a full calendar day.
         if (/^\d{4}$/.test(yearStr)) {
-          normalizedYear = `${yearStr}-01-01`;
+          normalizedYear = undefined;
         } else if (yearStr.includes("/")) {
           // Handle MM/DD/YYYY or DD/MM/YYYY format
           const parts = yearStr.split("/");
@@ -6337,6 +6359,93 @@ app.put("/api/building-element-materials", async (req, res) => {
   } catch (e) {
     console.error("Error saving building element materials:", e);
     return res.status(500).json({ error: e.message || "Failed to save building element materials" });
+  }
+});
+
+app.get("/api/timesheet-settings", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  try {
+    const r = await pool.query("SELECT timesheet_settings_json FROM settings WHERE id = 1");
+    const settings = parseTimesheetSettingsColumn(r.rows[0]?.timesheet_settings_json);
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error("Error fetching timesheet settings:", e);
+    return res.status(500).json({ error: e.message || "Failed to fetch timesheet settings" });
+  }
+});
+
+app.put("/api/timesheet-settings", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const settings = parseTimesheetSettingsColumn(body.settings ?? body);
+    const json = JSON.stringify(settings);
+    await pool.query(
+      `INSERT INTO settings (id, timesheet_settings_json, updated_at)
+       VALUES (1, $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET timesheet_settings_json = EXCLUDED.timesheet_settings_json, updated_at = NOW()`,
+      [json]
+    );
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error("Error saving timesheet settings:", e);
+    return res.status(500).json({ error: e.message || "Failed to save timesheet settings" });
+  }
+});
+
+app.post("/api/timesheets", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const requestUserId = getStaffUserIdFromRequest(req);
+    if (!Number.isFinite(requestUserId)) {
+      return res.status(401).json({ error: "Login required" });
+    }
+
+    const { userId, userName, cycleKey, periodDays, dayEntries } = req.body || {};
+    const saveUserId = Number(userId);
+    if (!Number.isFinite(saveUserId) || saveUserId !== requestUserId) {
+      return res.status(403).json({ error: "You can only save your own time sheet" });
+    }
+
+    const key = String(cycleKey || "").trim();
+    if (!key) {
+      return res.status(400).json({ error: "cycleKey is required" });
+    }
+
+    await ensureTimesheetsTable(pool);
+    await upsertTimesheet(pool, {
+      userId: saveUserId,
+      cycleKey: key,
+      userName: String(userName || "").trim() || "User",
+      periodDays,
+      dayEntries,
+    });
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("Time sheet save:", e);
+    return res.status(500).json({ error: e.message || "Failed to save time sheet" });
+  }
+});
+
+app.get("/api/timesheets", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    await ensureTimesheetsTable(pool);
+    const sheets = await listTimesheets(pool, { cycleKey: req.query?.cycleKey });
+    return res.json({ sheets });
+  } catch (e) {
+    console.error("Time sheet list:", e);
+    return res.status(500).json({ error: e.message || "Failed to load time sheets" });
   }
 });
 
@@ -13581,7 +13690,7 @@ app.post("/api/hotlist", async (req, res) => {
       normalizeAddressHyphensForFilesystem(`${street || ""}, ${suburb || ""}`.trim()) || "New Hotlist Item";
     
     // year = project start date (YYYY-MM-DD). When user clicks Sold, we set it to Sold date; until then use today.
-    const projectDate = new Date().toISOString().split('T')[0];
+    const projectDate = melbourneCalendarDate();
 
     // Create initial project log entry
     const now = new Date();
@@ -13977,7 +14086,7 @@ app.post("/api/hotlist/:id/sold", async (req, res) => {
     // Update project log and set start date to today (Sold date) so it appears in sales for this month
     const now = new Date();
     const dateTimeStr = now.toISOString().replace('T', ' ').substring(0, 19);
-    const soldDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const soldDate = melbourneCalendarDate(now);
     const logEntry = project.project_log 
       ? `${project.project_log}\n${dateTimeStr} - Status changed from Hotlist to Pre-Engagement Phase (Sold)`
       : `${dateTimeStr} - Status changed from Hotlist to Pre-Engagement Phase (Sold)`;

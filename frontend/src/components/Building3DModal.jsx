@@ -114,9 +114,11 @@ import {
   buildAffordableRoofSheetMeshData,
 } from "../utils/affordableRoofGeometry.js";
 import {
+  SUPERIOR_ROOF_SHEET_THICK_M,
   SUPERIOR_TRUSS_PITCH_DEG,
   SUPERIOR_TRUSS_THICK_M,
-  SUPERIOR_TRUSS_WIDTH_M,
+  SUPERIOR_TRUSS_TIMBER_ALONG_ROW_M,
+  SUPERIOR_TRUSS_TIMBER_IN_PLANE_M,
   buildSuperiorRoofTrussMembers,
 } from "../utils/superiorRoofTrussGeometry.js";
 import {
@@ -136,6 +138,7 @@ import {
   offsetPolygonInward,
 } from "../utils/tracePlan3D.js";
 import {
+  CORRUGATED_ROOF_PITCH_M,
   createCorrugatedRoofTexture,
 } from "../utils/corrugatedRoofTexture.js";
 import grassImage from "../images/grass.jpg";
@@ -532,6 +535,66 @@ function buildFloorFinishGeometry(outerRing, holeRings, bottomYM, thicknessM) {
   return geometry;
 }
 
+function loadThreeTexture(loader, url) {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve(null);
+      return;
+    }
+    loader.load(
+      url,
+      (texture) => resolve(texture),
+      undefined,
+      () => resolve(null)
+    );
+  });
+}
+
+export function Building3DLoadingCover({ message = "Loading 3D…" }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 6,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "10px",
+        background: "#0b1018",
+        color: UI.cardBg,
+      }}
+    >
+      <div
+        aria-hidden="true"
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: "50%",
+          border: "3px solid rgba(255,255,255,0.22)",
+          borderTopColor: "#ffffff",
+          animation: "sgf-boot-spin 0.75s linear infinite",
+        }}
+      />
+      <div
+        style={{
+          fontSize: "1.05rem",
+          fontWeight: 600,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+        }}
+      >
+        {message}
+      </div>
+      <style>{`@keyframes sgf-boot-spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 function loadFloorTextureFromUrl(url) {
   return fetchAuthedImageBlobUrl(url).then(async (blobUrl) => {
     if (!blobUrl) return null;
@@ -857,8 +920,8 @@ function addAffordableCutawayFascia(parent, { sheetRing, roofRing, ridgeAxis, sl
   return true;
 }
 
-/** 90×45 mm isosceles trusses on the superior roof outline, spanning the short side. */
-function addSuperiorRoofTrusses(parent, { ring, wallTopY }) {
+/** 45×90 mm isosceles trusses on the superior roof outline, spanning the short side. */
+function addSuperiorRoofTrusses(parent, { ring, wallTopY, roofColor }) {
   try {
     const data = buildSuperiorRoofTrussMembers(ring, wallTopY);
     if (!data?.members?.length) return null;
@@ -887,8 +950,8 @@ function addSuperiorRoofTrusses(parent, { ring, wallTopY }) {
       xAxis.crossVectors(yAxis, dir).normalize();
       if (xAxis.lengthSq() < 1e-8) return;
       const geometry = new THREE.BoxGeometry(
-        SUPERIOR_TRUSS_WIDTH_M,
-        SUPERIOR_TRUSS_THICK_M,
+        SUPERIOR_TRUSS_TIMBER_ALONG_ROW_M,
+        SUPERIOR_TRUSS_TIMBER_IN_PLANE_M,
         len
       );
       const mesh = new THREE.Mesh(geometry, material);
@@ -903,9 +966,55 @@ function addSuperiorRoofTrusses(parent, { ring, wallTopY }) {
         partId: BUILDING_3D_PARTS.ROOF,
         partType: "superior-roof",
         trussKind: member.kind,
-        widthM: SUPERIOR_TRUSS_WIDTH_M,
-        thickM: SUPERIOR_TRUSS_THICK_M,
+        widthM: SUPERIOR_TRUSS_TIMBER_ALONG_ROW_M,
+        thickM: SUPERIOR_TRUSS_TIMBER_IN_PLANE_M,
         lengthM: len,
+      };
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+    });
+    const sheets = Array.isArray(data.sheets) ? data.sheets : [];
+    sheets.forEach((sheet, index) => {
+      const widthM = Number(sheet.widthM);
+      const lengthM = Number(sheet.lengthM);
+      const thickM = Number(sheet.thickM) || SUPERIOR_ROOF_SHEET_THICK_M;
+      if (!(widthM > 0.02) || !(lengthM > 0.04)) return;
+      const yAxis = new THREE.Vector3(sheet.yAxis.x, sheet.yAxis.y, sheet.yAxis.z);
+      const zAxis = new THREE.Vector3(sheet.zAxis.x, sheet.zAxis.y, sheet.zAxis.z);
+      if (yAxis.lengthSq() < 1e-8 || zAxis.lengthSq() < 1e-8) return;
+      yAxis.normalize();
+      zAxis.normalize();
+      const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis);
+      if (xAxis.lengthSq() < 1e-8) return;
+      xAxis.normalize();
+      yAxis.crossVectors(zAxis, xAxis).normalize();
+      const geometry = new THREE.BoxGeometry(widthM, thickM, lengthM);
+      const corrugated = createCorrugatedRoofTexture();
+      corrugated.repeat.set(
+        Math.max(1, widthM / CORRUGATED_ROOF_PITCH_M),
+        Math.max(1, lengthM / CORRUGATED_ROOF_PITCH_M)
+      );
+      corrugated.needsUpdate = true;
+      const material = new THREE.MeshStandardMaterial({
+        map: corrugated,
+        color: Number.isFinite(roofColor) ? roofColor : 0xc8ced8,
+        roughness: 0.42,
+        metalness: 0.35,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(sheet.position.x, sheet.position.y, sheet.position.z);
+      mesh.setRotationFromMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
+      mesh.name = `${BUILDING_3D_PARTS.ROOF}-superior-sheet-${sheet.runIndex + 1}-${sheet.side}-${index + 1}`;
+      mesh.userData = {
+        partId: BUILDING_3D_PARTS.ROOF,
+        partType: "superior-roof",
+        sheetRun: sheet.runIndex,
+        sheetSide: sheet.side,
+        widthM,
+        lengthM,
+        thickM,
       };
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -3624,6 +3733,8 @@ function addCornerColumn(parent, {
  *
  * `embedded`: render inline (Colour Settings) instead of a full-screen overlay.
  * `rightPanel`: optional side menu (Colour Settings). View/render buttons sit above it.
+ * `dataReady`: keep false until project/settings specs are loaded so the first draw
+ * uses that data (not hardcoded defaults) and only happens once.
  */
 export default function Building3DModal({
   onClose,
@@ -3677,6 +3788,7 @@ export default function Building3DModal({
   bearerSpanMaxM = DEFAULT_BUILDING_3D.bearerSpanMaxM,
   joistSpanMaxM = DEFAULT_BUILDING_3D.joistSpanMaxM,
   joistCentresM = DEFAULT_BUILDING_3D.joistCentresM,
+  dataReady = true,
 }) {
   const resolvedSubfloorType = (() => {
     const raw = String(subfloorType || DEFAULT_SUBFLOOR_TYPE).trim() || DEFAULT_SUBFLOOR_TYPE;
@@ -3734,6 +3846,7 @@ export default function Building3DModal({
   const [renderOptionsOpen, setRenderOptionsOpen] = useState(false);
   const [renderTimeOfDay, setRenderTimeOfDay] = useState("morning");
   const [lastRenderTimeOfDay, setLastRenderTimeOfDay] = useState(null);
+  const [sceneReady, setSceneReady] = useState(false);
   const footprintKey = useMemo(
     () => JSON.stringify(footprintPoints ?? null),
     [footprintPoints]
@@ -3939,6 +4052,11 @@ export default function Building3DModal({
   }, [onClose, renderBusy, renderImageUrl, renderOptionsOpen]);
 
   useEffect(() => {
+    if (!dataReady) {
+      setSceneReady(false);
+      skipFirstBuildingRebuildRef.current = true;
+      return undefined;
+    }
     const container = containerRef.current;
     if (!container) return undefined;
 
@@ -3970,6 +4088,7 @@ export default function Building3DModal({
     renderer.domElement.style.height = "100%";
     renderer.domElement.style.touchAction = "none";
     renderer.domElement.style.outline = "none";
+    renderer.domElement.style.visibility = "hidden";
     renderer.domElement.tabIndex = 0;
 
     captureRef.current = {
@@ -3980,20 +4099,7 @@ export default function Building3DModal({
     };
 
     const textureLoader = new THREE.TextureLoader();
-    const skyTexture = textureLoader.load(skyImage);
-    skyTexture.colorSpace = THREE.SRGBColorSpace;
-    const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(180, 48, 24),
-      new THREE.MeshBasicMaterial({
-        map: skyTexture,
-        side: THREE.BackSide,
-        depthWrite: false,
-        fog: false,
-      })
-    );
-    sky.name = "sky";
-    sky.renderOrder = -1;
-    scene.add(sky);
+    let grassTexture = null;
 
     // Neutral ground fill — a grass-green ground colour tints the undersides
     // of weatherboards (and anything else facing down) as if they bounce lawn.
@@ -4023,11 +4129,6 @@ export default function Building3DModal({
     modelGroup.name = "building";
     scene.add(modelGroup);
 
-    const grassTexture = textureLoader.load(grassImage);
-    grassTexture.wrapS = THREE.RepeatWrapping;
-    grassTexture.wrapT = THREE.RepeatWrapping;
-    grassTexture.colorSpace = THREE.SRGBColorSpace;
-    grassTexture.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 8;
     let lastYardKey = "";
 
     function layoutYard(bounds) {
@@ -4050,12 +4151,15 @@ export default function Building3DModal({
         scene.remove(oldFence);
         disposeThreeObject(oldFence);
       }
-      grassTexture.repeat.set(Math.max(1, widthM / 4), Math.max(1, depthM / 4));
-      grassTexture.needsUpdate = true;
+      if (grassTexture) {
+        grassTexture.repeat.set(Math.max(1, widthM / 4), Math.max(1, depthM / 4));
+        grassTexture.needsUpdate = true;
+      }
       const ground = new THREE.Mesh(
         new THREE.PlaneGeometry(widthM, depthM),
         new THREE.MeshStandardMaterial({
-          map: grassTexture,
+          map: grassTexture || undefined,
+          color: grassTexture ? 0xffffff : 0x5a8c4a,
           roughness: 0.92,
           metalness: 0.02,
         })
@@ -4071,12 +4175,14 @@ export default function Building3DModal({
     }
 
     let envelopeGen = 0;
+    let rebuildGen = 0;
     let lastContentKeys = { subfloor: null, frame: null, envelope: null };
     let applyCameraLimits = () => {};
 
-    function rebuildBuilding() {
+    async function rebuildBuilding() {
       const p = paramsRef.current;
       if (!p) return;
+      const gen = ++rebuildGen;
       const {
         widthM,
         depthM,
@@ -4141,6 +4247,34 @@ export default function Building3DModal({
         return;
       }
 
+      let hybridTex = null;
+      let tilesTex = null;
+      let carpetTex = null;
+      let cabinetTex = null;
+      let benchtopTex = null;
+      if (doEnv) {
+        const hybridUrl = flooringImages?.hybrid || null;
+        const tilesUrl = flooringImages?.tiles || null;
+        const carpetUrl = flooringImages?.carpet || null;
+        const cabinetUrl = kitchenFinishes?.cabinetImageUrl || null;
+        const benchtopUrl = kitchenFinishes?.benchtopImageUrl || null;
+        [hybridTex, tilesTex, carpetTex, cabinetTex, benchtopTex] = await Promise.all([
+          hybridUrl ? loadFloorTextureFromUrl(hybridUrl) : Promise.resolve(null),
+          tilesUrl ? loadFloorTextureFromUrl(tilesUrl) : Promise.resolve(null),
+          carpetUrl ? loadFloorTextureFromUrl(carpetUrl) : Promise.resolve(null),
+          cabinetUrl ? loadFloorTextureFromUrl(cabinetUrl) : Promise.resolve(null),
+          benchtopUrl ? loadFloorTextureFromUrl(benchtopUrl) : Promise.resolve(null),
+        ]);
+        if (disposed || gen !== rebuildGen) {
+          hybridTex?.dispose();
+          tilesTex?.dispose();
+          carpetTex?.dispose();
+          cabinetTex?.dispose();
+          benchtopTex?.dispose();
+          return;
+        }
+      }
+
       try {
         if (doSub) {
           removeDirectChildByName(modelGroup, BUILDING_3D_PARTS.SUBFLOOR);
@@ -4183,7 +4317,6 @@ export default function Building3DModal({
         }
         if (doEnv) {
           envelopeGen += 1;
-          const thisEnvelopeGen = envelopeGen;
           removeDirectChildrenExcept(
             modelGroup,
             new Set([BUILDING_3D_PARTS.SUBFLOOR, BUILDING_3D_PARTS.FRAME])
@@ -4286,25 +4419,8 @@ export default function Building3DModal({
       const tilesModuleH = TILE_MODULE_HEIGHT_M * tilesScale;
       const carpetModule = CARPET_MODULE_M * carpetScale;
 
-      (async () => {
-        if (disposed || thisEnvelopeGen !== envelopeGen || floorOuterRing.length < 3) return;
+      if (floorOuterRing.length >= 3) {
         const hybridUrl = flooringImages?.hybrid || null;
-        const tilesUrl = flooringImages?.tiles || null;
-        const carpetUrl = flooringImages?.carpet || null;
-        const [hybridTex, tilesTex, carpetTex] = await Promise.all([
-          hybridUrl ? loadFloorTextureFromUrl(hybridUrl) : Promise.resolve(null),
-          tilesUrl ? loadFloorTextureFromUrl(tilesUrl) : Promise.resolve(null),
-          carpetUrl ? loadFloorTextureFromUrl(carpetUrl) : Promise.resolve(null),
-        ]);
-        if (disposed || thisEnvelopeGen !== envelopeGen) {
-          hybridTex?.dispose();
-          tilesTex?.dispose();
-          carpetTex?.dispose();
-          return;
-        }
-
-        // Hybrid covers the main floor only when a hybrid colour/image is selected —
-        // never the plan-preview orange placeholder.
         const showHybridBase = Boolean(hybridUrl || hybridTex);
         const regionHolesForHybrid = [...tilesXZ, ...carpetXZ];
         if (showHybridBase) {
@@ -4366,12 +4482,10 @@ export default function Building3DModal({
             originZ: b?.minZ ?? floorOriginZ,
           });
         });
-      })();
+      }
 
       // Kitchen benches: cabinetry (0–879 mm) + 20 mm benchtop (880–900 mm), lit finishes.
       if (fromTrace && resolvedKitchenBenches.length && wallRefPoints) {
-        const cabinetUrl = kitchenFinishes?.cabinetImageUrl || null;
-        const benchtopUrl = kitchenFinishes?.benchtopImageUrl || null;
         const cabinetColor =
           Number.isFinite(kitchenFinishes?.cabinetColorHex)
             ? kitchenFinishes.cabinetColorHex
@@ -4380,51 +4494,39 @@ export default function Building3DModal({
           Number.isFinite(kitchenFinishes?.benchtopColorHex)
             ? kitchenFinishes.benchtopColorHex
             : KITCHEN_BENCHTOP_FALLBACK_COLOR;
-
-        (async () => {
-          const [cabinetTex, benchtopTex] = await Promise.all([
-            cabinetUrl ? loadFloorTextureFromUrl(cabinetUrl) : Promise.resolve(null),
-            benchtopUrl ? loadFloorTextureFromUrl(benchtopUrl) : Promise.resolve(null),
-          ]);
-          if (disposed || thisEnvelopeGen !== envelopeGen || !modelGroup.parent) {
-            cabinetTex?.dispose();
-            benchtopTex?.dispose();
-            return;
-          }
-          resolvedKitchenBenches.forEach((benchPts, index) => {
-            const benchResolved = resolveAlignedTraceRing(
-              benchPts,
-              wallRefPoints,
-              calibration
-            );
-            if (benchResolved.ring.length < 3) return;
-            const suffix = index === 0 ? "" : `-${index}`;
-            addFootprintSlab(modelGroup, {
-              partId: `${BUILDING_3D_PARTS.KITCHEN_CABINET}${suffix}`,
-              partType: "kitchen-cabinet",
-              ring: benchResolved.ring,
-              bottomY: subfloorHeightM,
-              topY: subfloorHeightM + KITCHEN_CABINET_TOP_M,
-              color: cabinetColor,
-              map: cabinetTex,
-              roughness: 0.78,
-              metalness: 0.04,
-              extraUserData: { benchIndex: index },
-            });
-            addFootprintSlab(modelGroup, {
-              partId: `${BUILDING_3D_PARTS.KITCHEN_BENCHTOP}${suffix}`,
-              partType: "kitchen-benchtop",
-              ring: benchResolved.ring,
-              bottomY: subfloorHeightM + KITCHEN_BENCHTOP_BOTTOM_M,
-              topY: subfloorHeightM + KITCHEN_BENCHTOP_TOP_M,
-              color: benchtopColor,
-              map: benchtopTex,
-              roughness: 0.55,
-              metalness: 0.04,
-              extraUserData: { benchIndex: index },
-            });
+        resolvedKitchenBenches.forEach((benchPts, index) => {
+          const benchResolved = resolveAlignedTraceRing(
+            benchPts,
+            wallRefPoints,
+            calibration
+          );
+          if (benchResolved.ring.length < 3) return;
+          const suffix = index === 0 ? "" : `-${index}`;
+          addFootprintSlab(modelGroup, {
+            partId: `${BUILDING_3D_PARTS.KITCHEN_CABINET}${suffix}`,
+            partType: "kitchen-cabinet",
+            ring: benchResolved.ring,
+            bottomY: subfloorHeightM,
+            topY: subfloorHeightM + KITCHEN_CABINET_TOP_M,
+            color: cabinetColor,
+            map: cabinetTex,
+            roughness: 0.78,
+            metalness: 0.04,
+            extraUserData: { benchIndex: index },
           });
-        })();
+          addFootprintSlab(modelGroup, {
+            partId: `${BUILDING_3D_PARTS.KITCHEN_BENCHTOP}${suffix}`,
+            partType: "kitchen-benchtop",
+            ring: benchResolved.ring,
+            bottomY: subfloorHeightM + KITCHEN_BENCHTOP_BOTTOM_M,
+            topY: subfloorHeightM + KITCHEN_BENCHTOP_TOP_M,
+            color: benchtopColor,
+            map: benchtopTex,
+            roughness: 0.55,
+            metalness: 0.04,
+            extraUserData: { benchIndex: index },
+          });
+        });
       }
 
       // Robes: solid 2600 mm slabs sitting on floor level.
@@ -5214,20 +5316,25 @@ export default function Building3DModal({
               partId: BUILDING_3D_PARTS.ROOF,
               partType: "roof",
               pitchDeg: SUPERIOR_TRUSS_PITCH_DEG,
-              timberWidthM: SUPERIOR_TRUSS_WIDTH_M,
-              timberThickM: SUPERIOR_TRUSS_THICK_M,
+              timberWidthM: SUPERIOR_TRUSS_TIMBER_ALONG_ROW_M,
+              timberThickM: SUPERIOR_TRUSS_TIMBER_IN_PLANE_M,
             };
             modelGroup.add(roofGroup);
           }
           const superiorTrusses = addSuperiorRoofTrusses(roofGroup, {
             ring: superiorResolved.ring,
             wallTopY,
+            roofColor: finishHex.roof,
           });
           if (superiorTrusses) {
             hasRoofSlab = true;
             roofGroup.userData.trussCount = superiorTrusses.count;
             roofGroup.userData.riseM = superiorTrusses.riseM;
-            const stackM = SUPERIOR_TRUSS_THICK_M + superiorTrusses.riseM;
+            const stackM =
+              SUPERIOR_TRUSS_THICK_M +
+              superiorTrusses.riseM +
+              SUPERIOR_TRUSS_TIMBER_IN_PLANE_M / 2 +
+              SUPERIOR_ROOF_SHEET_THICK_M;
             if (!(roofStackM > 0) || stackM > roofStackM) {
               roofStackM = stackM;
             }
@@ -6005,8 +6112,50 @@ export default function Building3DModal({
         (Number(p.subfloorHeightM) + Number(p.CLADDING_HEIGHT_M) + roofT) / 2;
       updateCamera();
     };
-    rebuildBuilding();
     sceneApiRef.current = { rebuildBuilding };
+
+    (async () => {
+      const [skyTex, grassTex] = await Promise.all([
+        loadThreeTexture(textureLoader, skyImage),
+        loadThreeTexture(textureLoader, grassImage),
+      ]);
+      if (disposed) {
+        skyTex?.dispose();
+        grassTex?.dispose();
+        return;
+      }
+      if (skyTex) {
+        skyTex.colorSpace = THREE.SRGBColorSpace;
+        const sky = new THREE.Mesh(
+          new THREE.SphereGeometry(180, 48, 24),
+          new THREE.MeshBasicMaterial({
+            map: skyTex,
+            side: THREE.BackSide,
+            depthWrite: false,
+            fog: false,
+          })
+        );
+        sky.name = "sky";
+        sky.renderOrder = -1;
+        scene.add(sky);
+      }
+      if (grassTex) {
+        grassTexture = grassTex;
+        grassTexture.wrapS = THREE.RepeatWrapping;
+        grassTexture.wrapT = THREE.RepeatWrapping;
+        grassTexture.colorSpace = THREE.SRGBColorSpace;
+        grassTexture.anisotropy = renderer.capabilities.getMaxAnisotropy?.() || 8;
+      }
+      try {
+        await rebuildBuilding();
+        if (!disposed) renderer.render(scene, camera);
+      } finally {
+        if (!disposed) {
+          renderer.domElement.style.visibility = "visible";
+          setSceneReady(true);
+        }
+      }
+    })();
 
     const isTypingTarget = (el) =>
       el instanceof HTMLInputElement ||
@@ -6229,14 +6378,15 @@ export default function Building3DModal({
         container.removeChild(renderer.domElement);
       }
     };
-  }, []);
+  }, [dataReady]);
 
   useEffect(() => {
+    if (!dataReady) return;
     if (skipFirstBuildingRebuildRef.current) {
       skipFirstBuildingRebuildRef.current = false;
       return;
     }
-    sceneApiRef.current?.rebuildBuilding?.();
+    void sceneApiRef.current?.rebuildBuilding?.();
   }, [
     buildModel,
     depthM,
@@ -6273,6 +6423,7 @@ export default function Building3DModal({
     calibrationKey,
     finishesKey,
     kitchenFinishesKey,
+    dataReady,
   ]);
 
   useEffect(() => {
@@ -6371,7 +6522,7 @@ export default function Building3DModal({
           : ` · Roof: 100 mm slab + ${AFFORDABLE_ROOF_PITCH_DEG}° dual-fall sheet`
       : "",
     superiorRoofPoints?.length >= 3
-      ? ` · Superior roof: ${SUPERIOR_TRUSS_PITCH_DEG}° trusses (90×45 mm)`
+      ? ` · Superior roof: ${SUPERIOR_TRUSS_PITCH_DEG}° trusses (45×90 mm)`
       : "",
   ].join("");
   const deckLabel =
@@ -6508,6 +6659,7 @@ export default function Building3DModal({
       <div
         onClick={(event) => event.stopPropagation()}
         style={{
+          position: "relative",
           width: controlsOnSide ? undefined : "100%",
           height: "100%",
           flex: embedded || controlsOnSide ? 1 : undefined,
@@ -6582,6 +6734,7 @@ export default function Building3DModal({
           </div>
         ) : null}
         <div ref={containerRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
+          {!sceneReady ? <Building3DLoadingCover /> : null}
           {(renderBusy || renderImageUrl) && (
             <div
               style={{

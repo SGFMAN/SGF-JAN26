@@ -1,9 +1,9 @@
 import React from "react";
 import {
-  SALES_TOTALS_GREEN_STREAMS,
   formatSalesTotalsCurrency,
   formatStreamName,
 } from "../utils/salesTotalsCompute";
+import { SGF_QLD_STREAM, SGF_VIC_STREAM, greenSalesStreams } from "../utils/streamsCatalog";
 
 import { STREAM_GROUP_COLORS } from "../utils/streamColors";
 import { UI } from "../utils/uiThemeTokens.js";
@@ -99,11 +99,15 @@ export default function SalesTotalsDashboard({
     projectedQldStateValue,
     projectedYearEndValue,
     projectedYearEndSales,
+    greenStreamNames,
   } = data;
 
   const formatCurrency = formatSalesTotalsCurrency;
   const progressPeriodTotal = calendarYearMeta?.daysInMonth ?? calendarYearMeta?.daysInYear;
   const yearDisplay = periodLabel ?? selectedYear;
+  const greenNames = Array.isArray(greenStreamNames)
+    ? greenStreamNames
+    : greenSalesStreams();
 
   const stateCardProps = (state) =>
     onStateClick
@@ -127,11 +131,11 @@ export default function SalesTotalsDashboard({
           gap: "16px",
         }}
       >
-        {["SGF - VIC", "SGF - QLD"].map((stream) => {
+        {[SGF_VIC_STREAM, SGF_QLD_STREAM].map((stream) => {
           const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
           const colors = streamColors[stream];
           const projected =
-            stream === "SGF - VIC" ? projectedSgfVicValue : projectedSgfQldValue;
+            stream === SGF_VIC_STREAM ? projectedSgfVicValue : projectedSgfQldValue;
           const names = formatStreamName(stream);
           return (
             <div
@@ -247,7 +251,7 @@ export default function SalesTotalsDashboard({
                 {greenStreamsStateBreakdown.vic} / {greenStreamsStateBreakdown.qld}
               </span>
             </div>
-            {SALES_TOTALS_GREEN_STREAMS.map((stream) => {
+            {greenNames.map((stream) => {
               const totals = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
               return (
                 <div

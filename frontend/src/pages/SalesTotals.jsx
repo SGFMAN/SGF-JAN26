@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
@@ -9,6 +9,7 @@ import { captureElementsToPdfBlob } from "../utils/captureElementPdf";
 import { filterProjectsForSalesMonth } from "../utils/salesMonths";
 import { buildSalesStreamColors } from "../utils/streamColors";
 import { computeProjectsOverview } from "../utils/projectsOverviewCompute";
+import { FALLBACK_STREAMS, fetchStreams } from "../utils/streamsCatalog";
 import {
   computeSalesTotalsData,
   filterProjectsByPeriod,
@@ -19,7 +20,7 @@ import {
   getCurrentFinancialYearEnd,
   getMonthsForPdfExportByView,
   getPeriodProgressMeta,
-  normalizeProjectYearToISO,
+  parseProjectStartDateISO,
   SALES_YEAR_VIEW,
 } from "../utils/salesTotalsCompute";
 import { isExcludedFromProjectLists } from "../utils/projectStatus";
@@ -34,11 +35,10 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
-const STREAM_COLORS = buildSalesStreamColors();
-
 export default function SalesTotals() {
   const logo = useAppLogo();
   const [projects, setProjects] = useState([]);
+  const [streamsCatalog, setStreamsCatalog] = useState(FALLBACK_STREAMS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedYear, setSelectedYear] = useState(() => {
@@ -124,6 +124,16 @@ export default function SalesTotals() {
     fetchProjects();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchStreams(API_URL).then((rows) => {
+      if (!cancelled) setStreamsCatalog(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function fetchProjects() {
     try {
       setLoading(true);
@@ -177,9 +187,11 @@ export default function SalesTotals() {
     [selectedYear, yearView]
   );
 
+  const STREAM_COLORS = useMemo(() => buildSalesStreamColors(streamsCatalog), [streamsCatalog]);
+
   const salesTotalsData = React.useMemo(
-    () => computeSalesTotalsData(yearFilteredProjects, periodProgressMeta),
-    [yearFilteredProjects, periodProgressMeta]
+    () => computeSalesTotalsData(yearFilteredProjects, periodProgressMeta, streamsCatalog),
+    [yearFilteredProjects, periodProgressMeta, streamsCatalog]
   );
 
   const formatCurrency = formatSalesTotalsCurrency;
@@ -209,7 +221,7 @@ export default function SalesTotals() {
 
   const vicJobs2026ToDate = React.useMemo(() => {
     return projects
-      .map((project) => ({ project, isoStart: normalizeProjectYearToISO(project.year) }))
+      .map((project) => ({ project, isoStart: parseProjectStartDateISO(project.year) }))
       .filter(({ project, isoStart }) => {
         if (!isoStart) return false;
         if (isoStart < RANGE_START_ISO || isoStart > todayISO) return false;
@@ -222,7 +234,7 @@ export default function SalesTotals() {
 
   const qldJobs2026ToDate = React.useMemo(() => {
     return projects
-      .map((project) => ({ project, isoStart: normalizeProjectYearToISO(project.year) }))
+      .map((project) => ({ project, isoStart: parseProjectStartDateISO(project.year) }))
       .filter(({ project, isoStart }) => {
         if (!isoStart) return false;
         if (isoStart < RANGE_START_ISO || isoStart > todayISO) return false;
@@ -280,7 +292,7 @@ export default function SalesTotals() {
         key: "annual",
         pageType: "totals",
         title: "SALES TOTALS",
-        data: computeSalesTotalsData(yearFilteredProjects, annualMeta),
+        data: computeSalesTotalsData(yearFilteredProjects, annualMeta, streamsCatalog),
       });
     }
 

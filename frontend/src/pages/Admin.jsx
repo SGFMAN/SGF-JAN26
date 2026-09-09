@@ -202,11 +202,9 @@ export default function Admin({ project, onUpdate }) {
     setProjectCost(formatMoneyInput(project?.project_cost));
 
     if (project?.year) {
-      const yearValue = project.year;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(yearValue)) {
-        setProjectDate(yearValue);
-      } else if (/^\d{4}$/.test(yearValue)) {
-        setProjectDate(`${yearValue}-01-01`);
+      const yearValue = String(project.year).trim();
+      if (/^\d{4}-\d{2}-\d{2}/.test(yearValue)) {
+        setProjectDate(yearValue.slice(0, 10));
       } else {
         setProjectDate("");
       }
@@ -508,6 +506,11 @@ export default function Admin({ project, onUpdate }) {
                   }}
                 />
               </div>
+              {/^\d{4}$/.test(String(project?.year || "").trim()) && !projectDate ? (
+                <div style={{ fontSize: "0.78rem", color: UI.textMuted, marginTop: "6px" }}>
+                  This job only has a year, not a sold month. Set the sold date so it appears on the monthly sales list.
+                </div>
+              ) : null}
             </div>
             <div style={{ marginBottom: "14px" }}>
               <div style={COMPACT_LABEL_STYLE}>

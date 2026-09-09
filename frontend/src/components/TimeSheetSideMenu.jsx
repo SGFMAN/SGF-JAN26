@@ -65,7 +65,7 @@ function MenuGroup({ children }) {
   );
 }
 
-export default function TimeSheetSideMenu({ onSend, onReset, onExport, showExport, exporting = false }) {
+export default function TimeSheetSideMenu({ onSend, onReset, sending = false }) {
   return (
     <aside
       className="sidebar-menu"
@@ -86,22 +86,15 @@ export default function TimeSheetSideMenu({ onSend, onReset, onExport, showExpor
       }}
     >
       <MenuGroup>
-        <MenuButton onClick={onSend} disabled={exporting}>
-          {exporting ? "Sending..." : "Send"}
+        <MenuButton onClick={onSend} disabled={sending}>
+          {sending ? "Sending..." : "Send"}
         </MenuButton>
       </MenuGroup>
       <MenuGroup>
-        <MenuButton onClick={onReset} disabled={exporting}>
+        <MenuButton onClick={onReset} disabled={sending}>
           Reset
         </MenuButton>
       </MenuGroup>
-      {showExport && (
-        <MenuGroup>
-          <MenuButton onClick={onExport} disabled={exporting}>
-            {exporting ? "Exporting..." : "Export"}
-          </MenuButton>
-        </MenuGroup>
-      )}
     </aside>
   );
 }

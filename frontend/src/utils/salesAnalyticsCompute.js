@@ -4,37 +4,17 @@ import {
   getPreviousPeriodKey,
   projectMatchesMonthSlot,
 } from "./salesTotalsCompute";
+import {
+  FALLBACK_STREAMS,
+  SGF_QLD_STREAM,
+  SGF_VIC_STREAM,
+  greenSalesStreams,
+  isGreenCatalogStream,
+  projectMatchesStream,
+} from "./streamsCatalog";
 
-const GREEN_STREAMS = [
-  "Dual Dwelling",
-  "ATA",
-  "Pumped On Property",
-  "Henderson",
-  "Create Cash Flow",
-  "Fresh Start Advisory",
-];
-
-function isGreenStream(project) {
-  const projectStream = (project.stream || "").trim();
-  return GREEN_STREAMS.some((stream) => {
-    const streamNormalized = stream.trim();
-    if (streamNormalized === "Pumped On Property") {
-      return (
-        projectStream === "Pumped On Property" ||
-        projectStream === "Pumped on Property" ||
-        projectStream.toLowerCase() === "pumped on property"
-      );
-    }
-    if (streamNormalized === "Create Cash Flow") {
-      return (
-        projectStream === "Create Cash Flow" ||
-        projectStream === "Creat Cash Flow" ||
-        projectStream.toLowerCase() === "create cash flow"
-      );
-    }
-    if (projectStream === streamNormalized) return true;
-    return projectStream.toLowerCase() === streamNormalized.toLowerCase();
-  });
+function catalog(streams) {
+  return Array.isArray(streams) && streams.length ? streams : FALLBACK_STREAMS;
 }
 
 function sumProjectCosts(projectList) {
@@ -56,17 +36,20 @@ export function filterAnalyticsProjectsByPeriod(projects, selectedYear, yearView
   return filterAnalyticsProjects(filterProjectsByPeriod(projects, selectedYear, yearView));
 }
 
-function aggregateMonthProjects(monthProjects) {
-  const greenStreamProjects = monthProjects.filter(isGreenStream);
+function aggregateMonthProjects(monthProjects, streams) {
+  const cat = catalog(streams);
+  const greenStreamProjects = monthProjects.filter((project) =>
+    isGreenCatalogStream(project.stream || "", cat)
+  );
 
   const vicProjects = monthProjects.filter((project) => {
-    if (isGreenStream(project)) return false;
+    if (isGreenCatalogStream(project.stream || "", cat)) return false;
     const state = (project.state || "").trim().toUpperCase();
     return state === "VIC" || state === "VICTORIA";
   });
 
   const qldProjects = monthProjects.filter((project) => {
-    if (isGreenStream(project)) return false;
+    if (isGreenCatalogStream(project.stream || "", cat)) return false;
     const state = (project.state || "").trim().toUpperCase();
     return state === "QLD" || state === "QUEENSLAND";
   });
@@ -91,53 +74,41 @@ function aggregateMonthProjects(monthProjects) {
 }
 
 /** Twelve monthly rows for bar/rates charts (calendar Jan–Dec or financial Jul–Jun). */
-export function computeMonthlySalesBreakdown(projects, selectedYear, yearView) {
+export function computeMonthlySalesBreakdown(projects, selectedYear, yearView, streams) {
   const slots = getPeriodMonthSlots(selectedYear, yearView);
   return slots.map((slot) => ({
     name: slot.name,
-    ...aggregateMonthProjects(projects.filter((p) => projectMatchesMonthSlot(p, slot))),
+    ...aggregateMonthProjects(
+      projects.filter((p) => projectMatchesMonthSlot(p, slot)),
+      streams
+    ),
   }));
 }
 
-export function computePreviousPeriodMonthlyBreakdown(projects, selectedYear, yearView) {
+export function computePreviousPeriodMonthlyBreakdown(projects, selectedYear, yearView, streams) {
   const previousKey = getPreviousPeriodKey(selectedYear, yearView);
   const prevProjects = filterAnalyticsProjectsByPeriod(projects, previousKey, yearView);
-  return computeMonthlySalesBreakdown(prevProjects, previousKey, yearView);
-}
-
-function streamMatches(projectStream, streamNormalized) {
-  if (streamNormalized === "Pumped On Property") {
-    return (
-      projectStream === "Pumped On Property" ||
-      projectStream === "Pumped on Property" ||
-      projectStream.toLowerCase() === "pumped on property"
-    );
-  }
-  if (streamNormalized === "Create Cash Flow") {
-    return (
-      projectStream === "Create Cash Flow" ||
-      projectStream === "Creat Cash Flow" ||
-      projectStream.toLowerCase() === "create cash flow"
-    );
-  }
-  if (projectStream === streamNormalized) return true;
-  return projectStream.toLowerCase() === streamNormalized.toLowerCase();
+  return computeMonthlySalesBreakdown(prevProjects, previousKey, yearView, streams);
 }
 
 /** Pie chart value totals for a filtered project list. */
-export function computePieValueBreakdown(projects) {
-  const vicProjects = projects.filter((p) => (p.stream || "").trim() === "SGF - VIC");
-  const qldProjects = projects.filter((p) => (p.stream || "").trim() === "SGF - QLD");
+export function computePieValueBreakdown(projects, streams) {
+  const cat = catalog(streams);
+  const vicProjects = projects.filter((p) =>
+    projectMatchesStream(p.stream || "", SGF_VIC_STREAM, cat)
+  );
+  const qldProjects = projects.filter((p) =>
+    projectMatchesStream(p.stream || "", SGF_QLD_STREAM, cat)
+  );
 
   const vicTotal = sumProjectCosts(vicProjects);
   const qldTotal = sumProjectCosts(qldProjects);
 
   let greenTotal = 0;
-  GREEN_STREAMS.forEach((stream) => {
-    const streamProjects = projects.filter((project) => {
-      const projectStream = (project.stream || "").trim();
-      return streamMatches(projectStream, stream.trim());
-    });
+  greenSalesStreams(cat).forEach((stream) => {
+    const streamProjects = projects.filter((project) =>
+      projectMatchesStream(project.stream || "", stream, cat)
+    );
     greenTotal += sumProjectCosts(streamProjects);
   });
 

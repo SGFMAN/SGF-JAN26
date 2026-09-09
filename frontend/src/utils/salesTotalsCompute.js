@@ -1,26 +1,18 @@
-export const SALES_TOTALS_STREAMS = [
-  "SGF - VIC",
-  "SGF - QLD",
-  "Dual Dwelling",
-  "ATA",
-  "Pumped On Property",
-  "Henderson",
-  "Create Cash Flow",
-  "Fresh Start Advisory",
-];
+import { SALES_MONTHS, parseProjectStartDateISO } from "./salesMonths";
+import {
+  FALLBACK_STREAMS,
+  SGF_QLD_STREAM,
+  SGF_VIC_STREAM,
+  greenSalesStreams,
+  projectMatchesStream,
+} from "./streamsCatalog";
+export { parseProjectStartDateISO };
 
-export const SALES_TOTALS_GREEN_STREAMS = [
-  "Dual Dwelling",
-  "ATA",
-  "Pumped On Property",
-  "Henderson",
-  "Create Cash Flow",
-  "Fresh Start Advisory",
-];
+/** Fallback names when the streams catalog has not loaded yet. */
+export const SALES_TOTALS_GREEN_STREAMS = greenSalesStreams(FALLBACK_STREAMS);
+export const SALES_TOTALS_STREAMS = [SGF_VIC_STREAM, SGF_QLD_STREAM, ...SALES_TOTALS_GREEN_STREAMS];
 
 const MS_PER_DAY = 86400000;
-
-import { SALES_MONTHS } from "./salesMonths";
 
 export const SALES_YEAR_VIEW = {
   CALENDAR: "calendar",
@@ -75,38 +67,24 @@ export function normalizeProjectYearToISO(yearValue) {
   if (!yearValue) return null;
   const v = yearValue.toString().trim();
   if (!v) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   if (/^\d{4}$/.test(v)) return `${v}-01-01`;
-  if (v.includes("/")) {
-    const parts = v.split("/").map((p) => p.trim());
-    if (parts.length === 3) {
-      const part1 = parts[0];
-      const part2 = parts[1];
-      const part3 = parts[2];
-      if (!/^\d{4}$/.test(part3)) return null;
-      const day = parseInt(part1, 10) > 12 ? part1 : part2;
-      const month = parseInt(part1, 10) > 12 ? part2 : part1;
-      const dd = String(parseInt(day, 10)).padStart(2, "0");
-      const mm = String(parseInt(month, 10)).padStart(2, "0");
-      return `${part3}-${mm}-${dd}`;
-    }
-  }
-  return null;
+  return parseProjectStartDateISO(v);
 }
 
 export function filterProjectsByYear(projects, selectedYear) {
   return projects.filter((project) => {
     if (!project.year) return false;
+    const iso = parseProjectStartDateISO(project.year);
+    if (iso) return iso.slice(0, 4) === String(selectedYear);
     const projectYear = project.year.toString().trim();
     if (projectYear.includes("-")) {
-      const parts = projectYear.split("-");
-      if (parts.length >= 1) return parts[0].trim() === selectedYear;
-    } else if (projectYear.includes("/")) {
-      const parts = projectYear.split("/");
-      if (parts.length === 3) return parts[2].trim() === selectedYear;
-    } else if (/^\d{4}$/.test(projectYear)) {
-      return projectYear === selectedYear;
+      return projectYear.split("-")[0].trim() === selectedYear;
     }
+    if (projectYear.includes("/")) {
+      const parts = projectYear.split("/");
+      return parts.length === 3 && parts[2].trim() === selectedYear;
+    }
+    if (/^\d{4}$/.test(projectYear)) return projectYear === selectedYear;
     return false;
   });
 }
@@ -114,7 +92,7 @@ export function filterProjectsByYear(projects, selectedYear) {
 export function filterProjectsByFinancialYear(projects, fyEndYear) {
   const { startISO, endISO } = getFinancialYearRange(fyEndYear);
   return projects.filter((project) => {
-    const iso = normalizeProjectYearToISO(project.year);
+    const iso = parseProjectStartDateISO(project.year) || normalizeProjectYearToISO(project.year);
     if (!iso) return false;
     return iso >= startISO && iso <= endISO;
   });
@@ -155,7 +133,7 @@ export function getAvailableCalendarYears(projects) {
 export function getAvailableFinancialYears(projects, referenceDate = new Date()) {
   const years = new Set();
   projects.forEach((project) => {
-    const iso = normalizeProjectYearToISO(project.year);
+    const iso = parseProjectStartDateISO(project.year);
     if (!iso) return;
     const fyEnd = getFinancialYearEndForDate(iso);
     if (fyEnd) years.add(String(fyEnd));
@@ -179,7 +157,7 @@ export function filterProjectsByMonth(yearFilteredProjects, selectedYear, monthI
   const monthEnd = isCurrentMonth && todayISO ? todayISO : monthEndFull;
 
   return yearFilteredProjects.filter((project) => {
-    const iso = normalizeProjectYearToISO(project.year);
+    const iso = parseProjectStartDateISO(project.year);
     if (!iso) return false;
     return iso >= monthStart && iso <= monthEnd;
   });
@@ -307,22 +285,10 @@ export function getPeriodMonthSlots(selectedYear, yearView) {
 }
 
 export function projectMatchesMonthSlot(project, slot) {
-  if (!project?.year) return false;
+  const iso = parseProjectStartDateISO(project?.year);
+  if (!iso) return false;
   const monthNumber = String(slot.monthIndex + 1).padStart(2, "0");
-  const projectYear = project.year.toString().trim();
-  if (projectYear.includes("-")) {
-    const parts = projectYear.split("-");
-    if (parts.length >= 2) {
-      return parts[0].trim() === slot.calendarYear && parts[1].trim().padStart(2, "0") === monthNumber;
-    }
-  } else if (projectYear.includes("/")) {
-    const parts = projectYear.split("/");
-    if (parts.length === 3) {
-      const month = parts[0].trim().padStart(2, "0");
-      return parts[2].trim() === slot.calendarYear && month === monthNumber;
-    }
-  }
-  return false;
+  return iso.slice(0, 4) === String(slot.calendarYear) && iso.slice(5, 7) === monthNumber;
 }
 
 /** Index (0–11) of the current calendar month within the selected period. */
@@ -487,40 +453,16 @@ export function getMonthProgressMeta(yearStr, monthIndex0, referenceDate = new D
   };
 }
 
-function streamMatches(projectStream, streamNormalized) {
-  if (streamNormalized === "Pumped On Property") {
-    return (
-      projectStream === "Pumped On Property" ||
-      projectStream === "Pumped on Property" ||
-      projectStream.toLowerCase() === "pumped on property"
-    );
-  }
-  if (streamNormalized === "Create Cash Flow") {
-    return (
-      projectStream === "Create Cash Flow" ||
-      projectStream === "Creat Cash Flow" ||
-      projectStream.toLowerCase() === "create cash flow"
-    );
-  }
-  if (projectStream === streamNormalized) return true;
-  return projectStream.toLowerCase() === streamNormalized.toLowerCase();
-}
-
-function projectedEndOfYear(total, progressMeta) {
-  if (!progressMeta || progressMeta.mode === "future") return null;
-  const fraction = Math.max(progressMeta.fraction, 1 / (progressMeta.daysInYear || progressMeta.daysInMonth || 1));
-  const n = Number(total) || 0;
-  return Math.round(n / fraction);
-}
-
-export function computeSalesTotalsData(yearFilteredProjects, progressMeta) {
+export function computeSalesTotalsData(yearFilteredProjects, progressMeta, streamsCatalog) {
+  const catalog = Array.isArray(streamsCatalog) && streamsCatalog.length ? streamsCatalog : FALLBACK_STREAMS;
+  const greenNames = greenSalesStreams(catalog);
+  const streamNames = [SGF_VIC_STREAM, SGF_QLD_STREAM, ...greenNames];
   const streamTotals = {};
 
-  SALES_TOTALS_STREAMS.forEach((stream) => {
+  streamNames.forEach((stream) => {
     const streamProjects = yearFilteredProjects.filter((project) => {
       if (project.classification === "Home Office / Studio") return false;
-      const projectStream = (project.stream || "").trim();
-      return streamMatches(projectStream, stream.trim());
+      return projectMatchesStream(project.stream || "", stream, catalog);
     });
 
     const salesCount = streamProjects.length;
@@ -537,7 +479,7 @@ export function computeSalesTotalsData(yearFilteredProjects, progressMeta) {
 
   let greenSales = 0;
   let greenCost = 0;
-  SALES_TOTALS_GREEN_STREAMS.forEach((stream) => {
+  greenNames.forEach((stream) => {
     const t = streamTotals[stream] || { salesCount: 0, totalCost: 0 };
     greenSales += t.salesCount;
     greenCost += t.totalCost;
@@ -546,8 +488,7 @@ export function computeSalesTotalsData(yearFilteredProjects, progressMeta) {
 
   const greenStreamProjects = yearFilteredProjects.filter((project) => {
     if (project.classification === "Home Office / Studio") return false;
-    const projectStream = (project.stream || "").trim();
-    return SALES_TOTALS_GREEN_STREAMS.some((stream) => streamMatches(projectStream, stream.trim()));
+    return greenNames.some((stream) => projectMatchesStream(project.stream || "", stream, catalog));
   });
 
   const greenStreamsStateBreakdown = {
@@ -640,8 +581,9 @@ export function computeSalesTotalsData(yearFilteredProjects, progressMeta) {
     stateTotals,
     grandTotal,
     calendarYearMeta: progressMeta,
-    projectedSgfVicValue: projectedForCost((streamTotals["SGF - VIC"] || { totalCost: 0 }).totalCost),
-    projectedSgfQldValue: projectedForCost((streamTotals["SGF - QLD"] || { totalCost: 0 }).totalCost),
+    greenStreamNames: greenNames,
+    projectedSgfVicValue: projectedForCost((streamTotals[SGF_VIC_STREAM] || { totalCost: 0 }).totalCost),
+    projectedSgfQldValue: projectedForCost((streamTotals[SGF_QLD_STREAM] || { totalCost: 0 }).totalCost),
     projectedGreenStreamsValue: projectedForCost(greenStreamsTotal.totalCost),
     projectedVicStateValue: projectedForCost(stateTotals.VIC.totalCost),
     projectedQldStateValue: projectedForCost(stateTotals.QLD.totalCost),

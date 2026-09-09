@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import AuthedImg from "../components/AuthedImg";
 import ModalBackdrop from "../components/ModalBackdrop";
-import Building3DModal from "../components/Building3DModal.jsx";
+import Building3DModal, { Building3DLoadingCover } from "../components/Building3DModal.jsx";
 import BuildingElementVisibilityPanel from "../components/BuildingElementVisibilityPanel.jsx";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import {
@@ -273,6 +273,7 @@ export default function ColourSettings() {
   const [elementMaterialsSaving, setElementMaterialsSaving] = useState(false);
   const [modelDefaults, setModelDefaults] = useState(() => DEFAULT_BUILDING_3D);
   const [modelDraft, setModelDraft] = useState(() => building3dDraftFromDefaults(DEFAULT_BUILDING_3D));
+  const [modelDefaultsReady, setModelDefaultsReady] = useState(false);
   const [modelDefaultsSaving, setModelDefaultsSaving] = useState(false);
   const [modelDefaultsSaveError, setModelDefaultsSaveError] = useState("");
   const [modelMenuOpenId, setModelMenuOpenId] = useState(null);
@@ -424,6 +425,8 @@ export default function ColourSettings() {
       console.error(e);
       setModelDefaults(DEFAULT_BUILDING_3D);
       setModelDraft(building3dDraftFromDefaults(DEFAULT_BUILDING_3D));
+    } finally {
+      setModelDefaultsReady(true);
     }
   }, []);
 
@@ -1967,6 +1970,11 @@ export default function ColourSettings() {
           }}
         >
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex" }}>
+            {!modelDefaultsReady ? (
+              <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: "relative", borderRadius: "12px", overflow: "hidden" }}>
+                <Building3DLoadingCover />
+              </div>
+            ) : (
             <Building3DModal
               embedded
               title="Base 3D Model"
@@ -2283,6 +2291,7 @@ export default function ColourSettings() {
           />
               }
             />
+            )}
           </div>
         </div>
       ) : null}
