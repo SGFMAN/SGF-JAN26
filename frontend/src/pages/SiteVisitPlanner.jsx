@@ -14,6 +14,7 @@ import {
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
 import useAppLogo from "../hooks/useAppLogo.js";
+import { getSiteVisitUpdateEmailSettings } from "../utils/emailGeneralSettings";
 
 import { UI, BANNER } from "../utils/uiThemeTokens.js";
 import { OnHoldSash, CancelledSash } from "../components/ProjectStatusSash";
@@ -72,6 +73,34 @@ function smtpSlotEmailsFromSettings(data) {
   }
   list.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   return list;
+}
+
+function escapeEmailHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatSiteVisitFullAddress(project) {
+  return [project?.street, project?.suburb, project?.state].map((p) => String(p || "").trim()).filter(Boolean).join(", ");
+}
+
+function formatSiteVisitConfirmationLine(project) {
+  const address = formatSiteVisitFullAddress(project);
+  const name = String(project?.client1_name || "").trim();
+  const email = String(project?.client1_email || "").trim();
+  const phone = String(project?.client1_phone || "").trim();
+  return [address, name, email, phone].filter(Boolean).join(", ");
+}
+
+function formatSiteVisitConfirmationDate(d = new Date()) {
+  return d.toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 export default function SiteVisitPlanner() {
@@ -406,6 +435,67 @@ export default function SiteVisitPlanner() {
     setSiteVisitPreviewBody("");
   }
 
+  async function sendSiteVisitConfirmationList() {
+    const list = groupProjectsRef.current || [];
+    if (!list.length) return;
+    try {
+      const settingsRes = await fetch(`${API_URL}/api/settings`);
+      const settings = settingsRes.ok ? await settingsRes.json().catch(() => ({})) : {};
+      const { toEmail, fromEmail } = getSiteVisitUpdateEmailSettings(settings);
+      if (!toEmail || !fromEmail) {
+        console.warn("Site visit confirmation skipped: To/From not set in Settings → Site Visits");
+        return;
+      }
+      const todayLabel = formatSiteVisitConfirmationDate();
+      const visitDateLabel = groupDate
+        ? new Date(`${groupDate}T00:00:00`).toLocaleDateString("en-AU", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })
+        : "";
+      const rows = list
+        .map((project) => formatSiteVisitConfirmationLine(project))
+        .filter(Boolean)
+        .map((line) => `<div>${escapeEmailHtml(line)}</div>`)
+        .join("");
+      const htmlBody = `<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #333;">
+<p>Hello,</p>
+<p>Here is the complete list of site visits${visitDateLabel ? ` scheduled for ${escapeEmailHtml(visitDateLabel)}` : ""}.</p>
+${rows || "<div>No site visits in this group.</div>"}
+<p>Kind regards</p>
+</div>`;
+      const sendRes = await fetch(`${API_URL}/api/emails/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: [toEmail],
+          from: fromEmail,
+          subject: `Site Visits ${todayLabel}`,
+          htmlBody,
+        }),
+      });
+      const sendData = await sendRes.json().catch(() => ({}));
+      if (!sendRes.ok) {
+        throw new Error(sendData.error || "Failed to send site visit confirmation");
+      }
+    } catch (error) {
+      console.error("Site visit confirmation email:", error);
+      alert(error.message || "Client emails were sent, but the site visit confirmation email failed.");
+    }
+  }
+
+  async function finishSiteVisitEmailSequence({ showSentAlert = false } = {}) {
+    await runWithEmailOverlay(async () => {
+      await sendSiteVisitConfirmationList();
+    });
+    if (showSentAlert) {
+      alert("Site visit emails sent for all projects in this group.");
+    }
+    closeSiteVisitEmailPreview();
+  }
+
   async function openSiteVisitEmailPreviewAtIndex(index) {
     try {
       const list = groupProjectsRef.current;
@@ -541,8 +631,7 @@ export default function SiteVisitPlanner() {
       if (idx < groupProjectsRef.current.length - 1) {
         await openSiteVisitEmailPreviewAtIndex(idx + 1);
       } else {
-        alert("Site visit emails sent for all projects in this group.");
-        closeSiteVisitEmailPreview();
+        await finishSiteVisitEmailSequence({ showSentAlert: true });
       }
     } catch (error) {
       console.error("Site visit email send:", error);
@@ -556,7 +645,7 @@ export default function SiteVisitPlanner() {
     if (idx < list.length - 1) {
       void openSiteVisitEmailPreviewAtIndex(idx + 1);
     } else {
-      closeSiteVisitEmailPreview();
+      void finishSiteVisitEmailSequence();
     }
   }
 

@@ -15,6 +15,7 @@ import PlanningSettings from "./PlanningSettings";
 import RemindersSettings from "./RemindersSettings";
 import ManagerSettings from "./ManagerSettings";
 import TimesheetSettings from "./TimesheetSettings";
+import SiteVisitSettings from "./SiteVisitSettings";
 import useAppLogo from "../hooks/useAppLogo.js";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -35,6 +36,7 @@ const menuOptions = [
   { key: "payments", label: "Payments" },
   { key: "planning", label: "Planning" },
   { key: "reminders", label: "Reminders" },
+  { key: "siteVisits", label: "Site Visits" },
   { key: "emailSettings", label: "SMTP Settings" },
   { key: "streams", label: "Streams" },
   { key: "timesheet", label: "Timesheet" },
@@ -93,6 +95,8 @@ export default function SettingsPage() {
         return <PlanningSettings />;
       case "reminders":
         return <RemindersSettings />;
+      case "siteVisits":
+        return <SiteVisitSettings />;
       case "timesheet":
         return <TimesheetSettings />;
       case "streams":
@@ -139,6 +143,7 @@ export default function SettingsPage() {
     selected === "payments" ||
     selected === "planning" ||
     selected === "reminders" ||
+    selected === "siteVisits" ||
     selected === "timesheet" ||
     selected === "ui";
 
@@ -215,12 +220,13 @@ export default function SettingsPage() {
             maxWidth: "200px",
             height: "758px",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
-            padding: "32px 12px",
+            padding: "16px 12px",
             display: "flex",
             flexDirection: "column",
             alignItems: "stretch",
             gap: "0",
             boxSizing: "border-box",
+            overflow: "hidden",
           }}
         >
           {/* Menu Buttons */}
@@ -234,8 +240,8 @@ export default function SettingsPage() {
                   color: selected === option.key ? MONUMENT : UI.textSecondary,
                   border: "none",
                   borderRadius: "10px",
-                  padding: "12px 8px",
-                  fontSize: "1.05rem",
+                  padding: "7px 8px",
+                  fontSize: "1rem",
                   fontWeight: 500,
                   textAlign: "center",
                   textDecoration: "none",
@@ -252,7 +258,7 @@ export default function SettingsPage() {
             ))}
           </div>
 
-          <div style={{ flex: 1 }} />
+          <div style={{ flex: 1, minHeight: 8 }} />
 
           {/* Back to Main (Home) */}
           <Link
@@ -262,16 +268,17 @@ export default function SettingsPage() {
               color: MONUMENT,
               border: "none",
               borderRadius: "10px",
-              padding: "13px 8px",
-              fontSize: "1.05rem",
+              padding: "10px 8px",
+              fontSize: "1rem",
               fontWeight: 500,
               textAlign: "center",
               textDecoration: "none",
               letterSpacing: "0.5px",
               cursor: "pointer",
               transition: "background 0.17s",
-              marginBottom: "4px",
+              marginBottom: 0,
               display: "block",
+              flexShrink: 0,
             }}
           >
             ← Back to Main

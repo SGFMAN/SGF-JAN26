@@ -5,6 +5,7 @@ export const TOOLS_MENU_LINKS = [
   { to: "/maps", label: "Maps" },
   { to: "/apply-fields", label: "Apply Fields" },
   { to: "/planner", label: "Planner" },
+  { to: "/quick-concept", label: "Quick Concept" },
 ];
 
 export function isToolsPath(path) {

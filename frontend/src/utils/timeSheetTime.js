@@ -103,11 +103,11 @@ export const formatBreakMinutes = formatDurationMinutes;
 export const formatOvertimeMinutes = formatDurationMinutes;
 
 function migrateWorkMinutes(entry) {
-  if (entry.workMinutes != null) {
-    return Math.min(
-      MAX_WORK_HOURS_MINUTES,
-      Math.max(0, Number(entry.workMinutes) || DEFAULT_WORK_HOURS_MINUTES)
-    );
+  if (entry.workMinutes != null && entry.workMinutes !== "") {
+    const n = Number(entry.workMinutes);
+    if (!Number.isFinite(n)) return DEFAULT_WORK_HOURS_MINUTES;
+    if (n === SELECT_DURATION_MINUTES) return SELECT_DURATION_MINUTES;
+    return Math.min(MAX_WORK_HOURS_MINUTES, Math.max(0, n));
   }
   if (entry.startMinutes != null && entry.finishMinutes != null) {
     let duration = entry.finishMinutes - entry.startMinutes;

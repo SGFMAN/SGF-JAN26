@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { PAY_PERIOD_WEEKDAY_ORDER } from "../../utils/timeSheetPayCycle";
+import { PAY_PERIOD_WEEKDAY_ORDER, isTimesheetSunday } from "../../utils/timeSheetPayCycle";
 import {
   createDefaultDayEntries,
   loadUserTemplate,
@@ -141,17 +141,13 @@ function getDayHighlight(day, showDates) {
   return { rowStyle: {}, dayTextColor: TEXT.dark };
 }
 
-function isSunday(day) {
-  return (day.weekday ?? day.expectedWeekday) === "Sunday";
-}
-
 function buildWeekDisplayItems(weekDays, weekStartIndex) {
   const items = [];
   let lastWeekday = null;
 
   for (let i = 0; i < weekDays.length; i++) {
     const day = weekDays[i];
-    if (isSunday(day)) continue;
+    if (isTimesheetSunday(day)) continue;
 
     if (day.weekday === "Monday" && lastWeekday === "Saturday") {
       items.push({ type: "weekendGap", key: `weekend-gap-${weekStartIndex + i}` });

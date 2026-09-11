@@ -137,10 +137,7 @@ import {
   normalizedPointToXZ,
   offsetPolygonInward,
 } from "../utils/tracePlan3D.js";
-import {
-  CORRUGATED_ROOF_PITCH_M,
-  createCorrugatedRoofTexture,
-} from "../utils/corrugatedRoofTexture.js";
+import { createCorrugatedRoofTexture } from "../utils/corrugatedRoofTexture.js";
 import grassImage from "../images/grass.jpg";
 import skyImage from "../images/sky.jpg";
 import { UI } from "../utils/uiThemeTokens.js";
@@ -976,26 +973,16 @@ function addSuperiorRoofTrusses(parent, { ring, wallTopY, roofColor }) {
     });
     const sheets = Array.isArray(data.sheets) ? data.sheets : [];
     sheets.forEach((sheet, index) => {
-      const widthM = Number(sheet.widthM);
-      const lengthM = Number(sheet.lengthM);
-      const thickM = Number(sheet.thickM) || SUPERIOR_ROOF_SHEET_THICK_M;
-      if (!(widthM > 0.02) || !(lengthM > 0.04)) return;
-      const yAxis = new THREE.Vector3(sheet.yAxis.x, sheet.yAxis.y, sheet.yAxis.z);
-      const zAxis = new THREE.Vector3(sheet.zAxis.x, sheet.zAxis.y, sheet.zAxis.z);
-      if (yAxis.lengthSq() < 1e-8 || zAxis.lengthSq() < 1e-8) return;
-      yAxis.normalize();
-      zAxis.normalize();
-      const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis);
-      if (xAxis.lengthSq() < 1e-8) return;
-      xAxis.normalize();
-      yAxis.crossVectors(zAxis, xAxis).normalize();
-      const geometry = new THREE.BoxGeometry(widthM, thickM, lengthM);
+      if (!sheet?.positions || !sheet?.indices || sheet.indices.length < 3) return;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(sheet.positions, 3));
+      if (sheet.uvs) {
+        geometry.setAttribute("uv", new THREE.BufferAttribute(sheet.uvs, 2));
+      }
+      geometry.setIndex(new THREE.BufferAttribute(sheet.indices, 1));
+      geometry.computeVertexNormals();
       const corrugated = createCorrugatedRoofTexture();
-      corrugated.repeat.set(
-        Math.max(1, widthM / CORRUGATED_ROOF_PITCH_M),
-        Math.max(1, lengthM / CORRUGATED_ROOF_PITCH_M)
-      );
-      corrugated.needsUpdate = true;
+      corrugated.repeat.set(1, 1);
       const material = new THREE.MeshStandardMaterial({
         map: corrugated,
         color: Number.isFinite(roofColor) ? roofColor : 0xc8ced8,
@@ -1004,17 +991,13 @@ function addSuperiorRoofTrusses(parent, { ring, wallTopY, roofColor }) {
         side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(sheet.position.x, sheet.position.y, sheet.position.z);
-      mesh.setRotationFromMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis));
       mesh.name = `${BUILDING_3D_PARTS.ROOF}-superior-sheet-${sheet.runIndex + 1}-${sheet.side}-${index + 1}`;
       mesh.userData = {
         partId: BUILDING_3D_PARTS.ROOF,
         partType: "superior-roof",
         sheetRun: sheet.runIndex,
         sheetSide: sheet.side,
-        widthM,
-        lengthM,
-        thickM,
+        thickM: Number(sheet.thickM) || SUPERIOR_ROOF_SHEET_THICK_M,
       };
       mesh.castShadow = true;
       mesh.receiveShadow = true;

@@ -1,14 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import { getApiHeaders } from "../utils/auth";
-import { buildCollatedTimesheetTxt } from "../utils/timeSheetCollate";
+import {
+  BASE_HOURLY_OPTIONS,
+  DEFAULT_BASE_HOURLY_HOURS,
+  DEFAULT_OVERTIME_15_HOURS,
+  OVERTIME_15_OPTIONS,
+  PAY_RATE,
+  buildCollatedTimesheetTxt,
+  clampPayHours,
+  formatHourOptionLabel,
+  isTimesheetExportUser,
+} from "../utils/timeSheetCollate";
 import {
   formatPeriodRange,
   getPayCycleWednesdayForDate,
   getPayPeriodBounds,
   getPayPeriodDays,
 } from "../utils/timeSheetPayCycle";
-import { UI, outlineBorder } from "../utils/uiThemeTokens.js";
+import { UI, INDICATOR, outlineBorder } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
@@ -24,16 +34,6 @@ const cardStyle = {
   width: "100%",
   minWidth: 0,
   boxSizing: "border-box",
-};
-
-const checkboxRowStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "10px",
-  padding: "8px 10px",
-  borderRadius: "8px",
-  background: WHITE,
-  cursor: "pointer",
 };
 
 const labelStyle = {
@@ -73,6 +73,46 @@ const exportButtonStyle = {
   cursor: "pointer",
 };
 
+const USERS_PER_LEFT_COLUMN = 20;
+
+function TimesheetUserRows({ users, submittedUserIds }) {
+  return users.map((user) => {
+    const sent = submittedUserIds.has(Number(user.id));
+    return (
+      <div
+        key={user.id}
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: "10px",
+          padding: "3px 0",
+          lineHeight: 1.3,
+        }}
+      >
+        <span style={{ fontSize: "0.9rem", color: MONUMENT }}>{user.name || "User"}</span>
+        <span
+          style={{
+            fontSize: "0.85rem",
+            fontWeight: 600,
+            color: sent ? INDICATOR.green : INDICATOR.red,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {sent ? "Sent" : "Not sent"}
+        </span>
+      </div>
+    );
+  });
+}
+
+const userColumnHeadingStyle = {
+  fontSize: "1rem",
+  margin: 0,
+  color: MONUMENT,
+  fontWeight: 600,
+};
+
 function smtpSlotEmailsFromSettings(data) {
   if (!data || typeof data !== "object") return [];
   const seen = new Set();
@@ -90,24 +130,21 @@ function smtpSlotEmailsFromSettings(data) {
   return list;
 }
 
-function normalizeUserIds(users) {
-  return (Array.isArray(users) ? users : [])
-    .map((user) => Number(user.id))
-    .filter((id) => Number.isFinite(id) && id > 0);
-}
-
 export default function TimesheetSettings() {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const [users, setUsers] = useState([]);
-  const [selectedUserIds, setSelectedUserIds] = useState(null);
   const [fromEmail, setFromEmail] = useState("");
   const [toEmail, setToEmail] = useState("");
+  const [baseHourlyHours, setBaseHourlyHours] = useState(DEFAULT_BASE_HOURLY_HOURS);
+  const [overtime15Hours, setOvertime15Hours] = useState(DEFAULT_OVERTIME_15_HOURS);
   const [smtpEmails, setSmtpEmails] = useState([]);
+  const [sheets, setSheets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const selectedUserIdsRef = useRef(selectedUserIds);
   const fromEmailRef = useRef(fromEmail);
   const toEmailRef = useRef(toEmail);
+  const baseHourlyHoursRef = useRef(baseHourlyHours);
+  const overtime15HoursRef = useRef(overtime15Hours);
 
   const cycleWednesday = useMemo(() => getPayCycleWednesdayForDate(), []);
   const periodDays = useMemo(() => getPayPeriodDays(cycleWednesday), [cycleWednesday]);
@@ -117,9 +154,28 @@ export default function TimesheetSettings() {
     return formatPeriodRange(periodStart, periodEnd);
   }, [cycleWednesday]);
 
-  useEffect(() => {
-    selectedUserIdsRef.current = selectedUserIds;
-  }, [selectedUserIds]);
+  const timesheetUsers = useMemo(
+    () =>
+      users
+        .filter(isTimesheetExportUser)
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })),
+    [users]
+  );
+
+  const submittedUserIds = useMemo(() => {
+    const ids = new Set();
+    for (const sheet of sheets) {
+      if (sheet?.submitted === true) ids.add(Number(sheet.userId));
+    }
+    return ids;
+  }, [sheets]);
+
+  const userListColumns = useMemo(() => {
+    return [
+      timesheetUsers.slice(0, USERS_PER_LEFT_COLUMN),
+      timesheetUsers.slice(USERS_PER_LEFT_COLUMN),
+    ];
+  }, [timesheetUsers]);
 
   useEffect(() => {
     fromEmailRef.current = fromEmail;
@@ -130,38 +186,80 @@ export default function TimesheetSettings() {
   }, [toEmail]);
 
   useEffect(() => {
+    baseHourlyHoursRef.current = baseHourlyHours;
+  }, [baseHourlyHours]);
+
+  useEffect(() => {
+    overtime15HoursRef.current = overtime15Hours;
+  }, [overtime15Hours]);
+
+  async function loadSheets(cancelled = { current: false }) {
+    try {
+      const sheetsRes = await fetch(
+        `${API_URL}/api/timesheets?cycleKey=${encodeURIComponent(cycleKey)}`,
+        { headers: getApiHeaders() }
+      );
+      const sheetsData = await sheetsRes.json().catch(() => ({}));
+      if (cancelled.current) return;
+      if (!sheetsRes.ok) {
+        setSheets([]);
+        return;
+      }
+      setSheets(Array.isArray(sheetsData.sheets) ? sheetsData.sheets : []);
+    } catch (error) {
+      console.error("Error loading time sheets:", error);
+      if (!cancelled.current) setSheets([]);
+    }
+  }
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         setLoading(true);
-        const [usersRes, settingsRes, smtpRes] = await Promise.all([
+        const [usersRes, settingsRes, smtpRes, sheetsRes] = await Promise.all([
           fetch(`${API_URL}/api/users`),
           fetch(`${API_URL}/api/timesheet-settings`),
           fetch(`${API_URL}/api/settings`),
+          fetch(`${API_URL}/api/timesheets?cycleKey=${encodeURIComponent(cycleKey)}`, {
+            headers: getApiHeaders(),
+          }),
         ]);
         if (cancelled) return;
 
         const userList = usersRes.ok ? await usersRes.json().catch(() => []) : [];
-        const list = Array.isArray(userList) ? userList : [];
-        setUsers(list);
+        setUsers(Array.isArray(userList) ? userList : []);
 
-        let nextSelected = null;
         let nextFrom = "";
         let nextTo = "";
+        let nextBase = DEFAULT_BASE_HOURLY_HOURS;
+        let nextOt15 = DEFAULT_OVERTIME_15_HOURS;
         if (settingsRes.ok) {
           const data = await settingsRes.json().catch(() => ({}));
           const saved = data?.settings || {};
-          nextSelected = Array.isArray(saved.selectedUserIds) ? saved.selectedUserIds.map(Number) : null;
           nextFrom = String(saved.fromEmail || "").trim();
           nextTo = String(saved.toEmail || "").trim();
+          nextBase = clampPayHours(
+            saved.baseHourlyHours,
+            BASE_HOURLY_OPTIONS[0],
+            BASE_HOURLY_OPTIONS[BASE_HOURLY_OPTIONS.length - 1],
+            DEFAULT_BASE_HOURLY_HOURS
+          );
+          nextOt15 = clampPayHours(
+            saved.overtime15Hours,
+            OVERTIME_15_OPTIONS[0],
+            OVERTIME_15_OPTIONS[OVERTIME_15_OPTIONS.length - 1],
+            DEFAULT_OVERTIME_15_HOURS
+          );
         }
-        if (nextSelected == null) nextSelected = normalizeUserIds(list);
-        setSelectedUserIds(nextSelected);
-        selectedUserIdsRef.current = nextSelected;
         setFromEmail(nextFrom);
         fromEmailRef.current = nextFrom;
         setToEmail(nextTo);
         toEmailRef.current = nextTo;
+        setBaseHourlyHours(nextBase);
+        baseHourlyHoursRef.current = nextBase;
+        setOvertime15Hours(nextOt15);
+        overtime15HoursRef.current = nextOt15;
 
         if (smtpRes.ok) {
           const settings = await smtpRes.json().catch(() => ({}));
@@ -169,14 +267,23 @@ export default function TimesheetSettings() {
         } else {
           setSmtpEmails([]);
         }
+
+        if (sheetsRes.ok) {
+          const sheetsData = await sheetsRes.json().catch(() => ({}));
+          setSheets(Array.isArray(sheetsData.sheets) ? sheetsData.sheets : []);
+        } else {
+          setSheets([]);
+        }
       } catch (err) {
         console.error("Error loading timesheet settings:", err);
         if (!cancelled) {
           setUsers([]);
-          setSelectedUserIds([]);
           setFromEmail("");
           setToEmail("");
+          setBaseHourlyHours(DEFAULT_BASE_HOURLY_HOURS);
+          setOvertime15Hours(DEFAULT_OVERTIME_15_HOURS);
           setSmtpEmails([]);
+          setSheets([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -185,18 +292,19 @@ export default function TimesheetSettings() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [cycleKey]);
 
-  async function saveSettings(nextSelected, nextFrom, nextTo) {
+  async function saveSettings(nextFrom, nextTo, nextBase, nextOt15) {
     try {
       const response = await fetch(`${API_URL}/api/timesheet-settings`, {
         method: "PUT",
         headers: getApiHeaders(),
         body: JSON.stringify({
           settings: {
-            selectedUserIds: nextSelected,
             fromEmail: nextFrom,
             toEmail: nextTo,
+            baseHourlyHours: nextBase,
+            overtime15Hours: nextOt15,
           },
         }),
       });
@@ -210,22 +318,20 @@ export default function TimesheetSettings() {
     }
   }
 
-  function toggleUser(userId) {
-    const id = Number(userId);
-    setSelectedUserIds((prev) => {
-      const current = Array.isArray(prev) ? prev : [];
-      const next = current.includes(id) ? current.filter((value) => value !== id) : [...current, id];
-      selectedUserIdsRef.current = next;
-      void saveSettings(next, fromEmailRef.current, toEmailRef.current);
-      return next;
-    });
+  function persistSettings(nextFrom, nextTo, nextBase, nextOt15) {
+    void saveSettings(
+      nextFrom ?? fromEmailRef.current,
+      nextTo ?? toEmailRef.current,
+      nextBase ?? baseHourlyHoursRef.current,
+      nextOt15 ?? overtime15HoursRef.current
+    );
   }
 
   function updateFromEmail(email) {
     const nextFrom = String(email || "").trim();
     fromEmailRef.current = nextFrom;
     setFromEmail(nextFrom);
-    void saveSettings(selectedUserIdsRef.current, nextFrom, toEmailRef.current);
+    persistSettings(nextFrom, toEmailRef.current, baseHourlyHoursRef.current, overtime15HoursRef.current);
   }
 
   function handleToEmailChange(e) {
@@ -238,14 +344,38 @@ export default function TimesheetSettings() {
     const nextTo = String(toEmailRef.current || "").trim();
     toEmailRef.current = nextTo;
     setToEmail(nextTo);
-    void saveSettings(selectedUserIdsRef.current, fromEmailRef.current, nextTo);
+    persistSettings(fromEmailRef.current, nextTo, baseHourlyHoursRef.current, overtime15HoursRef.current);
+  }
+
+  function updateBaseHourlyHours(hours) {
+    const next = clampPayHours(
+      hours,
+      BASE_HOURLY_OPTIONS[0],
+      BASE_HOURLY_OPTIONS[BASE_HOURLY_OPTIONS.length - 1],
+      DEFAULT_BASE_HOURLY_HOURS
+    );
+    baseHourlyHoursRef.current = next;
+    setBaseHourlyHours(next);
+    persistSettings(fromEmailRef.current, toEmailRef.current, next, overtime15HoursRef.current);
+  }
+
+  function updateOvertime15Hours(hours) {
+    const next = clampPayHours(
+      hours,
+      OVERTIME_15_OPTIONS[0],
+      OVERTIME_15_OPTIONS[OVERTIME_15_OPTIONS.length - 1],
+      DEFAULT_OVERTIME_15_HOURS
+    );
+    overtime15HoursRef.current = next;
+    setOvertime15Hours(next);
+    persistSettings(fromEmailRef.current, toEmailRef.current, baseHourlyHoursRef.current, next);
   }
 
   async function handleExport() {
     if (exporting) return;
-    const ids = Array.isArray(selectedUserIds) ? selectedUserIds : [];
-    if (ids.length === 0) {
-      alert("Select at least one user to include in the export.");
+    const included = users.filter(isTimesheetExportUser);
+    if (included.length === 0) {
+      alert("Tick Timesheet on at least one user in Settings → Users.");
       return;
     }
     const from = String(fromEmail || "").trim();
@@ -262,7 +392,9 @@ export default function TimesheetSettings() {
     try {
       setExporting(true);
       await runWithEmailOverlay(async () => {
-        const sheetsRes = await fetch(`${API_URL}/api/timesheets?cycleKey=${encodeURIComponent(cycleKey)}`);
+        const sheetsRes = await fetch(`${API_URL}/api/timesheets?cycleKey=${encodeURIComponent(cycleKey)}`, {
+          headers: getApiHeaders(),
+        });
         const sheetsData = await sheetsRes.json().catch(() => ({}));
         if (!sheetsRes.ok) {
           throw new Error(sheetsData.error || `Failed to load time sheets (${sheetsRes.status})`);
@@ -270,9 +402,12 @@ export default function TimesheetSettings() {
 
         const txt = buildCollatedTimesheetTxt({
           users,
-          selectedUserIds: ids,
           sheets: Array.isArray(sheetsData.sheets) ? sheetsData.sheets : [],
           periodDays,
+          rates: {
+            baseHourlyHours,
+            overtime15Hours,
+          },
         });
         const filename = `Timesheet_${cycleKey}.txt`;
         const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
@@ -293,7 +428,18 @@ export default function TimesheetSettings() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
+
+        const resetRes = await fetch(`${API_URL}/api/timesheets/reset-submissions`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ cycleKey }),
+        });
+        const resetData = await resetRes.json().catch(() => ({}));
+        if (!resetRes.ok) {
+          throw new Error(resetData.error || `Exported, but failed to reset sent status (${resetRes.status})`);
+        }
       });
+      await loadSheets();
       alert("Time sheet export emailed.");
     } catch (error) {
       console.error("Time sheet export email:", error);
@@ -306,8 +452,6 @@ export default function TimesheetSettings() {
   if (loading) {
     return <div style={{ color: MONUMENT, padding: "16px 24px" }}>Loading...</div>;
   }
-
-  const selectedSet = new Set((Array.isArray(selectedUserIds) ? selectedUserIds : []).map(Number));
 
   return (
     <div
@@ -344,7 +488,7 @@ export default function TimesheetSettings() {
             Timesheet
           </h2>
           <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.4 }}>
-            Export the current pay cycle ({periodLabel}) for ticked users and email it as a text file.
+            Export the current pay cycle ({periodLabel}) for users with Timesheet ticked in Settings → Users.
           </p>
         </div>
         <button
@@ -364,35 +508,67 @@ export default function TimesheetSettings() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 0.8fr)",
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
           gap: "16px",
           width: "100%",
           alignItems: "start",
         }}
       >
-        <div style={cardStyle}>
-          <h3 style={{ fontSize: "1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>Users</h3>
-          <p style={{ margin: 0, fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.4 }}>
-            Only ticked users are included in the export.
-          </p>
-          {users.length === 0 ? (
-            <p style={{ margin: 0, color: UI.textMuted }}>No users found.</p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {users.map((user) => (
-                <label key={user.id} htmlFor={`timesheet-user-${user.id}`} style={checkboxRowStyle}>
-                  <input
-                    id={`timesheet-user-${user.id}`}
-                    type="checkbox"
-                    checked={selectedSet.has(Number(user.id))}
-                    onChange={() => toggleUser(user.id)}
-                    style={{ width: "18px", height: "18px", cursor: "pointer", flexShrink: 0 }}
-                  />
-                  <span style={{ fontSize: "0.9rem", color: MONUMENT }}>{user.name}</span>
-                </label>
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
+          <div style={cardStyle}>
+            <h3 style={{ fontSize: "1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>{PAY_RATE.BASE}</h3>
+            <label style={labelStyle} htmlFor="timesheet-base-hourly">
+              Weekday hours
+            </label>
+            <select
+              id="timesheet-base-hourly"
+              aria-label="Base Hourly"
+              value={baseHourlyHours}
+              onChange={(e) => updateBaseHourlyHours(e.target.value)}
+              style={selectStyle}
+            >
+              {BASE_HOURLY_OPTIONS.map((hours) => (
+                <option key={hours} value={hours}>
+                  {formatHourOptionLabel(hours)}
+                </option>
               ))}
+            </select>
+          </div>
+
+          <div style={cardStyle}>
+            <h3 style={{ fontSize: "1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>{PAY_RATE.OT15}</h3>
+            <label style={labelStyle} htmlFor="timesheet-overtime-15">
+              Next hours
+            </label>
+            <select
+              id="timesheet-overtime-15"
+              aria-label="Overtime 1.5x"
+              value={overtime15Hours}
+              onChange={(e) => updateOvertime15Hours(e.target.value)}
+              style={selectStyle}
+            >
+              {OVERTIME_15_OPTIONS.map((hours) => (
+                <option key={hours} value={hours}>
+                  {formatHourOptionLabel(hours)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={cardStyle}>
+            <h3 style={{ fontSize: "1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>{PAY_RATE.OT2}</h3>
+            <div style={labelStyle}>Hours</div>
+            <div
+              style={{
+                ...selectStyle,
+                display: "flex",
+                alignItems: "center",
+                minHeight: "38px",
+              }}
+            >
+              All Remaining
             </div>
-          )}
+          </div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 }}>
@@ -419,11 +595,9 @@ export default function TimesheetSettings() {
 
           <div style={cardStyle}>
             <h3 style={{ fontSize: "1rem", margin: 0, color: MONUMENT, fontWeight: 600 }}>To</h3>
-            <label style={labelStyle} htmlFor="timesheet-to-email">
-              Email address
-            </label>
             <input
               id="timesheet-to-email"
+              aria-label="To"
               type="text"
               value={toEmail}
               onChange={handleToEmailChange}
@@ -432,6 +606,28 @@ export default function TimesheetSettings() {
               style={inputStyle}
               autoComplete="off"
             />
+          </div>
+        </div>
+
+        <div style={{ ...cardStyle, gap: "8px" }}>
+          <h3 style={userColumnHeadingStyle}>Users</h3>
+          {timesheetUsers.length === 0 ? (
+            <p style={{ margin: 0, fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.3 }}>
+              Tick Timesheet on at least one user in Settings → Users.
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+              <TimesheetUserRows users={userListColumns[0]} submittedUserIds={submittedUserIds} />
+            </div>
+          )}
+        </div>
+
+        <div style={{ ...cardStyle, gap: "8px" }}>
+          <h3 style={{ ...userColumnHeadingStyle, visibility: "hidden" }} aria-hidden="true">
+            Users
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <TimesheetUserRows users={userListColumns[1]} submittedUserIds={submittedUserIds} />
           </div>
         </div>
       </div>

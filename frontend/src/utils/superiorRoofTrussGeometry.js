@@ -3,6 +3,7 @@ import {
   pointInRoofRing,
   roofRingAabbXZ,
 } from "./affordableRoofGeometry.js";
+import { CORRUGATED_ROOF_PITCH_M } from "./corrugatedRoofTexture.js";
 
 /** Isosceles truss pitch from the horizontal (degrees). */
 export const SUPERIOR_TRUSS_PITCH_DEG = 15;
@@ -17,7 +18,7 @@ export const SUPERIOR_TRUSS_THICK_M = 0.045;
 export const SUPERIOR_TRUSS_TIMBER_ALONG_ROW_M = SUPERIOR_TRUSS_THICK_M;
 export const SUPERIOR_TRUSS_TIMBER_IN_PLANE_M = SUPERIOR_TRUSS_WIDTH_M;
 
-/** Untrimmed roof sheet over each truss-run slope. */
+/** Roof sheet thickness over each truss-run slope. */
 export const SUPERIOR_ROOF_SHEET_THICK_M = 0.002;
 
 /** Target centre-to-centre spacing along the long side. */
@@ -46,6 +47,35 @@ function rectSpanAlongX(rect) {
 
 function longAxisForSpan(spanAlongX) {
   return spanAlongX ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+}
+
+/**
+ * Lay a gable-end truss down to pitch: plane contains the span and a vector
+ * that runs inward along the row at `pitchRad` from the floor.
+ * inwardSign: +1 at the min-long end, -1 at the max-long end.
+ */
+function hipEndFrame(spanAlongX, inwardSign, pitchRad) {
+  const c = Math.cos(pitchRad);
+  const s = Math.sin(pitchRad);
+  if (spanAlongX) {
+    return {
+      longAxis: { x: 0, y: -inwardSign * c, z: s },
+      shiftLong: inwardSign * c,
+      sinP: s,
+    };
+  }
+  return {
+    longAxis: { x: -s, y: inwardSign * c, z: 0 },
+    shiftLong: inwardSign * c,
+    sinP: s,
+  };
+}
+
+function hipInwardSign(stationIndex, stationCount, hipMinEnd, hipMaxEnd) {
+  if (!(stationCount > 1)) return 0;
+  if (hipMinEnd && stationIndex === 0) return 1;
+  if (hipMaxEnd && stationIndex === stationCount - 1) return -1;
+  return 0;
 }
 
 function cellKey(i, j) {
@@ -159,7 +189,7 @@ export function superiorTrussStationsAlong(minLong, maxLong) {
   return stations;
 }
 
-function pushTruss(members, trussState, spanAlongX, cross, start, end, wallYs) {
+function pushTruss(members, trussState, spanAlongX, cross, start, end, wallYs, inwardSign = 0) {
   const length = end - start;
   if (length < MIN_SPAN_M) return;
   const half = length / 2;
@@ -167,11 +197,32 @@ function pushTruss(members, trussState, spanAlongX, cross, start, end, wallYs) {
   trussState.riseM = Math.max(trussState.riseM, rise);
   const a = pointAt(spanAlongX, cross, start);
   const b = pointAt(spanAlongX, cross, end);
-  const peak = pointAt(spanAlongX, cross, (start + end) / 2);
-  const peakY = wallYs.chordTop + rise;
+  let heelAY = wallYs.chordTop;
+  let heelBY = wallYs.chordTop;
+  let heelA = a;
+  let heelB = b;
+  let peak = pointAt(spanAlongX, cross, (start + end) / 2);
+  let peakY = wallYs.chordTop + rise;
+  let longAxis = longAxisForSpan(spanAlongX);
+  if (inwardSign) {
+    const hip = hipEndFrame(spanAlongX, inwardSign, wallYs.pitchRad);
+    const lay = (y) => {
+      const dy = y - wallYs.chordMid;
+      const long = cross + dy * hip.shiftLong;
+      return { long, y: wallYs.chordMid + dy * hip.sinP };
+    };
+    const heel = lay(wallYs.chordTop);
+    const apex = lay(peakY);
+    heelA = pointAt(spanAlongX, heel.long, start);
+    heelB = pointAt(spanAlongX, heel.long, end);
+    heelAY = heel.y;
+    heelBY = heel.y;
+    peak = pointAt(spanAlongX, apex.long, (start + end) / 2);
+    peakY = apex.y;
+    longAxis = hip.longAxis;
+  }
   const idx = trussState.index;
   trussState.index += 1;
-  const longAxis = longAxisForSpan(spanAlongX);
   members.push({
     from: { x: a.x, y: wallYs.chordMid, z: a.z },
     to: { x: b.x, y: wallYs.chordMid, z: b.z },
@@ -180,14 +231,14 @@ function pushTruss(members, trussState, spanAlongX, cross, start, end, wallYs) {
     trussIndex: idx,
   });
   members.push({
-    from: { x: a.x, y: wallYs.chordTop, z: a.z },
+    from: { x: heelA.x, y: heelAY, z: heelA.z },
     to: { x: peak.x, y: peakY, z: peak.z },
     longAxis,
     kind: "rafter",
     trussIndex: idx,
   });
   members.push({
-    from: { x: b.x, y: wallYs.chordTop, z: b.z },
+    from: { x: heelB.x, y: heelBY, z: heelB.z },
     to: { x: peak.x, y: peakY, z: peak.z },
     longAxis,
     kind: "rafter",
@@ -201,13 +252,22 @@ function addRectTrusses(members, trussState, rect, ring, wallYs, spanAlongX, run
   const minRun = spanAlongX ? rect.minX : rect.minZ;
   const maxRun = spanAlongX ? rect.maxX : rect.maxZ;
   if (runs) {
-    runs.push({ spanAlongX, minLong, maxLong, minRun, maxRun });
+    runs.push({
+      spanAlongX,
+      minLong,
+      maxLong,
+      minRun,
+      maxRun,
+      hipMin: true,
+      hipMax: true,
+    });
   }
-  superiorTrussStationsAlong(minLong, maxLong).forEach((cross) => {
+  superiorTrussStationsAlong(minLong, maxLong).forEach((cross, i, stations) => {
+    const inwardSign = hipInwardSign(i, stations.length, true, true);
     const spans = clipRoofAxisSpansToRing(spanAlongX, cross, minRun, maxRun, ring);
     const toPlace = spans.length ? spans : [{ start: minRun, end: maxRun }];
     toPlace.forEach((span) => {
-      pushTruss(members, trussState, spanAlongX, cross, span.start, span.end, wallYs);
+      pushTruss(members, trussState, spanAlongX, cross, span.start, span.end, wallYs, inwardSign);
     });
   });
 }
@@ -261,10 +321,21 @@ function addProtrusionTrusses(members, trussState, rect, main, ring, wallYs, spa
     minLong = rectMin;
     maxLong = rectMax;
   }
+  const hipMin = !fromMaxSide;
+  const hipMax = fromMaxSide;
   if (runs) {
-    runs.push({ spanAlongX, minLong, maxLong, minRun, maxRun });
+    runs.push({
+      spanAlongX,
+      minLong,
+      maxLong,
+      minRun,
+      maxRun,
+      hipMin,
+      hipMax,
+    });
   }
-  superiorTrussStationsAlong(minLong, maxLong).forEach((cross) => {
+  superiorTrussStationsAlong(minLong, maxLong).forEach((cross, i, stations) => {
+    const inwardSign = hipInwardSign(i, stations.length, hipMin, hipMax);
     const clipped = clipRoofAxisSpansToRing(spanAlongX, cross, minRun, maxRun, ring)
       .map((span) => ({
         start: Math.max(span.start, minRun),
@@ -273,7 +344,7 @@ function addProtrusionTrusses(members, trussState, rect, main, ring, wallYs, spa
       .filter((span) => span.end - span.start >= MIN_SPAN_M);
     const toPlace = clipped.length ? clipped : [{ start: minRun, end: maxRun }];
     toPlace.forEach((span) => {
-      pushTruss(members, trussState, spanAlongX, cross, span.start, span.end, wallYs);
+      pushTruss(members, trussState, spanAlongX, cross, span.start, span.end, wallYs, inwardSign);
     });
   });
 }
@@ -295,6 +366,7 @@ export function buildSuperiorRoofTrussMembers(ring, wallTopY) {
     chordTop: yBottom + SUPERIOR_TRUSS_THICK_M,
     chordMid: yBottom + SUPERIOR_TRUSS_THICK_M / 2,
     tanP: Math.tan((SUPERIOR_TRUSS_PITCH_DEG * Math.PI) / 180),
+    pitchRad: (SUPERIOR_TRUSS_PITCH_DEG * Math.PI) / 180,
   };
   const members = [];
   const runs = [];
@@ -328,24 +400,76 @@ export function buildSuperiorRoofTrussMembers(ring, wallTopY) {
   };
 }
 
-function skyNormalForSlope(dRun, dY) {
-  let nRun = -dY;
-  let nY = dRun;
-  if (nY < 0) {
-    nRun = -nRun;
-    nY = -nY;
+function polygonNormal(verts) {
+  const a = verts[0];
+  const b = verts[1];
+  const c = verts[2];
+  const nx = (b.y - a.y) * (c.z - a.z) - (b.z - a.z) * (c.y - a.y);
+  const ny = (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z);
+  const nz = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const len = Math.hypot(nx, ny, nz) || 1;
+  return { x: nx / len, y: ny / len, z: nz / len };
+}
+
+function offsetPolygon(verts, lift) {
+  let n = polygonNormal(verts);
+  if (n.y < 0) n = { x: -n.x, y: -n.y, z: -n.z };
+  return verts.map((p) => ({
+    x: p.x + n.x * lift,
+    y: p.y + n.y * lift,
+    z: p.z + n.z * lift,
+  }));
+}
+
+function sheetMeshFromPolygon(verts, uvAt, lift) {
+  if (!verts || verts.length < 3) return null;
+  const lifted = offsetPolygon(verts, lift);
+  const n = polygonNormal(lifted);
+  const flip = n.y < 0;
+  const positions = [];
+  const uvs = [];
+  verts.forEach((p, i) => {
+    const q = lifted[i];
+    positions.push(q.x, q.y, q.z);
+    const uv = uvAt(p);
+    uvs.push(uv.u, uv.v);
+  });
+  const indices = [];
+  for (let i = 1; i < lifted.length - 1; i += 1) {
+    if (flip) indices.push(0, i + 1, i);
+    else indices.push(0, i, i + 1);
   }
-  const len = Math.hypot(nRun, nY) || 1;
-  return { run: nRun / len, y: nY / len };
+  if (indices.length < 3) return null;
+  return {
+    positions: new Float32Array(positions),
+    uvs: new Float32Array(uvs),
+    indices: new Uint32Array(indices),
+  };
+}
+
+function runOfPoint(spanAlongX, p) {
+  return spanAlongX ? p.x : p.z;
+}
+
+function longOfPoint(spanAlongX, p) {
+  return spanAlongX ? p.z : p.x;
+}
+
+function pointOnRun(spanAlongX, runVal, longVal, y) {
+  return spanAlongX
+    ? { x: runVal, y, z: longVal }
+    : { x: longVal, y, z: runVal };
 }
 
 /**
- * One 2 mm sheet per slope of each truss run. Runs are covered as full
- * rectangles (no valley / outline trimming).
+ * Colorbond over each truss run. The main run is hip-cut at both ends;
+ * a secondary run is hip-cut only on its outer end, and stays full height
+ * into the main run.
  */
 export function buildSuperiorRoofSheets(runs, wallYs) {
   const thick = SUPERIOR_ROOF_SHEET_THICK_M;
   const lift = SUPERIOR_TRUSS_TIMBER_IN_PLANE_M / 2 + thick / 2;
+  const pitch = CORRUGATED_ROOF_PITCH_M;
   const sheets = [];
   (runs || []).forEach((run, runIndex) => {
     const span = Number(run.maxRun) - Number(run.minRun);
@@ -358,43 +482,89 @@ export function buildSuperiorRoofSheets(runs, wallYs) {
     if (!(slopeLen > 0.04)) return;
     const eaveY = wallYs.chordTop;
     const ridgeY = wallYs.chordTop + rise;
-    const longAxis = longAxisForSpan(run.spanAlongX);
-    [
-      { side: "a", eaveRun: run.minRun },
-      { side: "b", eaveRun: run.maxRun },
-    ].forEach(({ side, eaveRun }) => {
-      const dRun = ridgeRun - eaveRun;
-      const dY = ridgeY - eaveY;
-      const sLen = Math.hypot(dRun, dY) || 1;
-      const n = skyNormalForSlope(dRun, dY);
-      const midRun = (eaveRun + ridgeRun) / 2;
-      const midLong = (run.minLong + run.maxLong) / 2;
-      const midY = (eaveY + ridgeY) / 2;
-      const posRun = midRun + n.run * lift;
-      const posY = midY + n.y * lift;
-      const posLong = midLong;
+    const hipMin = run.hipMin !== false;
+    const hipMax = run.hipMax !== false;
+    const hipInset = Math.min(half, rowLen / 2);
+    const ridgeMinLong = hipMin ? run.minLong + hipInset : run.minLong;
+    const ridgeMaxLong = hipMax ? run.maxLong - hipInset : run.maxLong;
+    const hasRidge = ridgeMaxLong - ridgeMinLong > 0.02;
+    const alongX = run.spanAlongX;
+    const pt = (runVal, longVal, y) => pointOnRun(alongX, runVal, longVal, y);
+    const slopeUv = (eaveRun) => (p) => ({
+      u: longOfPoint(alongX, p) / pitch,
+      v: Math.hypot(runOfPoint(alongX, p) - eaveRun, p.y - eaveY) / pitch,
+    });
+    const hipUv = (eaveLong) => (p) => ({
+      u: runOfPoint(alongX, p) / pitch,
+      v: Math.hypot(longOfPoint(alongX, p) - eaveLong, p.y - eaveY) / pitch,
+    });
+    const ridgeApexLong = (ridgeMinLong + ridgeMaxLong) / 2;
+    const faces = [
+      {
+        side: "a",
+        verts: hasRidge
+          ? [
+              pt(run.minRun, run.minLong, eaveY),
+              pt(run.minRun, run.maxLong, eaveY),
+              pt(ridgeRun, ridgeMaxLong, ridgeY),
+              pt(ridgeRun, ridgeMinLong, ridgeY),
+            ]
+          : [
+              pt(run.minRun, run.minLong, eaveY),
+              pt(run.minRun, run.maxLong, eaveY),
+              pt(ridgeRun, ridgeApexLong, ridgeY),
+            ],
+        uvAt: slopeUv(run.minRun),
+      },
+      {
+        side: "b",
+        verts: hasRidge
+          ? [
+              pt(run.maxRun, run.maxLong, eaveY),
+              pt(run.maxRun, run.minLong, eaveY),
+              pt(ridgeRun, ridgeMinLong, ridgeY),
+              pt(ridgeRun, ridgeMaxLong, ridgeY),
+            ]
+          : [
+              pt(run.maxRun, run.maxLong, eaveY),
+              pt(run.maxRun, run.minLong, eaveY),
+              pt(ridgeRun, ridgeApexLong, ridgeY),
+            ],
+        uvAt: slopeUv(run.maxRun),
+      },
+    ];
+    if (hipMin) {
+      faces.push({
+        side: "hip-min",
+        verts: [
+          pt(run.minRun, run.minLong, eaveY),
+          pt(run.maxRun, run.minLong, eaveY),
+          pt(ridgeRun, ridgeMinLong, ridgeY),
+        ],
+        uvAt: hipUv(run.minLong),
+      });
+    }
+    if (hipMax) {
+      faces.push({
+        side: "hip-max",
+        verts: [
+          pt(run.maxRun, run.maxLong, eaveY),
+          pt(run.minRun, run.maxLong, eaveY),
+          pt(ridgeRun, ridgeMaxLong, ridgeY),
+        ],
+        uvAt: hipUv(run.maxLong),
+      });
+    }
+    faces.forEach((face) => {
+      const mesh = sheetMeshFromPolygon(face.verts, face.uvAt, lift);
+      if (!mesh) return;
       sheets.push({
         runIndex,
-        side,
-        widthM: rowLen,
-        lengthM: slopeLen,
+        side: face.side,
         thickM: thick,
-        position: {
-          x: run.spanAlongX ? posRun : posLong,
-          y: posY,
-          z: run.spanAlongX ? posLong : posRun,
-        },
-        xAxis: longAxis,
-        yAxis: {
-          x: run.spanAlongX ? n.run : 0,
-          y: n.y,
-          z: run.spanAlongX ? 0 : n.run,
-        },
-        zAxis: {
-          x: run.spanAlongX ? dRun / sLen : 0,
-          y: dY / sLen,
-          z: run.spanAlongX ? 0 : dRun / sLen,
-        },
+        positions: mesh.positions,
+        uvs: mesh.uvs,
+        indices: mesh.indices,
       });
     });
   });

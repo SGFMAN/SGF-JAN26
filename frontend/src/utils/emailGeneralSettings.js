@@ -555,6 +555,7 @@ export function parseEmailGeneralJson(raw) {
     salesNotes: { vic: emptyDrawingsFromToBranch(), qld: emptyDrawingsFromToBranch() },
     conceptApproved: { vic: emptyDrawingsFromToBranch(), qld: emptyDrawingsFromToBranch() },
     wdsApproved: { vic: emptyDrawingsWdsApprovedBranch(), qld: emptyDrawingsWdsApprovedBranch() },
+    siteVisits: { toEmail: "", fromEmail: "" },
   };
   if (raw == null || raw === "") return base;
   let o = raw;
@@ -591,6 +592,8 @@ export function parseEmailGeneralJson(raw) {
       : {};
   const waRoot =
     o.wdsApproved && typeof o.wdsApproved === "object" && !Array.isArray(o.wdsApproved) ? o.wdsApproved : {};
+  const svRoot =
+    o.siteVisits && typeof o.siteVisits === "object" && !Array.isArray(o.siteVisits) ? o.siteVisits : {};
   const vicFrom = T(hl.soldFromEmail);
   const vicTo = T(hl.soldToEmail);
   const qldFrom = T(hl.qldSoldFromEmail);
@@ -650,6 +653,18 @@ export function parseEmailGeneralJson(raw) {
       vic: normalizeDrawingsWdsApprovedBranch(waRoot.vic),
       qld: normalizeDrawingsWdsApprovedBranch(waRoot.qld),
     },
+    siteVisits: {
+      toEmail: T(svRoot.toEmail),
+      fromEmail: T(svRoot.fromEmail),
+    },
+  };
+}
+
+export function getSiteVisitUpdateEmailSettings(settings) {
+  const sv = parseEmailGeneralJson(settings?.email_general_json).siteVisits || {};
+  return {
+    toEmail: String(sv.toEmail || "").trim(),
+    fromEmail: String(sv.fromEmail || "").trim(),
   };
 }
 

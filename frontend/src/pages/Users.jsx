@@ -27,8 +27,12 @@ export default function Users() {
   const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [detailsPassword, setDetailsPassword] = useState("");
   const [detailsUiThemeId, setDetailsUiThemeId] = useState("classic");
+  const [detailsTimesheetExport, setDetailsTimesheetExport] = useState(false);
+  const [detailsAliasSurname, setDetailsAliasSurname] = useState("");
+  const [detailsAliasFirstname, setDetailsAliasFirstname] = useState("");
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [isSavingPalette, setIsSavingPalette] = useState(false);
+  const [isSavingTimesheet, setIsSavingTimesheet] = useState(false);
   
   // Positions state
   const [positions, setPositions] = useState([]);
@@ -73,6 +77,9 @@ export default function Users() {
     // Do not load the stored password/hash into the field.
     setDetailsPassword("");
     setDetailsUiThemeId(user?.ui_theme_id || "classic");
+    setDetailsTimesheetExport(user?.timesheet_export === true || user?.timesheet_export === "true");
+    setDetailsAliasSurname(user?.timesheet_alias_surname || "");
+    setDetailsAliasFirstname(user?.timesheet_alias_firstname || "");
   }, [selectedUserId, users]);
 
   async function fetchUsers() {
@@ -275,6 +282,86 @@ export default function Users() {
       alert(error.message || "Failed to create user");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function patchSelectedUser(patch) {
+    const user = users.find((u) => u.id === parseInt(selectedUserId, 10));
+    if (!user) return false;
+
+    const userPositionIds =
+      user.positions && Array.isArray(user.positions) ? user.positions.map((p) => p.id) : [];
+
+    const payload = {
+      name: user.name,
+      email: user.email || null,
+      phone: user.phone || null,
+      password: null,
+      positionIds: userPositionIds,
+      primaryPositionId: user.primary_position_id || null,
+      uiThemeId: user.ui_theme_id || detailsUiThemeId || "classic",
+    };
+    if (patch.timesheetExport != null) payload.timesheetExport = patch.timesheetExport;
+    if (patch.timesheetAliasSurname != null) payload.timesheetAliasSurname = patch.timesheetAliasSurname;
+    if (patch.timesheetAliasFirstname != null) payload.timesheetAliasFirstname = patch.timesheetAliasFirstname;
+
+    const response = await fetch(`${API_URL}/api/users/${user.id}`, {
+      method: "PUT",
+      headers: getApiHeaders(),
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || "Failed to update user");
+    }
+
+    const updated = await response.json().catch(() => null);
+    if (updated && updated.id != null) {
+      setUsers((prev) => prev.map((row) => (row.id === updated.id ? { ...row, ...updated } : row)));
+    } else {
+      await fetchUsers();
+    }
+    return true;
+  }
+
+  async function handleTimesheetExportChange(checked) {
+    setDetailsTimesheetExport(checked);
+    setIsSavingTimesheet(true);
+    try {
+      await patchSelectedUser({ timesheetExport: checked });
+    } catch (error) {
+      console.error("Error updating timesheet export:", error);
+      alert(error.message || "Failed to update timesheet setting");
+      setDetailsTimesheetExport(!checked);
+    } finally {
+      setIsSavingTimesheet(false);
+    }
+  }
+
+  async function handleSaveTimesheetAliases() {
+    const user = users.find((u) => u.id === parseInt(selectedUserId, 10));
+    if (!user) return;
+    const surname = detailsAliasSurname.trim();
+    const firstname = detailsAliasFirstname.trim();
+    if (
+      surname === String(user.timesheet_alias_surname || "").trim() &&
+      firstname === String(user.timesheet_alias_firstname || "").trim()
+    ) {
+      return;
+    }
+
+    setIsSavingTimesheet(true);
+    try {
+      await patchSelectedUser({
+        timesheetAliasSurname: surname,
+        timesheetAliasFirstname: firstname,
+      });
+    } catch (error) {
+      console.error("Error updating timesheet alias:", error);
+      alert(error.message || "Failed to update timesheet alias");
+    } finally {
+      setIsSavingTimesheet(false);
     }
   }
 
@@ -856,6 +943,75 @@ export default function Users() {
                 </div>
               </div>
             </div>
+
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px", fontWeight: 500 }}>
+                Timesheet alias
+              </div>
+              <div style={{ display: "flex", gap: "16px" }}>
+                <input
+                  type="text"
+                  value={detailsAliasSurname}
+                  onChange={(e) => setDetailsAliasSurname(e.target.value)}
+                  onBlur={() => void handleSaveTimesheetAliases()}
+                  disabled={isSavingTimesheet}
+                  placeholder="Surname"
+                  aria-label="Timesheet surname alias"
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                  autoComplete="off"
+                />
+                <input
+                  type="text"
+                  value={detailsAliasFirstname}
+                  onChange={(e) => setDetailsAliasFirstname(e.target.value)}
+                  onBlur={() => void handleSaveTimesheetAliases()}
+                  disabled={isSavingTimesheet}
+                  placeholder="First name"
+                  aria-label="Timesheet first name alias"
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                  }}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            <label
+              htmlFor="user-timesheet-export"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "16px",
+                cursor: isSavingTimesheet ? "wait" : "pointer",
+              }}
+            >
+              <input
+                id="user-timesheet-export"
+                type="checkbox"
+                checked={detailsTimesheetExport}
+                onChange={(e) => void handleTimesheetExportChange(e.target.checked)}
+                disabled={isSavingTimesheet}
+                style={{ width: "18px", height: "18px", cursor: isSavingTimesheet ? "wait" : "pointer", flexShrink: 0 }}
+              />
+              <span style={{ fontSize: "0.95rem", color: MONUMENT }}>Timesheet</span>
+            </label>
 
             {/* Line 2: Email */}
             <div style={{ marginBottom: "16px" }}>

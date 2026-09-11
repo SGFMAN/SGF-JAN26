@@ -96,7 +96,7 @@ const { startQuoteReminderScheduler, previewQuoteReminder1, sendQuoteReminder1Ma
 const { parseManagerSettingsColumn } = require("./managerSettings");
 const { parseReminderSettingsColumn } = require("./reminderSettings");
 const { parseTimesheetSettingsColumn } = require("./timesheetSettings");
-const { ensureTimesheetsTable, upsertTimesheet, listTimesheets } = require("./timesheets");
+const { ensureTimesheetsTable, ensureUserTimesheetColumns, upsertTimesheet, listTimesheets, clearTimesheetSubmissions } = require("./timesheets");
 const {
   listQuoteCallbackLists,
   setQuoteCallbackItemCalled,
@@ -862,7 +862,7 @@ function parseEmailGeneralJsonColumn(raw) {
     qldSoldFromEmail: "",
     qldSoldToEmail: "",
   };
-  const empty = { hotList: { ...emptyHotList } };
+  const empty = { hotList: { ...emptyHotList }, siteVisits: { toEmail: "", fromEmail: "" } };
   if (raw == null || raw === "") return empty;
   let o = raw;
   if (typeof raw === "string") {
@@ -874,6 +874,7 @@ function parseEmailGeneralJsonColumn(raw) {
   }
   if (!o || typeof o !== "object" || Array.isArray(o)) return empty;
   const hl = o.hotList && typeof o.hotList === "object" && !Array.isArray(o.hotList) ? o.hotList : {};
+  const sv = o.siteVisits && typeof o.siteVisits === "object" && !Array.isArray(o.siteVisits) ? o.siteVisits : {};
   const dbRoot =
     o.depositBalance && typeof o.depositBalance === "object" && !Array.isArray(o.depositBalance)
       ? o.depositBalance
@@ -898,6 +899,10 @@ function parseEmailGeneralJsonColumn(raw) {
     depositBalance: {
       vic: normalizeDepositBalanceBranch(dbRoot.vic),
       qld: normalizeDepositBalanceBranch(dbRoot.qld),
+    },
+    siteVisits: {
+      toEmail: trim(sv.toEmail),
+      fromEmail: trim(sv.fromEmail),
     },
   };
 }
@@ -1462,6 +1467,7 @@ async function ensureSchema() {
     await ensureUserAccessPermissionsTable(pool);
     await ensureUserMessagesTable(pool);
     await ensureTimesheetsTable(pool);
+    await ensureUserTimesheetColumns(pool);
     await ensureClientPortalTables(pool);
     await ensureMapFloorPlansDollarValueColumn(pool);
     await addMissingColumns(pool, "projects", [
@@ -2335,6 +2341,7 @@ async function ensureSchema() {
   await ensureUserAccessPermissionsTable(pool);
   await ensureUserMessagesTable(pool);
   await ensureTimesheetsTable(pool);
+  await ensureUserTimesheetColumns(pool);
   await ensureClientPortalTables(pool);
   await ensureStreamsTable(pool);
   await ensurePolytecColourTables(pool);
@@ -4809,9 +4816,12 @@ app.get("/api/users", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   if (!requireStaffUserId(req, res)) return;
   try {
+    await ensureUserTimesheetColumns(pool);
     const usersResult = await pool.query(
       `SELECT u.id, u.name, u.email, u.phone, u.primary_position_id, u.ui_theme_id,
               COALESCE(u.password, 'admin') AS password,
+              COALESCE(u.timesheet_export, FALSE) AS timesheet_export,
+              u.timesheet_alias_surname, u.timesheet_alias_firstname,
               u.created_at, u.updated_at,
               COALESCE(
                 json_agg(json_build_object('id', p.id, 'name', p.name) ORDER BY p.name)
@@ -4821,7 +4831,9 @@ app.get("/api/users", async (req, res) => {
        FROM users u
        LEFT JOIN user_positions up ON up.user_id = u.id
        LEFT JOIN positions p ON p.id = up.position_id
-       GROUP BY u.id, u.name, u.email, u.phone, u.primary_position_id, u.ui_theme_id, u.password, u.created_at, u.updated_at
+       GROUP BY u.id, u.name, u.email, u.phone, u.primary_position_id, u.ui_theme_id, u.password,
+                u.timesheet_export, u.timesheet_alias_surname, u.timesheet_alias_firstname,
+                u.created_at, u.updated_at
        ORDER BY u.name ASC, u.id ASC`
     );
     res.json(usersResult.rows);
@@ -5048,6 +5060,12 @@ app.put("/api/users/:id", async (req, res) => {
       currentPassword,
       uiThemeId,
       ui_theme_id,
+      timesheetExport,
+      timesheet_export,
+      timesheetAliasSurname,
+      timesheet_alias_surname,
+      timesheetAliasFirstname,
+      timesheet_alias_firstname,
     } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
 
@@ -5089,6 +5107,30 @@ app.put("/api/users/:id", async (req, res) => {
     const passwordToStore =
       incomingPassword != null ? await toStoredPassword(incomingPassword) : null;
 
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const hasTimesheetExport =
+      Object.prototype.hasOwnProperty.call(body, "timesheetExport") ||
+      Object.prototype.hasOwnProperty.call(body, "timesheet_export");
+    const timesheetExportRaw = timesheetExport ?? timesheet_export;
+    const timesheetExportParam = hasTimesheetExport
+      ? timesheetExportRaw === true || timesheetExportRaw === "true" || timesheetExportRaw === "1"
+      : null;
+
+    const hasAliasSurname =
+      Object.prototype.hasOwnProperty.call(body, "timesheetAliasSurname") ||
+      Object.prototype.hasOwnProperty.call(body, "timesheet_alias_surname");
+    const aliasSurnameParam = hasAliasSurname
+      ? String(timesheetAliasSurname ?? timesheet_alias_surname ?? "").trim()
+      : null;
+
+    const hasAliasFirstname =
+      Object.prototype.hasOwnProperty.call(body, "timesheetAliasFirstname") ||
+      Object.prototype.hasOwnProperty.call(body, "timesheet_alias_firstname");
+    const aliasFirstnameParam = hasAliasFirstname
+      ? String(timesheetAliasFirstname ?? timesheet_alias_firstname ?? "").trim()
+      : null;
+
+    await ensureUserTimesheetColumns(pool);
     await pool.query('BEGIN');
 
     // Update the user
@@ -5097,6 +5139,9 @@ app.put("/api/users/:id", async (req, res) => {
        SET name = $1, email = $2, phone = $3, primary_position_id = $4,
            password = COALESCE($5, password, 'admin'),
            ui_theme_id = COALESCE($6, ui_theme_id),
+           timesheet_export = COALESCE($8, timesheet_export),
+           timesheet_alias_surname = COALESCE($9, timesheet_alias_surname),
+           timesheet_alias_firstname = COALESCE($10, timesheet_alias_firstname),
            updated_at = NOW()
        WHERE id = $7 
        RETURNING *`,
@@ -5108,6 +5153,9 @@ app.put("/api/users/:id", async (req, res) => {
         passwordToStore,
         resolvedUiThemeId,
         id,
+        timesheetExportParam,
+        aliasSurnameParam,
+        aliasFirstnameParam,
       ]
     );
 
@@ -6446,6 +6494,26 @@ app.get("/api/timesheets", async (req, res) => {
   } catch (e) {
     console.error("Time sheet list:", e);
     return res.status(500).json({ error: e.message || "Failed to load time sheets" });
+  }
+});
+
+app.post("/api/timesheets/reset-submissions", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  try {
+    const key = String(req.body?.cycleKey || req.query?.cycleKey || "").trim();
+    if (!key) {
+      return res.status(400).json({ error: "cycleKey is required" });
+    }
+    await ensureTimesheetsTable(pool);
+    await clearTimesheetSubmissions(pool, key);
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("Time sheet reset submissions:", e);
+    return res.status(500).json({ error: e.message || "Failed to reset time sheet submissions" });
   }
 });
 

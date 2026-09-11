@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import AuthedPdfFrame from "../components/AuthedPdfFrame";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import {
   generalEmailStateCode,
@@ -1538,9 +1539,16 @@ Date Required: ${dateRequiredText}`;
 
             {project?.window_order_pdf_location?.trim() ? (
               <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", marginBottom: "16px" }}>
-                <iframe
-                  key={windowOrderIframeNonce}
+                <AuthedPdfFrame
                   src={`${API_URL}/api/files/window-order/${project.id}?t=${windowOrderIframeNonce}`}
+                  title="Window order PDF"
+                  errorLabel="Could not load window order PDF"
+                  resolveErrorMessage={({ status, message }) => {
+                    if (status === 401) {
+                      return "Could not load the window order. Try refreshing the page and signing in again.";
+                    }
+                    return message || "Could not load window order PDF";
+                  }}
                   style={{
                     width: "100%",
                     flex: 1,
@@ -1549,7 +1557,6 @@ Date Required: ${dateRequiredText}`;
                     minHeight: "420px",
                     background: "#eee",
                   }}
-                  title="Window order PDF"
                 />
               </div>
             ) : (

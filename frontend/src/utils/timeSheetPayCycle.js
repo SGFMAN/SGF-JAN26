@@ -131,6 +131,19 @@ export function getPayPeriodDays(cycleWednesday = getPayCycleWednesdayForDate())
   });
 }
 
+export function weekdayNameOf(day) {
+  return String(day?.weekday || day?.expectedWeekday || "");
+}
+
+/** Sunday is in the 14-day cycle but hidden on the timesheet (two 6-day weeks). */
+export function isTimesheetSunday(day) {
+  return weekdayNameOf(day) === "Sunday";
+}
+
+export function isTimesheetSelectableDay(day) {
+  return !isTimesheetSunday(day);
+}
+
 export function getPayPeriodBounds(cycleWednesday = getPayCycleWednesdayForDate()) {
   const periodStart = startOfDay(cycleWednesday);
   const periodEnd = addDays(periodStart, PAY_CYCLE_LENGTH_DAYS - 1);
