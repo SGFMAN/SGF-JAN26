@@ -84,6 +84,39 @@ export function isTimesheetExportUser(user) {
   return user?.timesheet_export === true || user?.timesheet_export === "true";
 }
 
+export function isSubmittedTimesheet(sheet) {
+  return sheet?.submitted === true || sheet?.submitted === "t" || sheet?.submitted === "true";
+}
+
+/** Users who clicked Send for the current pay cycle, in name order. */
+export function submittedTimesheetUsers(users, sheets) {
+  const usersById = new Map();
+  for (const user of Array.isArray(users) ? users : []) {
+    const id = Number(user?.id);
+    if (!Number.isFinite(id)) continue;
+    usersById.set(id, user);
+  }
+
+  const seen = new Set();
+  const submitted = [];
+  for (const sheet of Array.isArray(sheets) ? sheets : []) {
+    if (!isSubmittedTimesheet(sheet)) continue;
+    const userId = Number(sheet.userId);
+    if (!Number.isFinite(userId) || seen.has(userId)) continue;
+    seen.add(userId);
+    submitted.push(
+      usersById.get(userId) || {
+        id: userId,
+        name: String(sheet.userName || "").trim() || "User",
+      }
+    );
+  }
+
+  return submitted.sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
+  );
+}
+
 function localIsoDate(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -169,14 +202,13 @@ export function buildCollatedTimesheetTxt({ users, sheets, periodDays, rates }) 
   const days = Array.isArray(periodDays) ? periodDays : [];
   const sheetByUser = new Map();
   for (const sheet of Array.isArray(sheets) ? sheets : []) {
+    if (!isSubmittedTimesheet(sheet)) continue;
     const userId = Number(sheet?.userId);
     if (!Number.isFinite(userId)) continue;
     sheetByUser.set(userId, sheet);
   }
 
-  const included = (Array.isArray(users) ? users : [])
-    .filter(isTimesheetExportUser)
-    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" }));
+  const included = submittedTimesheetUsers(users, sheets);
 
   const lines = [EXPORT_HEADERS.join("\t")];
   for (const user of included) {

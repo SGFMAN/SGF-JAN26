@@ -13505,7 +13505,10 @@ app.delete("/api/projects/:id", async (req, res) => {
 // ========== QUOTES ENDPOINTS (New page — projects with status "Quote") ==========
 app.get("/api/quotes", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  if (!(await requireHotlistSalesAccess(req, res))) return;
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isSalesRequest(req)) && !(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Sales or Admin access required" });
+  }
   try {
     res.json(await listQuotes(pool));
   } catch (e) {

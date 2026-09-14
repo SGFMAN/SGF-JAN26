@@ -119,8 +119,12 @@ async function clearTimesheetSubmissions(pool, cycleKey) {
   const key = String(cycleKey || "").trim();
   if (!key) return 0;
   const result = await pool.query(
-    `UPDATE timesheets SET submitted = FALSE WHERE cycle_key = $1`,
-    [key]
+    `UPDATE timesheets
+     SET submitted = FALSE,
+         day_entries = $2,
+         updated_at = NOW()
+     WHERE cycle_key = $1 AND submitted = TRUE`,
+    [key, JSON.stringify([])]
   );
   return result.rowCount;
 }

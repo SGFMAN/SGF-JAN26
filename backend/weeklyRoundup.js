@@ -1,7 +1,6 @@
 /**
  * Friday 3pm Melbourne weekly roundup email to Ben.
- * Counts from the last successful send (or last Friday 3pm) through now,
- * so a missed cutoff is included in the next week rather than dropped.
+ * Counts the labelled Saturday–Friday week (Saturday 00:00 through send time).
  */
 
 const nodemailer = require("nodemailer");
@@ -93,10 +92,34 @@ function reportingWeekDates(now = new Date()) {
   return { saturday, friday };
 }
 
+function reportingWeekPeriod(now = new Date()) {
+  const { saturday, friday } = reportingWeekDates(now);
+  return {
+    saturday,
+    friday,
+    start: melbourneLocalToUtc(saturday, 0, 0),
+    endExclusive: melbourneLocalToUtc(addDaysYmd(friday, 1), 0, 0),
+  };
+}
+
+/** Previous completed Sat–Fri week (the last roundup week when called mid-week). */
+function lastCompletedReportingWeekPeriod(now = new Date()) {
+  const current = reportingWeekDates(now);
+  const saturday = addDaysYmd(current.saturday, -7);
+  const friday = addDaysYmd(current.friday, -7);
+  return {
+    saturday,
+    friday,
+    start: melbourneLocalToUtc(saturday, 0, 0),
+    endExclusive: melbourneLocalToUtc(addDaysYmd(friday, 1), 0, 0),
+  };
+}
+
 async function ensureRoundupColumns(pool) {
   await pool.query(`
     ALTER TABLE projects
       ADD COLUMN IF NOT EXISTS quote_contact_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS quote_reminder_4_sent_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS hotlist_added_at TIMESTAMPTZ,
       ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ
   `);
@@ -152,42 +175,96 @@ async function ensureRoundupColumns(pool) {
   `);
 }
 
+/** VIC / QLD from stream when set, otherwise project state. */
+const REGION_SQL = `CASE
+  WHEN TRIM(COALESCE(stream, '')) = 'SGF - VIC' THEN 'VIC'
+  WHEN TRIM(COALESCE(stream, '')) = 'SGF - QLD' THEN 'QLD'
+  WHEN UPPER(TRIM(COALESCE(state, ''))) IN ('VIC', 'VICTORIA') THEN 'VIC'
+  WHEN UPPER(TRIM(COALESCE(state, ''))) IN ('QLD', 'QUEENSLAND') THEN 'QLD'
+  ELSE 'OTHER'
+END`;
+
+function countSql(where) {
+  return `(SELECT COUNT(*)::int FROM projects WHERE ${where})`;
+}
+
+function regionCounts(where) {
+  return {
+    total: countSql(where),
+    vic: countSql(`(${where}) AND ${REGION_SQL} = 'VIC'`),
+    qld: countSql(`(${where}) AND ${REGION_SQL} = 'QLD'`),
+    other: countSql(`(${where}) AND ${REGION_SQL} = 'OTHER'`),
+  };
+}
+
 async function collectWeeklyFigures(pool, periodStart, periodEnd) {
   const ts = (col) => `NULLIF(${col}::text, '')::timestamptz`;
+  const quotesAdded = `${ts("quote_added_at")} >= $1 AND ${ts("quote_added_at")} < $2`;
+  const quotesContact = `(
+    (${ts("quote_contact_at")} >= $1 AND ${ts("quote_contact_at")} < $2)
+    OR (
+      (COALESCE(quote_contact::text, '') IN ('true', 't', '1'))
+      AND quote_contact_at IS NULL
+      AND ${ts("quote_added_at")} >= $1 AND ${ts("quote_added_at")} < $2
+    )
+  )`;
+  const hotlist = `${ts("hotlist_added_at")} >= $1 AND ${ts("hotlist_added_at")} < $2`;
+  const callbacks = `${ts("quote_reminder_4_sent_at")} >= $1 AND ${ts("quote_reminder_4_sent_at")} < $2`;
+  const q = regionCounts(quotesAdded);
+  const c = regionCounts(quotesContact);
+  const cb = regionCounts(callbacks);
+  const h = regionCounts(hotlist);
   const r = await pool.query(
     `SELECT
+       ${q.total} AS new_quotes,
+       ${q.vic} AS new_quotes_vic,
+       ${q.qld} AS new_quotes_qld,
+       ${q.other} AS new_quotes_other,
+       ${c.total} AS quotes_contact,
+       ${c.vic} AS quotes_contact_vic,
+       ${c.qld} AS quotes_contact_qld,
+       ${c.other} AS quotes_contact_other,
+       ${cb.total} AS callbacks,
+       ${cb.vic} AS callbacks_vic,
+       ${cb.qld} AS callbacks_qld,
+       ${cb.other} AS callbacks_other,
+       ${h.total} AS new_hotlist,
+       ${h.vic} AS new_hotlist_vic,
+       ${h.qld} AS new_hotlist_qld,
+       ${h.other} AS new_hotlist_other,
        (SELECT COUNT(*)::int FROM projects
-         WHERE ${ts("quote_added_at")} > $1 AND ${ts("quote_added_at")} <= $2) AS new_quotes,
-       (SELECT COUNT(*)::int FROM projects
-         WHERE (
-           (${ts("quote_contact_at")} > $1 AND ${ts("quote_contact_at")} <= $2)
-           OR (
-             (COALESCE(quote_contact::text, '') IN ('true', 't', '1'))
-             AND quote_contact_at IS NULL
-             AND ${ts("quote_added_at")} > $1 AND ${ts("quote_added_at")} <= $2
-           )
-         )) AS quotes_contact,
-       (SELECT COUNT(*)::int FROM projects
-         WHERE ${ts("hotlist_added_at")} > $1 AND ${ts("hotlist_added_at")} <= $2) AS new_hotlist,
-       (SELECT COUNT(*)::int FROM projects
-         WHERE ${ts("sold_at")} > $1 AND ${ts("sold_at")} <= $2
+         WHERE ${ts("sold_at")} >= $1 AND ${ts("sold_at")} < $2
            AND TRIM(COALESCE(stream, '')) = 'SGF - VIC') AS sold_vic,
        (SELECT COUNT(*)::int FROM projects
-         WHERE ${ts("sold_at")} > $1 AND ${ts("sold_at")} <= $2
+         WHERE ${ts("sold_at")} >= $1 AND ${ts("sold_at")} < $2
            AND TRIM(COALESCE(stream, '')) = 'SGF - QLD') AS sold_qld,
        (SELECT COUNT(*)::int FROM projects
-         WHERE ${ts("sold_at")} > $1 AND ${ts("sold_at")} <= $2
+         WHERE ${ts("sold_at")} >= $1 AND ${ts("sold_at")} < $2
            AND TRIM(COALESCE(stream, '')) NOT IN ('SGF - VIC', 'SGF - QLD')) AS sold_streams`,
     [periodStart, periodEnd]
   );
   const row = r.rows[0] || {};
+  const n = (key) => Number(row[key]) || 0;
   return {
-    newQuotes: row.new_quotes || 0,
-    quotesContact: row.quotes_contact || 0,
-    newHotlist: row.new_hotlist || 0,
-    soldVic: row.sold_vic || 0,
-    soldQld: row.sold_qld || 0,
-    soldStreams: row.sold_streams || 0,
+    newQuotes: n("new_quotes"),
+    newQuotesVic: n("new_quotes_vic"),
+    newQuotesQld: n("new_quotes_qld"),
+    newQuotesOther: n("new_quotes_other"),
+    quotesContact: n("quotes_contact"),
+    quotesContactVic: n("quotes_contact_vic"),
+    quotesContactQld: n("quotes_contact_qld"),
+    quotesContactOther: n("quotes_contact_other"),
+    callbacks: n("callbacks"),
+    callbacksVic: n("callbacks_vic"),
+    callbacksQld: n("callbacks_qld"),
+    callbacksOther: n("callbacks_other"),
+    newHotlist: n("new_hotlist"),
+    newHotlistVic: n("new_hotlist_vic"),
+    newHotlistQld: n("new_hotlist_qld"),
+    newHotlistOther: n("new_hotlist_other"),
+    soldVic: n("sold_vic"),
+    soldQld: n("sold_qld"),
+    soldStreams: n("sold_streams"),
   };
 }
 
@@ -200,6 +277,30 @@ function escapeHtml(s) {
 
 function boldNum(n) {
   return `<b>${escapeHtml(String(n))}</b>`;
+}
+
+function metricRows(vic, qld, other) {
+  const rows = [
+    ["VIC", VIC_BLUE, vic],
+    ["QLD", QLD_MAROON, qld],
+  ];
+  if (Number(other) > 0) rows.push(["OTHER", "#888888", other]);
+  return rows;
+}
+
+function vicQldCountTable(vic, qld, other) {
+  const rows = metricRows(vic, qld, other);
+  const w = SOLD_LABEL_WIDTH_PX;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 12px 0;">
+${rows
+  .map(
+    ([label, hex, n], i) => `  <tr>
+    <td width="${w}" bgcolor="${hex}" align="center" style="width:${w}px;background-color:${hex};color:#000000;text-align:center;padding:4px 8px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.3;"><font color="#000000">${escapeHtml(label)}</font></td>
+    <td style="padding-left:16px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#333333;line-height:1.3;">${boldNum(n)}</td>
+  </tr>${i < rows.length - 1 ? `\n  <tr><td colspan="2" height="6" style="height:6px;line-height:6px;font-size:0;">&nbsp;</td></tr>` : ""}`
+  )
+  .join("\n")}
+</table>`;
 }
 
 function soldCountTable(figures) {
@@ -237,6 +338,12 @@ function htmlEmailShell(inner) {
 </html>`;
 }
 
+function textRegionLines(vic, qld, other) {
+  const lines = [`  VIC     ${vic}`, `  QLD     ${qld}`];
+  if (Number(other) > 0) lines.push(`  OTHER   ${other}`);
+  return lines;
+}
+
 function buildRoundupContent(figures, weekDates) {
   const sat = formatAuDate(weekDates.saturday);
   const fri = formatAuDate(weekDates.friday);
@@ -250,8 +357,13 @@ function buildRoundupContent(figures, weekDates) {
     "This week we had;",
     "",
     `${figures.newQuotes} new quotes added`,
+    ...textRegionLines(figures.newQuotesVic, figures.newQuotesQld, figures.newQuotesOther),
     `${figures.quotesContact} quotes make contact`,
+    ...textRegionLines(figures.quotesContactVic, figures.quotesContactQld, figures.quotesContactOther),
+    `${figures.callbacks} call backs`,
+    ...textRegionLines(figures.callbacksVic, figures.callbacksQld, figures.callbacksOther),
     `${figures.newHotlist} new Hotlist entries`,
+    ...textRegionLines(figures.newHotlistVic, figures.newHotlistQld, figures.newHotlistOther),
     `${pad("VIC")}${figures.soldVic} new projects`,
     `${pad("QLD")}${figures.soldQld} new projects`,
     `${pad("STREAMS")}${figures.soldStreams} new projects`,
@@ -260,21 +372,27 @@ function buildRoundupContent(figures, weekDates) {
     "",
     "Powered by SGF Central",
   ].join("\n");
-  const top = [
+  const intro = [
     "Hi Team,",
     "",
     "Please see below the weekly sales round up for the week",
     `Sat ${escapeHtml(sat)} to Friday ${escapeHtml(fri)}`,
     "",
     "This week we had;",
-    "",
-    `${boldNum(figures.newQuotes)} new quotes added`,
-    `${boldNum(figures.quotesContact)} quotes make contact`,
-    `${boldNum(figures.newHotlist)} new Hotlist entries`,
   ]
     .map((line) => (line === "" ? "&nbsp;" : line))
     .join("<br>\r\n");
-  const inner = `${top}<br>\r\n<img src="cid:sgf-sold" width="200" alt="SOLD" style="display:block;width:200px;height:auto;border:0;outline:none;text-decoration:none;" /><br>\r\n${soldCountTable(figures)}<br>\r\n&nbsp;<br>\r\nStrength and Honour !<br>\r\n&nbsp;<br>\r\nPowered by SGF Central`;
+  const metrics = [
+    `${boldNum(figures.newQuotes)} new quotes added`,
+    vicQldCountTable(figures.newQuotesVic, figures.newQuotesQld, figures.newQuotesOther),
+    `${boldNum(figures.quotesContact)} quotes make contact`,
+    vicQldCountTable(figures.quotesContactVic, figures.quotesContactQld, figures.quotesContactOther),
+    `${boldNum(figures.callbacks)} call backs`,
+    vicQldCountTable(figures.callbacksVic, figures.callbacksQld, figures.callbacksOther),
+    `${boldNum(figures.newHotlist)} new Hotlist entries`,
+    vicQldCountTable(figures.newHotlistVic, figures.newHotlistQld, figures.newHotlistOther),
+  ].join("<br>\r\n");
+  const inner = `${intro}<br>\r\n&nbsp;<br>\r\n${metrics}<br>\r\n<img src="cid:sgf-sold" width="200" alt="SOLD" style="display:block;width:200px;height:auto;border:0;outline:none;text-decoration:none;" /><br>\r\n${soldCountTable(figures)}<br>\r\n&nbsp;<br>\r\nStrength and Honour !<br>\r\n&nbsp;<br>\r\nPowered by SGF Central`;
   return { text, html: htmlEmailShell(inner) };
 }
 
@@ -351,8 +469,10 @@ async function markRoundupSent(pool, { melbourneDate, periodEnd, markFriday }) {
 async function sendWeeklyRoundup(pool, helpers, { markFriday = false, skipMark = false } = {}) {
   const now = new Date();
   const clock = melbourneParts(now);
-  const periodStart = skipMark ? previousFriday3pm(now) : await getPeriodStart(pool, now);
-  const figures = await collectWeeklyFigures(pool, periodStart, now);
+  const week = reportingWeekPeriod(now);
+  const periodStart = week.start;
+  const periodEnd = now.getTime() < week.endExclusive.getTime() ? now : week.endExclusive;
+  const figures = await collectWeeklyFigures(pool, periodStart, periodEnd);
   const from = await helpers.getDefaultSystemSmtpFrom(pool);
   if (!from) throw new Error("No SMTP From address for weekly roundup");
   const { text, html } = buildRoundupContent(figures, reportingWeekDates(now));
@@ -371,7 +491,7 @@ async function sendWeeklyRoundup(pool, helpers, { markFriday = false, skipMark =
     });
   }
   console.log(
-    `[weekly-roundup] sent to ${TO_ADDRESS}: quotes=${figures.newQuotes} contact=${figures.quotesContact} hotlist=${figures.newHotlist} vic=${figures.soldVic} qld=${figures.soldQld} streams=${figures.soldStreams}`
+    `[weekly-roundup] sent to ${TO_ADDRESS}: quotes=${figures.newQuotes} (VIC ${figures.newQuotesVic}/QLD ${figures.newQuotesQld}) contact=${figures.quotesContact} (VIC ${figures.quotesContactVic}/QLD ${figures.quotesContactQld}) callbacks=${figures.callbacks} (VIC ${figures.callbacksVic}/QLD ${figures.callbacksQld}) hotlist=${figures.newHotlist} (VIC ${figures.newHotlistVic}/QLD ${figures.newHotlistQld}) sold vic=${figures.soldVic} qld=${figures.soldQld} streams=${figures.soldStreams}`
   );
   return figures;
 }
@@ -426,4 +546,8 @@ module.exports = {
   runWeeklyRoundupTick,
   sendWeeklyRoundup,
   collectWeeklyFigures,
+  getPeriodStart,
+  reportingWeekDates,
+  reportingWeekPeriod,
+  lastCompletedReportingWeekPeriod,
 };

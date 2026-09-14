@@ -78,6 +78,62 @@ function hipInwardSign(stationIndex, stationCount, hipMinEnd, hipMaxEnd) {
   return 0;
 }
 
+export function superiorHipEndId(runIndex, end) {
+  return `run-${runIndex}-${end}`;
+}
+
+function resolveRunHip(runIndex, end, defaultHip, endStyles) {
+  const style = endStyles?.[superiorHipEndId(runIndex, end)];
+  if (style === "gable") return false;
+  if (style === "hip") return true;
+  return Boolean(defaultHip);
+}
+
+function hipEndWorldPoint(run, end, wallYs) {
+  const span = Number(run.maxRun) - Number(run.minRun);
+  const half = span / 2;
+  const rise = wallYs.tanP * half;
+  const eaveY = wallYs.chordTop;
+  const ridgeY = wallYs.chordTop + rise;
+  const ridgeRun = (run.minRun + run.maxRun) / 2;
+  const hipInset = Math.min(half, Math.max(0, (run.maxLong - run.minLong) / 2));
+  const long = end === "min" ? run.minLong : run.maxLong;
+  const ridgeLong =
+    end === "min"
+      ? run.hipMin
+        ? run.minLong + hipInset
+        : run.minLong
+      : run.hipMax
+        ? run.maxLong - hipInset
+        : run.maxLong;
+  const eaveA = pointAt(run.spanAlongX, long, run.minRun);
+  const eaveB = pointAt(run.spanAlongX, long, run.maxRun);
+  const apex = pointAt(run.spanAlongX, ridgeLong, ridgeRun);
+  return {
+    x: (eaveA.x + eaveB.x + apex.x) / 3,
+    y: (eaveY * 2 + ridgeY) / 3,
+    z: (eaveA.z + eaveB.z + apex.z) / 3,
+  };
+}
+
+function recordHipEnds(hipEnds, run, runIndex, wallYs, defaultHipMin, defaultHipMax) {
+  if (!hipEnds) return;
+  if (defaultHipMin) {
+    hipEnds.push({
+      id: superiorHipEndId(runIndex, "min"),
+      style: run.hipMin ? "hip" : "gable",
+      position: hipEndWorldPoint(run, "min", wallYs),
+    });
+  }
+  if (defaultHipMax) {
+    hipEnds.push({
+      id: superiorHipEndId(runIndex, "max"),
+      style: run.hipMax ? "hip" : "gable",
+      position: hipEndWorldPoint(run, "max", wallYs),
+    });
+  }
+}
+
 function cellKey(i, j) {
   return `${i},${j}`;
 }
@@ -246,24 +302,37 @@ function pushTruss(members, trussState, spanAlongX, cross, start, end, wallYs, i
   });
 }
 
-function addRectTrusses(members, trussState, rect, ring, wallYs, spanAlongX, runs) {
+function addRectTrusses(
+  members,
+  trussState,
+  rect,
+  ring,
+  wallYs,
+  spanAlongX,
+  runs,
+  runIndex = 0,
+  endStyles = null,
+  hipEnds = null
+) {
   const minLong = spanAlongX ? rect.minZ : rect.minX;
   const maxLong = spanAlongX ? rect.maxZ : rect.maxX;
   const minRun = spanAlongX ? rect.minX : rect.minZ;
   const maxRun = spanAlongX ? rect.maxX : rect.maxZ;
-  if (runs) {
-    runs.push({
-      spanAlongX,
-      minLong,
-      maxLong,
-      minRun,
-      maxRun,
-      hipMin: true,
-      hipMax: true,
-    });
-  }
+  const hipMin = resolveRunHip(runIndex, "min", true, endStyles);
+  const hipMax = resolveRunHip(runIndex, "max", true, endStyles);
+  const run = {
+    spanAlongX,
+    minLong,
+    maxLong,
+    minRun,
+    maxRun,
+    hipMin,
+    hipMax,
+  };
+  if (runs) runs.push(run);
+  recordHipEnds(hipEnds, run, runIndex, wallYs, true, true);
   superiorTrussStationsAlong(minLong, maxLong).forEach((cross, i, stations) => {
-    const inwardSign = hipInwardSign(i, stations.length, true, true);
+    const inwardSign = hipInwardSign(i, stations.length, hipMin, hipMax);
     const spans = clipRoofAxisSpansToRing(spanAlongX, cross, minRun, maxRun, ring);
     const toPlace = spans.length ? spans : [{ start: minRun, end: maxRun }];
     toPlace.forEach((span) => {
@@ -296,7 +365,20 @@ function protrusionStopStation(main, rect, spanAlongX, mainSpanAlongX) {
  * meets the main roof slope. Last truss sits on that line; the rest are
  * respaced from the outer end. Span stays the protrusion width.
  */
-function addProtrusionTrusses(members, trussState, rect, main, ring, wallYs, spanAlongX, mainSpanAlongX, runs) {
+function addProtrusionTrusses(
+  members,
+  trussState,
+  rect,
+  main,
+  ring,
+  wallYs,
+  spanAlongX,
+  mainSpanAlongX,
+  runs,
+  runIndex = 0,
+  endStyles = null,
+  hipEnds = null
+) {
   const minRun = spanAlongX ? rect.minX : rect.minZ;
   const maxRun = spanAlongX ? rect.maxX : rect.maxZ;
   const rectMin = spanAlongX ? rect.minZ : rect.minX;
@@ -321,19 +403,21 @@ function addProtrusionTrusses(members, trussState, rect, main, ring, wallYs, spa
     minLong = rectMin;
     maxLong = rectMax;
   }
-  const hipMin = !fromMaxSide;
-  const hipMax = fromMaxSide;
-  if (runs) {
-    runs.push({
-      spanAlongX,
-      minLong,
-      maxLong,
-      minRun,
-      maxRun,
-      hipMin,
-      hipMax,
-    });
-  }
+  const defaultHipMin = !fromMaxSide;
+  const defaultHipMax = fromMaxSide;
+  const hipMin = resolveRunHip(runIndex, "min", defaultHipMin, endStyles);
+  const hipMax = resolveRunHip(runIndex, "max", defaultHipMax, endStyles);
+  const run = {
+    spanAlongX,
+    minLong,
+    maxLong,
+    minRun,
+    maxRun,
+    hipMin,
+    hipMax,
+  };
+  if (runs) runs.push(run);
+  recordHipEnds(hipEnds, run, runIndex, wallYs, defaultHipMin, defaultHipMax);
   superiorTrussStationsAlong(minLong, maxLong).forEach((cross, i, stations) => {
     const inwardSign = hipInwardSign(i, stations.length, hipMin, hipMax);
     const clipped = clipRoofAxisSpansToRing(spanAlongX, cross, minRun, maxRun, ring)
@@ -356,8 +440,9 @@ function addProtrusionTrusses(members, trussState, rect, main, ring, wallYs, spa
  *
  * @param {{ x: number, z: number }[]} ring
  * @param {number} wallTopY
+ * @param {Record<string, "hip" | "gable"> | null} [endStyles]
  */
-export function buildSuperiorRoofTrussMembers(ring, wallTopY) {
+export function buildSuperiorRoofTrussMembers(ring, wallTopY, endStyles = null) {
   const aabb = roofRingAabbXZ(ring);
   if (!aabb) return null;
   const yBottom = Number(wallTopY);
@@ -370,14 +455,26 @@ export function buildSuperiorRoofTrussMembers(ring, wallTopY) {
   };
   const members = [];
   const runs = [];
+  const hipEnds = [];
   const trussState = { index: 0, riseM: 0 };
   const rects = decomposeOrthogonalRoofRects(ring);
   const main = rects[0];
   if (!main) return null;
   const mainSpanAlongX = rectSpanAlongX(main);
-  addRectTrusses(members, trussState, main, ring, wallYs, mainSpanAlongX, runs);
+  addRectTrusses(
+    members,
+    trussState,
+    main,
+    ring,
+    wallYs,
+    mainSpanAlongX,
+    runs,
+    0,
+    endStyles,
+    hipEnds
+  );
   const protrusionSpanAlongX = !mainSpanAlongX;
-  rects.slice(1).forEach((rect) => {
+  rects.slice(1).forEach((rect, i) => {
     addProtrusionTrusses(
       members,
       trussState,
@@ -387,12 +484,16 @@ export function buildSuperiorRoofTrussMembers(ring, wallTopY) {
       wallYs,
       protrusionSpanAlongX,
       mainSpanAlongX,
-      runs
+      runs,
+      i + 1,
+      endStyles,
+      hipEnds
     );
   });
   if (!members.length) return null;
   return {
     members,
+    hipEnds,
     sheets: buildSuperiorRoofSheets(runs, wallYs),
     riseM: trussState.riseM,
     pitchDeg: SUPERIOR_TRUSS_PITCH_DEG,
@@ -543,6 +644,16 @@ export function buildSuperiorRoofSheets(runs, wallYs) {
         ],
         uvAt: hipUv(run.minLong),
       });
+    } else {
+      faces.push({
+        side: "gable-min",
+        verts: [
+          pt(run.minRun, run.minLong, eaveY),
+          pt(run.maxRun, run.minLong, eaveY),
+          pt(ridgeRun, run.minLong, ridgeY),
+        ],
+        uvAt: hipUv(run.minLong),
+      });
     }
     if (hipMax) {
       faces.push({
@@ -551,6 +662,16 @@ export function buildSuperiorRoofSheets(runs, wallYs) {
           pt(run.maxRun, run.maxLong, eaveY),
           pt(run.minRun, run.maxLong, eaveY),
           pt(ridgeRun, ridgeMaxLong, ridgeY),
+        ],
+        uvAt: hipUv(run.maxLong),
+      });
+    } else {
+      faces.push({
+        side: "gable-max",
+        verts: [
+          pt(run.maxRun, run.maxLong, eaveY),
+          pt(run.minRun, run.maxLong, eaveY),
+          pt(ridgeRun, run.maxLong, ridgeY),
         ],
         uvAt: hipUv(run.maxLong),
       });

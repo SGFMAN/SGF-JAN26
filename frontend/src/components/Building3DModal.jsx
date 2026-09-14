@@ -372,6 +372,7 @@ function buildingContentKeys(p) {
       p.finishesKey,
       p.kitchenFinishesKey,
     ].join("\0"),
+    hipStyles: p.superiorHipEndStylesKey || "{}",
   };
 }
 
@@ -917,60 +918,23 @@ function addAffordableCutawayFascia(parent, { sheetRing, roofRing, ridgeAxis, sl
   return true;
 }
 
+function removeSuperiorRoofSheets(parent) {
+  if (!parent) return;
+  [...parent.children].forEach((child) => {
+    if (child.userData?.partType === "superior-roof") {
+      parent.remove(child);
+      disposeThreeObject(child);
+    }
+  });
+}
+
 /** 45×90 mm isosceles trusses on the superior roof outline, spanning the short side. */
-function addSuperiorRoofTrusses(parent, { ring, wallTopY, roofColor }) {
+function addSuperiorRoofTrusses(parent, { ring, wallTopY, roofColor, endStyles }) {
   try {
-    const data = buildSuperiorRoofTrussMembers(ring, wallTopY);
+    removeSuperiorRoofSheets(parent);
+    const data = buildSuperiorRoofTrussMembers(ring, wallTopY, endStyles || null);
     if (!data?.members?.length) return null;
-    const texture = createFramingTimberTexture();
-    const material = createFramingTimberMaterial(texture);
-    data.members.forEach((member, index) => {
-      const dx = member.to.x - member.from.x;
-      const dy = member.to.y - member.from.y;
-      const dz = member.to.z - member.from.z;
-      const len = Math.hypot(dx, dy, dz);
-      if (!(len > 0.04) || !Number.isFinite(len)) return;
-      const dir = new THREE.Vector3(dx / len, dy / len, dz / len);
-      const xAxis = new THREE.Vector3(
-        member.longAxis.x,
-        member.longAxis.y,
-        member.longAxis.z
-      );
-      if (xAxis.lengthSq() < 1e-8) xAxis.set(1, 0, 0);
-      xAxis.normalize();
-      let yAxis = new THREE.Vector3().crossVectors(dir, xAxis);
-      if (yAxis.lengthSq() < 1e-8) {
-        yAxis.crossVectors(new THREE.Vector3(0, 1, 0), dir);
-      }
-      if (yAxis.lengthSq() < 1e-8) return;
-      yAxis.normalize();
-      xAxis.crossVectors(yAxis, dir).normalize();
-      if (xAxis.lengthSq() < 1e-8) return;
-      const geometry = new THREE.BoxGeometry(
-        SUPERIOR_TRUSS_TIMBER_ALONG_ROW_M,
-        SUPERIOR_TRUSS_TIMBER_IN_PLANE_M,
-        len
-      );
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(
-        (member.from.x + member.to.x) / 2,
-        (member.from.y + member.to.y) / 2,
-        (member.from.z + member.to.z) / 2
-      );
-      mesh.setRotationFromMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, dir));
-      mesh.name = `${BUILDING_3D_PARTS.ROOF}-superior-truss-${member.kind}-${member.trussIndex + 1}-${index + 1}`;
-      mesh.userData = {
-        partId: BUILDING_3D_PARTS.ROOF,
-        partType: "superior-roof",
-        trussKind: member.kind,
-        widthM: SUPERIOR_TRUSS_TIMBER_ALONG_ROW_M,
-        thickM: SUPERIOR_TRUSS_TIMBER_IN_PLANE_M,
-        lengthM: len,
-      };
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      parent.add(mesh);
-    });
+    // Trusses still define the roof shape; hide the timber for now.
     const sheets = Array.isArray(data.sheets) ? data.sheets : [];
     sheets.forEach((sheet, index) => {
       if (!sheet?.positions || !sheet?.indices || sheet.indices.length < 3) return;
@@ -3830,6 +3794,14 @@ export default function Building3DModal({
   const [renderTimeOfDay, setRenderTimeOfDay] = useState("morning");
   const [lastRenderTimeOfDay, setLastRenderTimeOfDay] = useState(null);
   const [sceneReady, setSceneReady] = useState(false);
+  const [superiorHipEnds, setSuperiorHipEnds] = useState([]);
+  const [superiorHipEndStyles, setSuperiorHipEndStyles] = useState({});
+  const superiorHipEndsRef = useRef([]);
+  const superiorHipOverlayRef = useRef(null);
+  const superiorHipEndStylesKey = useMemo(
+    () => JSON.stringify(superiorHipEndStyles),
+    [superiorHipEndStyles]
+  );
   const footprintKey = useMemo(
     () => JSON.stringify(footprintPoints ?? null),
     [footprintPoints]
@@ -4010,6 +3982,18 @@ export default function Building3DModal({
     finishesKey,
     kitchenFinishesKey,
     eyeHeightM,
+    superiorHipEndStyles,
+    superiorHipEndStylesKey,
+    onSuperiorHipEnds: (ends) => {
+      const next = Array.isArray(ends) ? ends : [];
+      superiorHipEndsRef.current = next;
+      setSuperiorHipEnds((prev) => {
+        const same =
+          prev.length === next.length &&
+          prev.every((item, i) => item.id === next[i]?.id && item.style === next[i]?.style);
+        return same ? prev : next;
+      });
+    },
   };
 
   useEffect(() => {
@@ -4067,6 +4051,9 @@ export default function Building3DModal({
     renderer.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(renderer.domElement);
     renderer.domElement.style.display = "block";
+    renderer.domElement.style.position = "absolute";
+    renderer.domElement.style.inset = "0";
+    renderer.domElement.style.zIndex = "0";
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
     renderer.domElement.style.touchAction = "none";
@@ -4159,7 +4146,7 @@ export default function Building3DModal({
 
     let envelopeGen = 0;
     let rebuildGen = 0;
-    let lastContentKeys = { subfloor: null, frame: null, envelope: null };
+    let lastContentKeys = { subfloor: null, frame: null, envelope: null, hipStyles: null };
     let applyCameraLimits = () => {};
 
     async function rebuildBuilding() {
@@ -4225,6 +4212,44 @@ export default function Building3DModal({
       const doSub = first || keys.subfloor !== lastContentKeys.subfloor;
       const doFrame = first || keys.frame !== lastContentKeys.frame;
       const doEnv = first || keys.envelope !== lastContentKeys.envelope;
+      const doHip = first || keys.hipStyles !== lastContentKeys.hipStyles;
+      if (!doSub && !doFrame && !doEnv && doHip) {
+        const wallTopY = subfloorHeightM + CLADDING_HEIGHT_M;
+        let hipEndsOut = [];
+        if (Array.isArray(superiorRoofPoints) && superiorRoofPoints.length >= 3) {
+          const superiorResolved = resolveAlignedTraceRing(
+            superiorRoofPoints,
+            Array.isArray(footprintPoints) && footprintPoints.length >= 3
+              ? footprintPoints
+              : superiorRoofPoints,
+            calibration
+          );
+          if (superiorResolved.ring.length >= 3) {
+            let roofGroup = modelGroup.getObjectByName(BUILDING_3D_PARTS.ROOF);
+            if (!roofGroup) {
+              roofGroup = new THREE.Group();
+              roofGroup.name = BUILDING_3D_PARTS.ROOF;
+              roofGroup.userData = {
+                partId: BUILDING_3D_PARTS.ROOF,
+                partType: "roof",
+                pitchDeg: SUPERIOR_TRUSS_PITCH_DEG,
+              };
+              modelGroup.add(roofGroup);
+            }
+            const superiorTrusses = addSuperiorRoofTrusses(roofGroup, {
+              ring: superiorResolved.ring,
+              wallTopY,
+              roofColor: finishHex.roof,
+              endStyles: p.superiorHipEndStyles,
+            });
+            hipEndsOut = superiorTrusses?.hipEnds || [];
+          }
+        }
+        p.onSuperiorHipEnds?.(hipEndsOut);
+        lastContentKeys = keys;
+        applyCameraLimits(bounds, p);
+        return;
+      }
       if (!doSub && !doFrame && !doEnv) {
         applyCameraLimits(bounds, p);
         return;
@@ -4940,6 +4965,7 @@ export default function Building3DModal({
       const eaveYM = hippedRoofEaveYM(wallTopY);
       let hasRoofSlab = false;
       let roofStackM = 0;
+      let hipEndsOut = [];
       if (fromTrace && Array.isArray(roofPoints) && roofPoints.length >= 3) {
         const roofResolved = resolveAlignedTraceRing(
           roofPoints,
@@ -5308,11 +5334,13 @@ export default function Building3DModal({
             ring: superiorResolved.ring,
             wallTopY,
             roofColor: finishHex.roof,
+            endStyles: p.superiorHipEndStyles,
           });
           if (superiorTrusses) {
             hasRoofSlab = true;
             roofGroup.userData.trussCount = superiorTrusses.count;
             roofGroup.userData.riseM = superiorTrusses.riseM;
+            hipEndsOut = superiorTrusses.hipEnds || [];
             const stackM =
               SUPERIOR_TRUSS_THICK_M +
               superiorTrusses.riseM +
@@ -5324,6 +5352,7 @@ export default function Building3DModal({
           }
         }
       }
+      p.onSuperiorHipEnds?.(hipEndsOut);
       modelGroup.userData = {
         ...(modelGroup.userData || {}),
         hasRoofSlab,
@@ -6174,6 +6203,7 @@ export default function Building3DModal({
       if (dragging) endDrag(event);
     };
     const onPointerDown = (event) => {
+      if (event.target?.closest?.("[data-hip-end-id]")) return;
       if (event.button !== 0 && event.button !== 2) return;
       dragging = true;
       container.setPointerCapture(event.pointerId);
@@ -6255,6 +6285,7 @@ export default function Building3DModal({
     const walkForward = new THREE.Vector3();
     const walkRight = new THREE.Vector3();
     const worldUp = new THREE.Vector3(0, 1, 0);
+    const hipNdc = new THREE.Vector3();
 
     const render = () => {
       if (disposed) return;
@@ -6331,6 +6362,28 @@ export default function Building3DModal({
         }
       }
       if (camDirty) updateCamera();
+      const overlay = superiorHipOverlayRef.current;
+      if (overlay) {
+        const width = overlay.clientWidth;
+        const height = overlay.clientHeight;
+        const ends = superiorHipEndsRef.current;
+        overlay.querySelectorAll("[data-hip-end-id]").forEach((el) => {
+          const end = ends.find((item) => item.id === el.getAttribute("data-hip-end-id"));
+          if (!end?.position || !(width > 0) || !(height > 0)) {
+            el.style.visibility = "hidden";
+            return;
+          }
+          hipNdc.set(end.position.x, end.position.y, end.position.z).project(camera);
+          if (!Number.isFinite(hipNdc.x) || !Number.isFinite(hipNdc.y) || hipNdc.z < -1 || hipNdc.z > 1) {
+            el.style.visibility = "hidden";
+            return;
+          }
+          const x = (hipNdc.x * 0.5 + 0.5) * width;
+          const y = (-hipNdc.y * 0.5 + 0.5) * height;
+          el.style.visibility = "visible";
+          el.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+        });
+      }
       renderer.render(scene, camera);
     };
     render();
@@ -6407,6 +6460,7 @@ export default function Building3DModal({
     finishesKey,
     kitchenFinishesKey,
     dataReady,
+    superiorHipEndStylesKey,
   ]);
 
   useEffect(() => {
@@ -6505,7 +6559,7 @@ export default function Building3DModal({
           : ` · Roof: 100 mm slab + ${AFFORDABLE_ROOF_PITCH_DEG}° dual-fall sheet`
       : "",
     superiorRoofPoints?.length >= 3
-      ? ` · Superior roof: ${SUPERIOR_TRUSS_PITCH_DEG}° trusses (45×90 mm)`
+      ? ` · Superior roof: ${SUPERIOR_TRUSS_PITCH_DEG}°`
       : "",
   ].join("");
   const deckLabel =
@@ -6718,6 +6772,65 @@ export default function Building3DModal({
         ) : null}
         <div ref={containerRef} style={{ flex: 1, minHeight: 0, position: "relative" }}>
           {!sceneReady ? <Building3DLoadingCover /> : null}
+          {superiorHipEnds.length ? (
+            <div
+              ref={superiorHipOverlayRef}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 8,
+                pointerEvents: "none",
+                overflow: "hidden",
+              }}
+            >
+              {superiorHipEnds.map((end) => {
+                const shown =
+                  superiorHipEndStyles[end.id] || end.style || "hip";
+                return (
+                <button
+                  key={end.id}
+                  type="button"
+                  data-hip-end-id={end.id}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const current = shown === "gable" ? "gable" : "hip";
+                    const nextStyle = current === "hip" ? "gable" : "hip";
+                    const next = { ...superiorHipEndStyles, [end.id]: nextStyle };
+                    if (paramsRef.current) {
+                      paramsRef.current.superiorHipEndStyles = next;
+                      paramsRef.current.superiorHipEndStylesKey = JSON.stringify(next);
+                    }
+                    setSuperiorHipEndStyles(next);
+                    void sceneApiRef.current?.rebuildBuilding?.();
+                  }}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: 0,
+                    pointerEvents: "auto",
+                    padding: "4px 10px",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(0,0,0,0.2)",
+                    background: "rgba(255,255,255,0.94)",
+                    color: UI.textPrimary,
+                    fontSize: "0.78rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    boxShadow: "0 1px 6px rgba(0,0,0,0.22)",
+                    whiteSpace: "nowrap",
+                    visibility: "hidden",
+                  }}
+                >
+                  {shown === "gable" ? "Gable" : "Hipped"}
+                </button>
+                );
+              })}
+            </div>
+          ) : null}
           {(renderBusy || renderImageUrl) && (
             <div
               style={{

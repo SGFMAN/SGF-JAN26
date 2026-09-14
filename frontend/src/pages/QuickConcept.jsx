@@ -42,6 +42,36 @@ const DEFAULT_CENTER = [-37.8136, 144.9631];
 const SEARCH_ZOOM = 18;
 const NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search";
 
+function quoteAddressState(quote) {
+  const state = String(quote?.state || "").trim().toUpperCase();
+  if (state === "VIC" || state === "QLD") return state;
+  return "";
+}
+
+function quoteSearchAddress(quote) {
+  const street = String(quote?.street || "").trim();
+  const suburb = String(quote?.suburb || "").trim();
+  const state = quoteAddressState(quote);
+  if (!street && !suburb) return "";
+  const locality = [suburb, state].filter(Boolean).join(" ");
+  return [street, locality].filter(Boolean).join(", ");
+}
+
+function groupQuoteAddresses(quotes) {
+  const groups = { VIC: [], QLD: [] };
+  for (const quote of quotes || []) {
+    const state = quoteAddressState(quote);
+    if (!state) continue;
+    const label = quoteSearchAddress(quote);
+    if (!label) continue;
+    groups[state].push({ id: quote.id, label });
+  }
+  const byLabel = (a, b) => a.label.localeCompare(b.label, "en", { sensitivity: "base" });
+  groups.VIC.sort(byLabel);
+  groups.QLD.sort(byLabel);
+  return groups;
+}
+
 function toolbarButtonStyle(enabled = true) {
   return {
     background: WHITE,
@@ -277,6 +307,270 @@ function formatSqm(m2) {
   return `${n} m²`;
 }
 
+function designExportBoundsPx(layout, rooms, pad = 32) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const add = (x, y) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  };
+  for (const p of layout?.pts || []) add(p.x, p.y);
+  for (const room of rooms || []) {
+    const r = roomToPx(room, layout);
+    add(r.x, r.y);
+    add(r.x + r.w, r.y + r.h);
+  }
+  if (!Number.isFinite(minX)) return null;
+  const topBand = 40;
+  return {
+    x: minX - pad,
+    y: minY - pad - topBand,
+    w: maxX - minX + pad * 2,
+    h: maxY - minY + pad * 2 + topBand,
+  };
+}
+
+function tracePolygonPath(ctx, pts) {
+  if (!pts?.length) return;
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+}
+
+function drawMetreGrid(ctx, box, ppm, offsetX, offsetY) {
+  if (!(ppm > 0)) return;
+  const left = box.x;
+  const top = box.y;
+  const right = box.x + box.w;
+  const bottom = box.y + box.h;
+  const mod = (v, m) => ((v % m) + m) % m;
+  const firstX = left - mod(left - offsetX, ppm);
+  const firstY = top - mod(top - offsetY, ppm);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, box.w, box.h);
+  ctx.clip();
+  for (let x = firstX; x <= right + 0.5; x += ppm) {
+    const strong = Math.abs((x - offsetX) / ppm) % 5 < 1e-6;
+    ctx.beginPath();
+    ctx.strokeStyle = strong ? "rgba(50, 50, 51, 0.22)" : "rgba(50, 50, 51, 0.08)";
+    ctx.lineWidth = 1;
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.stroke();
+  }
+  for (let y = firstY; y <= bottom + 0.5; y += ppm) {
+    const strong = Math.abs((y - offsetY) / ppm) % 5 < 1e-6;
+    ctx.beginPath();
+    ctx.strokeStyle = strong ? "rgba(50, 50, 51, 0.22)" : "rgba(50, 50, 51, 0.08)";
+    ctx.lineWidth = 1;
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHaloText(ctx, text, x, y, color, halo) {
+  ctx.save();
+  ctx.shadowColor = halo;
+  ctx.shadowBlur = 6;
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function buildDesignExportCanvas(layout, rooms) {
+  const scale = 2;
+  const box = designExportBoundsPx(layout, rooms) || { x: 0, y: 0, w: 640, h: 480 };
+  const width = Math.max(48, box.w);
+  const height = Math.max(48, box.h);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("PNG capture failed");
+  ctx.scale(scale, scale);
+  ctx.translate(-box.x, -box.y);
+  ctx.fillStyle = WHITE;
+  ctx.fillRect(box.x, box.y, width, height);
+  drawMetreGrid(
+    ctx,
+    { x: box.x, y: box.y, w: width, h: height },
+    layout.scale,
+    layout.offsetX || 0,
+    layout.offsetY || 0
+  );
+
+  const innerMetres = insetPolygon(layout.metres, WALL_THICKNESS_M);
+  const innerPts = innerMetres
+    ? innerMetres.map((p) => ({
+        x: p.x * layout.scale + layout.originX,
+        y: p.y * layout.scale + layout.originY,
+      }))
+    : null;
+
+  if (innerPts) {
+    ctx.beginPath();
+    tracePolygonPath(ctx, layout.pts);
+    tracePolygonPath(ctx, innerPts);
+    ctx.fillStyle = WALL_FILL;
+    ctx.fill("evenodd");
+  }
+
+  ctx.beginPath();
+  tracePolygonPath(ctx, innerPts || layout.pts);
+  for (const room of interiorRooms(rooms)) {
+    const r = roomToPx(room, layout);
+    ctx.rect(r.x, r.y, r.w, r.h);
+  }
+  ctx.fillStyle = LIVING_FILL;
+  ctx.fill("evenodd");
+
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = MONUMENT;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  tracePolygonPath(ctx, layout.pts);
+  ctx.stroke();
+  if (innerPts) {
+    ctx.lineWidth = 1.25;
+    ctx.beginPath();
+    tracePolygonPath(ctx, innerPts);
+    ctx.stroke();
+  }
+
+  for (const room of rooms || []) {
+    const r = roomToPx(room, layout);
+    const colors = roomColors(room);
+    ctx.fillStyle = colors.fill;
+    ctx.strokeStyle = colors.stroke;
+    ctx.lineWidth = 2;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+  }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = '700 13px "Segoe UI", system-ui, sans-serif';
+  const livingPt = innerMetres
+    ? livingLabelPoint(innerMetres, interiorRooms(rooms))
+    : livingLabelPoint(layout.metres, interiorRooms(rooms));
+  const livingDims = innerMetres
+    ? livingApproxDims(innerMetres, interiorRooms(rooms))
+    : livingApproxDims(layout.metres, interiorRooms(rooms));
+  if (livingPt) {
+    const x = livingPt.x * layout.scale + layout.originX;
+    const y = livingPt.y * layout.scale + layout.originY;
+    drawHaloText(ctx, "Living", x, y - 8, "#111", "rgba(255,255,255,0.95)");
+    if (livingDims) {
+      ctx.font = '700 12px "Segoe UI", system-ui, sans-serif';
+      drawHaloText(
+        ctx,
+        formatRoomDims(livingDims.w, livingDims.h),
+        x,
+        y + 8,
+        "#111",
+        "rgba(255,255,255,0.95)"
+      );
+    }
+  }
+
+  ctx.font = '700 12px "Segoe UI", system-ui, sans-serif';
+  for (const room of rooms || []) {
+    const r = roomToPx(room, layout);
+    const x = r.x + r.w / 2;
+    const y = r.y + r.h / 2;
+    drawHaloText(ctx, roomKindLabel(roomKind(room)), x, y - 8, "#111", "rgba(255,255,255,0.95)");
+    drawHaloText(ctx, formatRoomDims(room.w, room.h), x, y + 8, "#111", "rgba(255,255,255,0.95)");
+  }
+
+  ctx.font = '700 11px "Segoe UI", system-ui, sans-serif';
+  for (const side of sideLengthLabels(layout.pts, true, layout.scale)) {
+    ctx.save();
+    ctx.translate(side.x, side.y);
+    ctx.rotate(((side.angleDeg || 0) * Math.PI) / 180);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    drawHaloText(ctx, side.label, 0, 0, WHITE, "rgba(0,0,0,0.85)");
+    ctx.restore();
+  }
+
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.font = '700 16px "Segoe UI", system-ui, sans-serif';
+  drawHaloText(ctx, formatSqm(layout.areaM2), 12, 10, MONUMENT, "rgba(255,255,255,0.95)");
+  return canvas;
+}
+
+function canvasToPngBytes(canvas) {
+  if (!(canvas?.width > 0 && canvas?.height > 0)) {
+    throw new Error("Empty capture");
+  }
+  const dataUrl = canvas.toDataURL("image/png");
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) throw new Error("PNG encode failed");
+  const binary = atob(dataUrl.slice(comma + 1));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  if (bytes.length < 32 || bytes[0] !== 0x89 || bytes[1] !== 0x50) {
+    throw new Error("PNG encode failed");
+  }
+  return bytes;
+}
+
+function triggerPngDownload(bytes, filename) {
+  const blob = new Blob([bytes], { type: "image/png" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+async function savePngBytes(bytes, filename) {
+  const payload = bytes.slice();
+  if (typeof window.showSaveFilePicker === "function") {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [
+          {
+            description: "PNG image",
+            accept: { "image/png": [".png"] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(payload);
+      await writable.truncate(payload.byteLength);
+      await writable.close();
+      const file = await handle.getFile();
+      if (file.size >= 32) return;
+    } catch (err) {
+      if (err && (err.name === "AbortError" || err.name === "NotAllowedError")) return;
+      console.warn("[QuickConcept] save picker write failed, using Downloads:", err);
+    }
+  }
+  triggerPngDownload(payload, filename);
+}
+
+function designPngFilename(areaM2) {
+  const n =
+    !(areaM2 > 0) ? "0" : areaM2 >= 100 ? areaM2.toFixed(0) : areaM2 >= 10 ? areaM2.toFixed(1) : areaM2.toFixed(2);
+  return `quick-concept-${n}m2.png`;
+}
+
 function formatMetres(m) {
   if (!(m > 0)) return "0 m";
   const n = m >= 100 ? m.toFixed(0) : m >= 10 ? m.toFixed(1) : m.toFixed(2);
@@ -310,6 +604,12 @@ function sideLengthLabels(pts, closed, ppm) {
       x: mx + nx * 14,
       y: my + ny * 14,
       label: formatMetres(lenPx / ppm),
+      angleDeg: (() => {
+        let angle = Math.atan2(b.y - a.y, b.x - a.x);
+        if (angle > Math.PI / 2) angle -= Math.PI;
+        if (angle < -Math.PI / 2) angle += Math.PI;
+        return (angle * 180) / Math.PI;
+      })(),
     });
   }
   return out;
@@ -518,6 +818,37 @@ function formatRoomDims(w, h) {
   return `${w.toFixed(1)} × ${h.toFixed(1)}`;
 }
 
+function RoomDimLabel({ x, y, text, title, subtitle }) {
+  const top = title || null;
+  const bottom = subtitle || (!title ? text : null) || null;
+  return (
+    <span
+      style={{
+        position: "absolute",
+        left: x,
+        top: y,
+        transform: "translate(-50%, -50%)",
+        color: "#111",
+        letterSpacing: "0.02em",
+        whiteSpace: "nowrap",
+        pointerEvents: "none",
+        textShadow: "0 0 4px #fff, 0 0 4px #fff, 0 1px 2px rgba(255,255,255,0.9)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        lineHeight: 1.15,
+      }}
+    >
+      {top ? (
+        <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{top}</span>
+      ) : null}
+      {bottom ? (
+        <span style={{ fontSize: top ? "0.65rem" : "0.7rem", fontWeight: 700 }}>{bottom}</span>
+      ) : null}
+    </span>
+  );
+}
+
 function LengthLabel({ x, y, text }) {
   return (
     <span
@@ -537,6 +868,31 @@ function LengthLabel({ x, y, text }) {
         boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
         whiteSpace: "nowrap",
         pointerEvents: "none",
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function EdgeDimLabel({ x, y, text, angleDeg = 0, color = "#111" }) {
+  const light = color === WHITE || color === "#fff" || color === "#ffffff";
+  return (
+    <span
+      style={{
+        position: "absolute",
+        left: x,
+        top: y,
+        transform: `translate(-50%, -50%) rotate(${angleDeg}deg)`,
+        color,
+        fontSize: "0.72rem",
+        fontWeight: 700,
+        letterSpacing: "0.02em",
+        whiteSpace: "nowrap",
+        pointerEvents: "none",
+        textShadow: light
+          ? "0 0 4px #000, 0 0 5px #000, 0 1px 2px rgba(0,0,0,0.9)"
+          : "0 0 4px #fff, 0 0 4px #fff, 0 1px 2px rgba(255,255,255,0.9)",
       }}
     >
       {text}
@@ -601,6 +957,89 @@ function designMetresToPixels(metres, frame) {
   });
 }
 
+function liveDesignFrame(pixelVerts, ppm, stored) {
+  if (!pixelVerts || pixelVerts.length < 3 || !(ppm > 0)) return stored || null;
+  const unrotated = pixelVerts.map((p) => ({ x: p.x / ppm, y: p.y / ppm }));
+  const centroid = polygonCentroid(unrotated);
+  const angle = stored ? null : longestSideAngle(unrotated);
+  const cosF = stored?.cosF ?? Math.cos(-angle);
+  const sinF = stored?.sinF ?? Math.sin(-angle);
+  return {
+    metres: rotateAbout(unrotated, centroid, cosF, sinF),
+    centroid,
+    cosF,
+    sinF,
+    srcPpm: ppm,
+  };
+}
+
+function roomCornersMetres(room) {
+  return [
+    { x: room.x, y: room.y },
+    { x: room.x + room.w, y: room.y },
+    { x: room.x + room.w, y: room.y + room.h },
+    { x: room.x, y: room.y + room.h },
+  ];
+}
+
+function pixelsToDesignMetres(pixelVerts, frame) {
+  const { centroid: c, cosF, sinF, srcPpm } = frame;
+  return pixelVerts.map((p) => {
+    const dx = p.x / srcPpm - c.x;
+    const dy = p.y / srcPpm - c.y;
+    return {
+      x: c.x + dx * cosF - dy * sinF,
+      y: c.y + dx * sinF + dy * cosF,
+    };
+  });
+}
+
+function remapRoomToFrame(room, fromFrame, toFrame) {
+  if (!fromFrame || !toFrame || fromFrame === toFrame) return room;
+  const metres = pixelsToDesignMetres(
+    designMetresToPixels(roomCornersMetres(room), fromFrame),
+    toFrame
+  );
+  const xs = metres.map((p) => p.x);
+  const ys = metres.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return {
+    ...room,
+    x,
+    y,
+    w: Math.max(...xs) - x,
+    h: Math.max(...ys) - y,
+  };
+}
+
+function roomToMapPixels(room, frame) {
+  if (!frame) return [];
+  return designMetresToPixels(roomCornersMetres(room), frame);
+}
+
+function polygonCentroidPx(pts) {
+  if (!pts?.length) return { x: 0, y: 0 };
+  const x = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+  const y = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+  return { x, y };
+}
+
+function livingHolesPathD(outlinePts, holePolys) {
+  if (!outlinePts?.length) return "";
+  const parts = [polygonPathD(outlinePts)];
+  for (const hole of holePolys || []) {
+    if (!hole?.length) continue;
+    parts.push(
+      `M ${hole[0].x} ${hole[0].y} ${hole
+        .slice(1)
+        .map((p) => `L ${p.x} ${p.y}`)
+        .join(" ")} Z`
+    );
+  }
+  return parts.join(" ");
+}
+
 function metreGridStyle(ppm, offsetX = 0, offsetY = 0) {
   const strong = "rgba(50, 50, 51, 0.22)";
   const weak = "rgba(50, 50, 51, 0.08)";
@@ -617,7 +1056,7 @@ function metreGridStyle(ppm, offsetX = 0, offsetY = 0) {
   };
 }
 
-function layoutFromMetres(metres, width, height) {
+function layoutFromMetres(metres, width, height, extraRects = []) {
   const PAD = 56;
   let minX = Infinity;
   let minY = Infinity;
@@ -628,6 +1067,13 @@ function layoutFromMetres(metres, width, height) {
     minY = Math.min(minY, p.y);
     maxX = Math.max(maxX, p.x);
     maxY = Math.max(maxY, p.y);
+  }
+  for (const r of extraRects) {
+    if (!r) continue;
+    minX = Math.min(minX, r.x);
+    minY = Math.min(minY, r.y);
+    maxX = Math.max(maxX, r.x + r.w);
+    maxY = Math.max(maxY, r.y + r.h);
   }
   const bw = Math.max(maxX - minX, 0.01);
   const bh = Math.max(maxY - minY, 0.01);
@@ -652,33 +1098,67 @@ const BEDROOM_W_M = 3.6;
 const BEDROOM_H_M = 3.0;
 const BATHROOM_W_M = 1.8;
 const BATHROOM_H_M = 3.6;
+const KITCHEN_W_M = 3.0;
+const KITCHEN_H_M = 3.6;
+const PORCH_W_M = 1.5;
+const PORCH_H_M = 2.0;
 const BED_SHORT_M = 1.8;
 const BED_LONG_M = 2.0;
 const SHOWER_LONG_M = 1.8;
 const SHOWER_SHORT_M = 0.9;
 const ROOM_MIN_M = 0.6;
 const ROOM_BLUE = "#2563eb";
-const ROOM_BLUE_FILL = "rgba(37, 99, 235, 0.32)";
+const ROOM_BLUE_FILL = "rgba(37, 99, 235, 0.55)";
 const ROOM_PURPLE = "#7c3aed";
-const ROOM_PURPLE_FILL = "rgba(124, 58, 237, 0.32)";
+const ROOM_PURPLE_FILL = "rgba(124, 58, 237, 0.55)";
+const ROOM_KITCHEN = "#ea580c";
+const ROOM_KITCHEN_FILL = "rgba(234, 88, 12, 0.5)";
+const ROOM_PORCH = "#7c4a1e";
+const ROOM_PORCH_FILL = "#3d2314";
+const LIVING_FILL = "rgba(250, 204, 21, 0.38)";
+const WALL_THICKNESS_M = 0.1;
+const WALL_FILL = "rgba(90, 90, 90, 0.72)";
 
 function roomKind(room) {
-  return room?.kind === "bathroom" ? "bathroom" : "bedroom";
+  if (room?.kind === "bathroom") return "bathroom";
+  if (room?.kind === "kitchen") return "kitchen";
+  if (room?.kind === "porch") return "porch";
+  return "bedroom";
+}
+
+function isPorch(room) {
+  return roomKind(room) === "porch";
+}
+
+function interiorRooms(rooms) {
+  return (rooms || []).filter((r) => !isPorch(r));
+}
+
+function porchRooms(rooms) {
+  return (rooms || []).filter(isPorch);
+}
+
+function roomKindLabel(kind) {
+  if (kind === "bathroom") return "Bathroom";
+  if (kind === "kitchen") return "Kitchen";
+  if (kind === "porch") return "Porch";
+  return "Bedroom";
 }
 
 function roomColors(room) {
-  if (roomKind(room) === "bathroom") {
-    return { stroke: ROOM_PURPLE, fill: ROOM_PURPLE_FILL };
-  }
+  const kind = roomKind(room);
+  if (kind === "bathroom") return { stroke: ROOM_PURPLE, fill: ROOM_PURPLE_FILL };
+  if (kind === "kitchen") return { stroke: ROOM_KITCHEN, fill: ROOM_KITCHEN_FILL };
+  if (kind === "porch") return { stroke: ROOM_PORCH, fill: ROOM_PORCH_FILL };
   return { stroke: ROOM_BLUE, fill: ROOM_BLUE_FILL };
 }
 
 function nextRoomPlacement(rooms, metres, w, h) {
-  const n = rooms.length;
+  const n = interiorRooms(rooms).length;
   const b = buildingBounds(metres);
   const gap = 0.4;
-  const cellW = Math.max(BEDROOM_W_M, BATHROOM_W_M) + gap;
-  const cellH = Math.max(BEDROOM_H_M, BATHROOM_H_M) + gap;
+  const cellW = Math.max(BEDROOM_W_M, BATHROOM_W_M, KITCHEN_W_M) + gap;
+  const cellH = Math.max(BEDROOM_H_M, BATHROOM_H_M, KITCHEN_H_M) + gap;
   const cols = Math.max(1, Math.floor((b.maxX - b.minX + gap) / cellW));
   return {
     x: b.minX + (n % cols) * cellW,
@@ -728,6 +1208,533 @@ function buildingSnapAxes(metres) {
     }
   }
   return { xs, ys };
+}
+
+function roomEdgeAxes(rooms, excludeId) {
+  const xs = [];
+  const ys = [];
+  for (const r of rooms || []) {
+    if (excludeId && r.id === excludeId) continue;
+    xs.push(r.x, r.x + r.w);
+    ys.push(r.y, r.y + r.h);
+  }
+  return { xs, ys };
+}
+
+function mergeSnapAxes(...lists) {
+  const xs = [];
+  const ys = [];
+  for (const a of lists) {
+    if (!a) continue;
+    if (a.xs?.length) xs.push(...a.xs);
+    if (a.ys?.length) ys.push(...a.ys);
+  }
+  return { xs, ys };
+}
+
+function roomInnerSnapAxes(rooms) {
+  const xs = [];
+  const ys = [];
+  for (const r of rooms || []) {
+    xs.push(r.x, r.x + r.w);
+    ys.push(r.y, r.y + r.h);
+  }
+  return { xs, ys };
+}
+
+function edgeInwardNormal(metres, index) {
+  const n = metres.length;
+  const a = metres[index];
+  const b = metres[(index + 1) % n];
+  const c = polygonCentroid(metres);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  let nx = -dy / len;
+  let ny = dx / len;
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  if (nx * (c.x - mx) + ny * (c.y - my) < 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  return { nx, ny };
+}
+
+/** Snap the inner face of a building wall to room edges (outer face follows by wall thickness). */
+function snapBuildingEdgeMove(moved, index, rooms, { grid = false, thresh = 0.2, wallM = WALL_THICKNESS_M } = {}) {
+  const n = moved.length;
+  if (n < 2) return moved;
+  const a = moved[index];
+  const b = moved[(index + 1) % n];
+  const dx = Math.abs(b.x - a.x);
+  const dy = Math.abs(b.y - a.y);
+  const out = moved.map((p) => ({ x: p.x, y: p.y }));
+  const tenth = (v) => Math.round(v * 10) / 10;
+  const { nx, ny } = edgeInwardNormal(moved, index);
+  const innerAxes = roomInnerSnapAxes(interiorRooms(rooms));
+  const porchAxes = roomInnerSnapAxes(porchRooms(rooms));
+  if (dy <= dx * 0.2) {
+    const innerY = a.y + ny * wallM;
+    const roomSnap = innerAxes.ys.length
+      ? nearestSnap(innerY, innerAxes.ys)
+      : { dist: Infinity, value: innerY };
+    const porchSnap = porchAxes.ys.length
+      ? nearestSnap(a.y, porchAxes.ys)
+      : { dist: Infinity, value: a.y };
+    let y = a.y;
+    let best = Infinity;
+    if (roomSnap.dist <= thresh && roomSnap.dist < best) {
+      y = roomSnap.value - ny * wallM;
+      best = roomSnap.dist;
+    }
+    if (porchSnap.dist <= thresh && porchSnap.dist < best) {
+      y = porchSnap.value;
+      best = porchSnap.dist;
+    }
+    if (!(best < Infinity)) {
+      if (grid) y = tenth(a.y);
+      else return moved;
+    }
+    out[index] = { x: a.x, y };
+    out[(index + 1) % n] = { x: b.x, y };
+    return out;
+  }
+  if (dx <= dy * 0.2) {
+    const innerX = a.x + nx * wallM;
+    const roomSnap = innerAxes.xs.length
+      ? nearestSnap(innerX, innerAxes.xs)
+      : { dist: Infinity, value: innerX };
+    const porchSnap = porchAxes.xs.length
+      ? nearestSnap(a.x, porchAxes.xs)
+      : { dist: Infinity, value: a.x };
+    let x = a.x;
+    let best = Infinity;
+    if (roomSnap.dist <= thresh && roomSnap.dist < best) {
+      x = roomSnap.value - nx * wallM;
+      best = roomSnap.dist;
+    }
+    if (porchSnap.dist <= thresh && porchSnap.dist < best) {
+      x = porchSnap.value;
+      best = porchSnap.dist;
+    }
+    if (!(best < Infinity)) {
+      if (grid) x = tenth(a.x);
+      else return moved;
+    }
+    out[index] = { x, y: a.y };
+    out[(index + 1) % n] = { x, y: b.y };
+    return out;
+  }
+  return moved;
+}
+
+function lerpBuildingEdge(base, moved, index, t) {
+  const n = base.length;
+  const out = base.map((p) => ({ x: p.x, y: p.y }));
+  const j = (index + 1) % n;
+  out[index] = lerpPoint(base[index], moved[index], t);
+  out[j] = lerpPoint(base[j], moved[j], t);
+  return out;
+}
+
+function roomsInsideInner(rooms, metres, wallM = WALL_THICKNESS_M) {
+  const inner = insetPolygon(metres, wallM);
+  if (!inner) return false;
+  return interiorRooms(rooms).every((r) => rectInsidePolygon(r, inner));
+}
+
+/** Stop a wall from moving inward through rooms. */
+function clampBuildingEdgeToRooms(base, moved, index, rooms, wallM = WALL_THICKNESS_M) {
+  const inside = interiorRooms(rooms);
+  if (!inside.length) return moved;
+  if (roomsInsideInner(inside, moved, wallM)) return moved;
+  if (!roomsInsideInner(inside, base, wallM)) return base;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 24; i += 1) {
+    const mid = (lo + hi) / 2;
+    const cand = lerpBuildingEdge(base, moved, index, mid);
+    if (roomsInsideInner(inside, cand, wallM)) lo = mid;
+    else hi = mid;
+  }
+  return lerpBuildingEdge(base, moved, index, lo);
+}
+
+function insetPolygon(pts, dist) {
+  if (!pts || pts.length < 3 || !(dist > 0)) return null;
+  const n = pts.length;
+  const c = polygonCentroid(pts);
+  const shifted = [];
+  for (let i = 0; i < n; i += 1) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-9) {
+      shifted.push(null);
+      continue;
+    }
+    let nx = -dy / len;
+    let ny = dx / len;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    if (nx * (c.x - mx) + ny * (c.y - my) < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    shifted.push({
+      a: { x: a.x + nx * dist, y: a.y + ny * dist },
+      ux: dx / len,
+      uy: dy / len,
+    });
+  }
+  const out = [];
+  for (let i = 0; i < n; i += 1) {
+    const prev = shifted[(i - 1 + n) % n];
+    const cur = shifted[i];
+    if (prev && cur) {
+      const hit = intersectAxes(prev.a, prev.ux, prev.uy, cur.a, cur.ux, cur.uy);
+      if (hit) {
+        out.push(hit);
+        continue;
+      }
+    }
+    out.push(cur?.a || prev?.a || { x: pts[i].x, y: pts[i].y });
+  }
+  if (out.length < 3) return null;
+  if (!pointInPolygon(polygonCentroid(out), pts)) return null;
+  if (polygonAreaM2(out, 1) < 0.25) return null;
+  return out;
+}
+
+function polygonPathD(pts) {
+  if (!pts?.length) return "";
+  const parts = [`M ${pts[0].x} ${pts[0].y}`];
+  for (let i = 1; i < pts.length; i += 1) {
+    parts.push(`L ${pts[i].x} ${pts[i].y}`);
+  }
+  parts.push("Z");
+  return parts.join(" ");
+}
+
+function pointInPolygon(p, pts) {
+  if (!pts || pts.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i, i += 1) {
+    const a = pts[i];
+    const b = pts[j];
+    const hit =
+      a.y > p.y !== b.y > p.y &&
+      p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y || 1e-12) + a.x;
+    if (hit) inside = !inside;
+  }
+  return inside;
+}
+
+function pointInRoom(p, room) {
+  return (
+    p.x >= room.x &&
+    p.x <= room.x + room.w &&
+    p.y >= room.y &&
+    p.y <= room.y + room.h
+  );
+}
+
+function pointOnSegment(p, a, b, eps = 1e-6) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
+  const len = Math.hypot(abx, aby);
+  if (len < 1e-12) return Math.hypot(apx, apy) <= eps;
+  const cross = apx * aby - apy * abx;
+  if (Math.abs(cross) > eps * len) return false;
+  const dot = apx * abx + apy * aby;
+  return dot >= -eps * len && dot <= len * len + eps * len;
+}
+
+function pointInOrOnPolygon(p, pts) {
+  if (pointInPolygon(p, pts)) return true;
+  const n = pts.length;
+  for (let i = 0; i < n; i += 1) {
+    if (pointOnSegment(p, pts[i], pts[(i + 1) % n])) return true;
+  }
+  return false;
+}
+
+function rectInsidePolygon(room, poly) {
+  if (!poly?.length || !(room.w > 0) || !(room.h > 0)) return false;
+  const pad = 1e-4;
+  if (room.w <= pad * 2 || room.h <= pad * 2) {
+    return pointInOrOnPolygon(
+      { x: room.x + room.w / 2, y: room.y + room.h / 2 },
+      poly
+    );
+  }
+  const x = room.x + pad;
+  const y = room.y + pad;
+  const w = room.w - 2 * pad;
+  const h = room.h - 2 * pad;
+  const pts = [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+    { x: x + w / 2, y },
+    { x: x + w / 2, y: y + h },
+    { x, y: y + h / 2 },
+    { x: x + w, y: y + h / 2 },
+  ];
+  return pts.every((p) => pointInOrOnPolygon(p, poly));
+}
+
+function clampRoomInInner(room, inner) {
+  if (!inner?.length) return room;
+  const b = buildingBounds(inner);
+  const maxW = Math.max(ROOM_MIN_M, b.maxX - b.minX);
+  const maxH = Math.max(ROOM_MIN_M, b.maxY - b.minY);
+  const w = Math.min(Math.max(ROOM_MIN_M, room.w), maxW);
+  const h = Math.min(Math.max(ROOM_MIN_M, room.h), maxH);
+  const x = Math.min(Math.max(room.x, b.minX), b.maxX - w);
+  const y = Math.min(Math.max(room.y, b.minY), b.maxY - h);
+  return { ...room, x, y, w, h };
+}
+
+function keepRoomInside(prev, next, inner) {
+  const cand = clampRoomInInner(next, inner);
+  if (!inner?.length) return cand;
+  if (rectInsidePolygon(cand, inner)) return cand;
+  if (prev && rectInsidePolygon(prev, inner)) return prev;
+  return cand;
+}
+
+function clampRoomEdgeInInner(start, next, side, inner) {
+  if (!inner?.length) return next;
+  const b = buildingBounds(inner);
+  const out = { ...next };
+  if (side === "left") {
+    const right = start.x + start.w;
+    out.x = Math.max(out.x, b.minX);
+    out.w = Math.max(ROOM_MIN_M, right - out.x);
+  } else if (side === "right") {
+    out.w = Math.min(Math.max(ROOM_MIN_M, out.w), Math.max(ROOM_MIN_M, b.maxX - out.x));
+  } else if (side === "top") {
+    const bottom = start.y + start.h;
+    out.y = Math.max(out.y, b.minY);
+    out.h = Math.max(ROOM_MIN_M, bottom - out.y);
+  } else if (side === "bottom") {
+    out.h = Math.min(Math.max(ROOM_MIN_M, out.h), Math.max(ROOM_MIN_M, b.maxY - out.y));
+  }
+  return keepRoomInside(start, out, inner);
+}
+
+function segmentsProperCross(a1, a2, b1, b2) {
+  const orient = (a, b, c) => (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x);
+  const d1 = orient(a1, a2, b1);
+  const d2 = orient(a1, a2, b2);
+  const d3 = orient(b1, b2, a1);
+  const d4 = orient(b1, b2, a2);
+  const eps = 1e-9;
+  if (
+    Math.abs(d1) < eps ||
+    Math.abs(d2) < eps ||
+    Math.abs(d3) < eps ||
+    Math.abs(d4) < eps
+  ) {
+    return false;
+  }
+  return (d1 > 0) !== (d2 > 0) && (d3 > 0) !== (d4 > 0);
+}
+
+function rectOverlapsPolygonInterior(room, poly) {
+  if (!poly?.length || !(room.w > 0) || !(room.h > 0)) return false;
+  const pad = 1e-4;
+  const x = room.x + pad;
+  const y = room.y + pad;
+  const w = room.w - 2 * pad;
+  const h = room.h - 2 * pad;
+  if (!(w > 0) || !(h > 0)) {
+    return pointInPolygon({ x: room.x + room.w / 2, y: room.y + room.h / 2 }, poly);
+  }
+  const corners = [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+  ];
+  if (corners.some((p) => pointInPolygon(p, poly))) return true;
+  if (pointInPolygon({ x: x + w / 2, y: y + h / 2 }, poly)) return true;
+  for (const p of poly) {
+    if (p.x > x && p.x < x + w && p.y > y && p.y < y + h) return true;
+  }
+  const roomEdges = [
+    [corners[0], corners[1]],
+    [corners[1], corners[2]],
+    [corners[2], corners[3]],
+    [corners[3], corners[0]],
+  ];
+  for (let i = 0; i < poly.length; i += 1) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    for (const [c, d] of roomEdges) {
+      if (segmentsProperCross(a, b, c, d)) return true;
+    }
+  }
+  return false;
+}
+
+function clampPorchOutside(next, outer) {
+  const b = buildingBounds(outer);
+  const candidates = [
+    { ...next, x: b.minX - next.w },
+    { ...next, x: b.maxX },
+    { ...next, y: b.minY - next.h },
+    { ...next, y: b.maxY },
+  ];
+  let best = null;
+  let bestD = Infinity;
+  for (const c of candidates) {
+    if (rectOverlapsPolygonInterior(c, outer)) continue;
+    const d = Math.hypot(c.x - next.x, c.y - next.y);
+    if (d < bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return best;
+}
+
+function keepPorchOutside(prev, next, outer, { slide = false } = {}) {
+  if (!outer?.length) return next;
+  if (!rectOverlapsPolygonInterior(next, outer)) return next;
+  if (slide) {
+    const clamped = clampPorchOutside(next, outer);
+    if (clamped) return clamped;
+  }
+  if (prev && !rectOverlapsPolygonInterior(prev, outer)) return prev;
+  return clampPorchOutside(next, outer) || next;
+}
+
+function nextPorchPlacement(rooms, metres, w, h) {
+  const b = buildingBounds(metres);
+  const n = porchRooms(rooms).length;
+  const gap = 0.15;
+  const options = [
+    { x: b.minX + n * (w + gap), y: b.maxY, w, h },
+    { x: b.maxX, y: b.minY + n * (h + gap), w, h },
+    { x: b.minX + n * (w + gap), y: b.minY - h, w, h },
+    { x: b.minX - w, y: b.minY + n * (h + gap), w, h },
+  ];
+  for (const placed of options) {
+    if (!rectOverlapsPolygonInterior(placed, metres)) return placed;
+  }
+  return options[0];
+}
+
+function porchesStayOutside(porches, metres) {
+  return (porches || []).every((r) => !rectOverlapsPolygonInterior(r, metres));
+}
+
+function clampBuildingEdgeToPorches(base, moved, index, rooms) {
+  const porches = porchRooms(rooms);
+  if (!porches.length) return moved;
+  if (porchesStayOutside(porches, moved)) return moved;
+  if (!porchesStayOutside(porches, base)) return base;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 24; i += 1) {
+    const mid = (lo + hi) / 2;
+    const cand = lerpBuildingEdge(base, moved, index, mid);
+    if (porchesStayOutside(porches, cand)) lo = mid;
+    else hi = mid;
+  }
+  return lerpBuildingEdge(base, moved, index, lo);
+}
+
+function largestBinaryRect(grid) {
+  if (!grid.length || !grid[0].length) return { w: 0, h: 0, area: 0, left: 0, top: 0 };
+  const cols = grid[0].length;
+  const height = Array(cols).fill(0);
+  let best = { w: 0, h: 0, area: 0, left: 0, top: 0 };
+  for (let r = 0; r < grid.length; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      height[c] = grid[r][c] ? height[c] + 1 : 0;
+    }
+    const stack = [];
+    for (let c = 0; c <= cols; c += 1) {
+      const h = c === cols ? 0 : height[c];
+      while (stack.length && height[stack[stack.length - 1]] > h) {
+        const hh = height[stack.pop()];
+        const left = stack.length ? stack[stack.length - 1] + 1 : 0;
+        const ww = c - left;
+        const area = hh * ww;
+        if (area > best.area) best = { w: ww, h: hh, area, left, top: r - hh + 1 };
+      }
+      stack.push(c);
+    }
+  }
+  return best;
+}
+
+/** Largest remaining axis-aligned living rectangle, in metres. */
+function livingRemainingRect(metres, rooms) {
+  if (!metres?.length) return null;
+  const b = buildingBounds(metres);
+  const spanX = b.maxX - b.minX;
+  const spanY = b.maxY - b.minY;
+  if (!(spanX > 0.2) || !(spanY > 0.2)) return null;
+  const cols = Math.max(8, Math.min(48, Math.round(spanX / 0.15)));
+  const rows = Math.max(8, Math.min(48, Math.round(spanY / 0.15)));
+  const cellW = spanX / cols;
+  const cellH = spanY / rows;
+  const grid = [];
+  for (let j = 0; j < rows; j += 1) {
+    const row = [];
+    for (let i = 0; i < cols; i += 1) {
+      const p = {
+        x: b.minX + (i + 0.5) * cellW,
+        y: b.minY + (j + 0.5) * cellH,
+      };
+      row.push(pointInPolygon(p, metres) && !rooms.some((r) => pointInRoom(p, r)) ? 1 : 0);
+    }
+    grid.push(row);
+  }
+  const best = largestBinaryRect(grid);
+  if (!(best.area > 0)) return null;
+  return {
+    x: b.minX + best.left * cellW,
+    y: b.minY + best.top * cellH,
+    w: best.w * cellW,
+    h: best.h * cellH,
+  };
+}
+
+function livingApproxDims(metres, rooms) {
+  const remain = livingRemainingRect(metres, rooms);
+  return remain ? { w: remain.w, h: remain.h } : null;
+}
+
+function livingLabelPoint(metres, rooms) {
+  const remain = livingRemainingRect(metres, rooms);
+  if (remain) return { x: remain.x + remain.w / 2, y: remain.y + remain.h / 2 };
+  const c = polygonCentroid(metres);
+  if (pointInPolygon(c, metres) && !rooms.some((r) => pointInRoom(c, r))) return c;
+  return null;
+}
+
+function livingPathD(outlinePts, layout, rooms) {
+  const pts = outlinePts || layout.pts;
+  if (!pts?.length) return "";
+  const parts = [polygonPathD(pts)];
+  for (const room of interiorRooms(rooms)) {
+    const r = roomToPx(room, layout);
+    parts.push(
+      `M ${r.x} ${r.y} L ${r.x + r.w} ${r.y} L ${r.x + r.w} ${r.y + r.h} L ${r.x} ${r.y + r.h} Z`
+    );
+  }
+  return parts.join(" ");
 }
 
 function nearestSnap(v, list) {
@@ -791,12 +1798,65 @@ function snapRoomEdge(room, side, next, xs, ys, thresh) {
   return out;
 }
 
+function roomRotation(room) {
+  const n = ((Number(room?.rot) || 0) % 360 + 360) % 360;
+  if (n === 90 || n === 180 || n === 270) return n;
+  return 0;
+}
+
+function unrotatedSize(room) {
+  const rot = roomRotation(room);
+  if (rot === 90 || rot === 270) return { w: room.h, h: room.w };
+  return { w: room.w, h: room.h };
+}
+
+/** Local rect in unrotated room space (origin = unrotated top-left) → world metres. */
+function rotatedLocalRect(room, rect) {
+  const rot = roomRotation(room);
+  const { w: uw, h: uh } = unrotatedSize(room);
+  const cx = uw / 2;
+  const cy = uh / 2;
+  const corners = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y + rect.h },
+    { x: rect.x, y: rect.y + rect.h },
+  ].map((p) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    let rdx = dx;
+    let rdy = dy;
+    if (rot === 90) {
+      rdx = -dy;
+      rdy = dx;
+    } else if (rot === 180) {
+      rdx = -dx;
+      rdy = -dy;
+    } else if (rot === 270) {
+      rdx = dy;
+      rdy = -dx;
+    }
+    return { x: rdx, y: rdy };
+  });
+  const xs = corners.map((p) => p.x);
+  const ys = corners.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  return {
+    x: room.x + room.w / 2 + minX,
+    y: room.y + room.h / 2 + minY,
+    w: Math.max(...xs) - minX,
+    h: Math.max(...ys) - minY,
+  };
+}
+
 function rotateRoom90(room) {
+  const rot = (roomRotation(room) + 90) % 360;
   const cx = room.x + room.w / 2;
   const cy = room.y + room.h / 2;
   const w = room.h;
   const h = room.w;
-  return { ...room, x: cx - w / 2, y: cy - h / 2, w, h };
+  return { ...room, rot, x: cx - w / 2, y: cy - h / 2, w, h };
 }
 
 function buildingBounds(metres) {
@@ -811,67 +1871,63 @@ function buildingBounds(metres) {
 }
 
 /** Bed 1.8m centered on the 3m side; 2.0m starts at one end of the 3.6m side. */
-function bedInRoom(room) {
-  const longIsX = room.w >= room.h;
-  if (longIsX) {
-    const w = Math.min(BED_LONG_M, room.w);
-    const h = Math.min(BED_SHORT_M, room.h);
-    return {
-      x: room.x,
-      y: room.y + Math.max(0, (room.h - h) / 2),
-      w,
-      h,
-      longIsX: true,
-    };
-  }
-  const w = Math.min(BED_SHORT_M, room.w);
-  const h = Math.min(BED_LONG_M, room.h);
+function bedLayout(room) {
+  const { w, h } = unrotatedSize(room);
+  const longIsX = w >= h;
+  const bed = longIsX
+    ? {
+        x: 0,
+        y: Math.max(0, (h - Math.min(BED_SHORT_M, h)) / 2),
+        w: Math.min(BED_LONG_M, w),
+        h: Math.min(BED_SHORT_M, h),
+      }
+    : {
+        x: Math.max(0, (w - Math.min(BED_SHORT_M, w)) / 2),
+        y: 0,
+        w: Math.min(BED_SHORT_M, w),
+        h: Math.min(BED_LONG_M, h),
+      };
+  const pillow = longIsX
+    ? {
+        x: bed.x + bed.w * 0.06,
+        y: bed.y + bed.h * 0.1,
+        w: bed.w * 0.2,
+        h: bed.h * 0.8,
+      }
+    : {
+        x: bed.x + bed.w * 0.1,
+        y: bed.y + bed.h * 0.06,
+        w: bed.w * 0.8,
+        h: bed.h * 0.2,
+      };
   return {
-    x: room.x + Math.max(0, (room.w - w) / 2),
-    y: room.y,
-    w,
-    h,
-    longIsX: false,
+    bed: rotatedLocalRect(room, bed),
+    pillow: rotatedLocalRect(room, pillow),
   };
 }
 
 function BedroomBed({ room, layout }) {
-  const bed = bedInRoom(room);
-  const bx = bed.x * layout.scale + layout.originX;
-  const by = bed.y * layout.scale + layout.originY;
-  const bw = bed.w * layout.scale;
-  const bh = bed.h * layout.scale;
+  const { bed, pillow } = bedLayout(room);
+  const b = mRectToPx(bed, layout);
+  const p = mRectToPx(pillow, layout);
   const rad = Math.max(2, layout.scale * 0.06);
-  const pillow = bed.longIsX
-    ? {
-        x: bx + bw * 0.06,
-        y: by + bh * 0.1,
-        w: bw * 0.2,
-        h: bh * 0.8,
-      }
-    : {
-        x: bx + bw * 0.1,
-        y: by + bh * 0.06,
-        w: bw * 0.8,
-        h: bh * 0.2,
-      };
   return (
     <g>
       <rect
-        x={bx}
-        y={by}
-        width={bw}
-        height={bh}
+        x={b.x}
+        y={b.y}
+        width={b.w}
+        height={b.h}
         rx={rad}
         fill="#dbe7f8"
         stroke="#1d4ed8"
         strokeWidth="1.25"
       />
       <rect
-        x={pillow.x}
-        y={pillow.y}
-        width={pillow.w}
-        height={pillow.h}
+        x={p.x}
+        y={p.y}
+        width={p.w}
+        height={p.h}
         rx={rad * 0.8}
         fill="#f8fafc"
         stroke="#3b82f6"
@@ -891,51 +1947,58 @@ function mRectToPx(rect, layout) {
 }
 
 function bathroomFixtures(room) {
-  const longIsX = room.w >= room.h;
+  const { w, h } = unrotatedSize(room);
+  const longIsX = w >= h;
   const showerW = longIsX
-    ? Math.min(SHOWER_SHORT_M, room.w)
-    : Math.min(SHOWER_LONG_M, room.w);
+    ? Math.min(SHOWER_SHORT_M, w)
+    : Math.min(SHOWER_LONG_M, w);
   const showerH = longIsX
-    ? Math.min(SHOWER_LONG_M, room.h)
-    : Math.min(SHOWER_SHORT_M, room.h);
-  const shower = { x: room.x, y: room.y, w: showerW, h: showerH };
+    ? Math.min(SHOWER_LONG_M, h)
+    : Math.min(SHOWER_SHORT_M, h);
+  const shower = { x: 0, y: 0, w: showerW, h: showerH };
   const inset = 0.04;
+  let tank;
+  let bowl;
   if (longIsX) {
-    const tankW = Math.min(0.18, Math.max(0.1, room.w * 0.12));
-    const tankH = Math.min(0.5, Math.max(0.28, room.h * 0.28));
-    const tank = {
-      x: room.x + room.w - tankW - inset,
-      y: room.y + room.h - tankH - inset,
+    const tankW = Math.min(0.18, Math.max(0.1, w * 0.12));
+    const tankH = Math.min(0.5, Math.max(0.28, h * 0.28));
+    tank = {
+      x: w - tankW - inset,
+      y: h - tankH - inset,
       w: tankW,
       h: tankH,
     };
-    const bowlW = Math.min(0.42, Math.max(0.22, room.w * 0.22));
+    const bowlW = Math.min(0.42, Math.max(0.22, w * 0.22));
     const bowlH = Math.min(tankH * 0.78, tank.h);
-    const bowl = {
+    bowl = {
       x: tank.x - bowlW + 0.03,
       y: tank.y + (tank.h - bowlH) / 2,
       w: bowlW,
       h: bowlH,
     };
-    return { shower, tank, bowl };
+  } else {
+    const tankW = Math.min(0.5, Math.max(0.28, w * 0.28));
+    const tankH = Math.min(0.18, Math.max(0.1, h * 0.08));
+    tank = {
+      x: w - tankW - inset,
+      y: h - tankH - inset,
+      w: tankW,
+      h: tankH,
+    };
+    const bowlH = Math.min(0.42, Math.max(0.22, h * 0.16));
+    const bowlW = Math.min(tankW * 0.78, tank.w);
+    bowl = {
+      x: tank.x + (tank.w - bowlW) / 2,
+      y: tank.y - bowlH + 0.03,
+      w: bowlW,
+      h: bowlH,
+    };
   }
-  const tankW = Math.min(0.5, Math.max(0.28, room.w * 0.28));
-  const tankH = Math.min(0.18, Math.max(0.1, room.h * 0.08));
-  const tank = {
-    x: room.x + room.w - tankW - inset,
-    y: room.y + room.h - tankH - inset,
-    w: tankW,
-    h: tankH,
+  return {
+    shower: rotatedLocalRect(room, shower),
+    tank: rotatedLocalRect(room, tank),
+    bowl: rotatedLocalRect(room, bowl),
   };
-  const bowlH = Math.min(0.42, Math.max(0.22, room.h * 0.16));
-  const bowlW = Math.min(tankW * 0.78, tank.w);
-  const bowl = {
-    x: tank.x + (tank.w - bowlW) / 2,
-    y: tank.y - bowlH + 0.03,
-    w: bowlW,
-    h: bowlH,
-  };
-  return { shower, tank, bowl };
 }
 
 function BathroomFixtures({ room, layout }) {
@@ -1003,6 +2066,140 @@ function BathroomFixtures({ room, layout }) {
   );
 }
 
+function KitchenFixtures({ room, layout }) {
+  const { w, h } = unrotatedSize(room);
+  const benchM = Math.min(0.6, Math.min(w, h) * 0.45);
+  const longIsX = w >= h;
+  const benchLocal = longIsX
+    ? { x: 0, y: h - benchM, w, h: benchM }
+    : { x: 0, y: 0, w: benchM, h };
+  const cookLocal = longIsX
+    ? {
+        x: benchLocal.x + w * 0.12,
+        y: benchLocal.y + benchM * 0.18,
+        w: Math.min(w * 0.28, 0.7),
+        h: benchM * 0.64,
+      }
+    : {
+        x: benchLocal.x + benchM * 0.18,
+        y: benchLocal.y + h * 0.12,
+        w: benchM * 0.64,
+        h: Math.min(h * 0.28, 0.7),
+      };
+  const bench = rotatedLocalRect(room, benchLocal);
+  const p = mRectToPx(bench, layout);
+  const cook = mRectToPx(rotatedLocalRect(room, cookLocal), layout);
+  return (
+    <g>
+      <rect
+        x={p.x}
+        y={p.y}
+        width={p.w}
+        height={p.h}
+        fill="#fed7aa"
+        stroke="#c2410c"
+        strokeWidth="1.2"
+      />
+      <rect
+        x={cook.x}
+        y={cook.y}
+        width={cook.w}
+        height={cook.h}
+        rx={Math.max(2, layout.scale * 0.04)}
+        fill="#9a3412"
+        stroke="#7c2d12"
+        strokeWidth="1"
+      />
+    </g>
+  );
+}
+
+function PorchDecking({ room, layout }) {
+  const r = roomToPx(room, layout);
+  const clipId = `qc-porch-clip-${room.id}`;
+  const boardM = 0.09;
+  const gapM = 0.008;
+  const inset = 1.5 / layout.scale;
+  const inner = {
+    x: room.x + inset,
+    y: room.y + inset,
+    w: Math.max(0.05, room.w - inset * 2),
+    h: Math.max(0.05, room.h - inset * 2),
+  };
+  const reverse = roomRotation(room) === 180 || roomRotation(room) === 270;
+  const longIsX = room.w >= room.h;
+  const span = longIsX ? inner.h : inner.w;
+  const n = Math.max(2, Math.round((span + gapM) / (boardM + gapM)));
+  const board = (span - (n - 1) * gapM) / n;
+  const stains = ["#c4a574", "#b08968", "#a67c52", "#c19a6b", "#8b5a2b", "#d4b483"];
+  const boards = [];
+  for (let i = 0; i < n; i += 1) {
+    const slot = reverse ? n - 1 - i : i;
+    const off = slot * (board + gapM);
+    const rect = longIsX
+      ? { x: inner.x, y: inner.y + off, w: inner.w, h: board }
+      : { x: inner.x + off, y: inner.y, w: board, h: inner.h };
+    const p = mRectToPx(rect, layout);
+    const fill = stains[i % stains.length];
+    boards.push(
+      <g key={`board-${i}`}>
+        <rect x={p.x} y={p.y} width={p.w} height={p.h} fill={fill} />
+        {longIsX ? (
+          <>
+            <line
+              x1={p.x}
+              y1={p.y + p.h}
+              x2={p.x + p.w}
+              y2={p.y + p.h}
+              stroke="#4a2c14"
+              strokeWidth="1"
+            />
+            <line
+              x1={p.x + 3}
+              y1={p.y + p.h * 0.4}
+              x2={p.x + p.w - 3}
+              y2={p.y + p.h * 0.4}
+              stroke="#8b5a2b"
+              strokeWidth="0.7"
+              opacity="0.35"
+            />
+          </>
+        ) : (
+          <>
+            <line
+              x1={p.x + p.w}
+              y1={p.y}
+              x2={p.x + p.w}
+              y2={p.y + p.h}
+              stroke="#4a2c14"
+              strokeWidth="1"
+            />
+            <line
+              x1={p.x + p.w * 0.4}
+              y1={p.y + 3}
+              x2={p.x + p.w * 0.4}
+              y2={p.y + p.h - 3}
+              stroke="#8b5a2b"
+              strokeWidth="0.7"
+              opacity="0.35"
+            />
+          </>
+        )}
+      </g>
+    );
+  }
+  return (
+    <g>
+      <defs>
+        <clipPath id={clipId}>
+          <rect x={r.x} y={r.y} width={r.w} height={r.h} />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipId})`}>{boards}</g>
+    </g>
+  );
+}
+
 function hitRoomHandle(r, p, size) {
   const pad = 2;
   if (
@@ -1024,6 +2221,23 @@ function hitRoomHandle(r, p, size) {
   return null;
 }
 
+function hitPorchCorner(r, p, size) {
+  const half = size / 2 + 3;
+  const corners = [
+    { x: r.x, y: r.y },
+    { x: r.x + r.w, y: r.y },
+    { x: r.x + r.w, y: r.y + r.h },
+    { x: r.x, y: r.y + r.h },
+  ];
+  return corners.some(
+    (c) => Math.abs(p.x - c.x) <= half && Math.abs(p.y - c.y) <= half
+  );
+}
+
+function pointInPxRect(r, p) {
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
+
 function roomSideFromEdge(index) {
   if (index === 0) return "top";
   if (index === 1) return "right";
@@ -1034,11 +2248,13 @@ function roomSideFromEdge(index) {
 function DesignModal({
   vertices,
   ppm,
+  frame: frameProp,
   rooms,
   onRoomsChange,
   nextIdRef,
   onBuildingChange,
-  maxAreaM2 = 0,
+  maxArea = true,
+  onMaxAreaChange,
   onClose,
 }) {
   const stageRef = useRef(null);
@@ -1048,14 +2264,17 @@ function DesignModal({
   const frameRef = useRef(null);
   const freezeLayoutRef = useRef(null);
   if (!frameRef.current && vertices.length >= 3) {
-    frameRef.current = captureDesignFrame(vertices, ppm);
+    frameRef.current = frameProp || liveDesignFrame(vertices, ppm, null);
   }
   const [buildingMetres, setBuildingMetres] = useState(
     () => frameRef.current?.metres || []
   );
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState(null);
+  const [buildingSnap, setBuildingSnap] = useState(true);
+  const [capturing, setCapturing] = useState(false);
   roomsRef.current = rooms;
+  const maxAreaM2 = maxArea ? MAX_AREA_M2 : 0;
 
   const applyBuildingMetres = useCallback(
     (nextMetres) => {
@@ -1088,7 +2307,7 @@ function DesignModal({
 
   const layout = (() => {
     if (!(size.w > 0 && size.h > 0 && buildingMetres.length >= 3)) return null;
-    const live = layoutFromMetres(buildingMetres, size.w, size.h);
+    const live = layoutFromMetres(buildingMetres, size.w, size.h, rooms);
     const frozen = freezeLayoutRef.current;
     if (!frozen) return live;
     return {
@@ -1105,24 +2324,46 @@ function DesignModal({
     };
   })();
   layoutRef.current = layout;
-  const center = layout ? polygonCentroid(layout.pts) : { x: 0, y: 0 };
-  const snapAxes = layout ? buildingSnapAxes(layout.metres) : { xs: [], ys: [] };
+  const innerMetres = layout ? insetPolygon(layout.metres, WALL_THICKNESS_M) : null;
+  const innerPts =
+    layout && innerMetres
+      ? innerMetres.map((p) => ({
+          x: p.x * layout.scale + layout.originX,
+          y: p.y * layout.scale + layout.originY,
+        }))
+      : null;
   const snapThreshM = layout ? Math.max(0.08, 10 / layout.scale) : 0.12;
   const buildingSideLabels = layout
     ? sideLengthLabels(layout.pts, true, layout.scale)
     : [];
+  const livingPt = innerMetres
+    ? livingLabelPoint(innerMetres, interiorRooms(rooms))
+    : layout
+      ? livingLabelPoint(layout.metres, interiorRooms(rooms))
+      : null;
+  const livingDims = innerMetres
+    ? livingApproxDims(innerMetres, interiorRooms(rooms))
+    : layout
+      ? livingApproxDims(layout.metres, interiorRooms(rooms))
+      : null;
 
   const addRoom = useCallback(
     (kind, w, h) => {
       const current = layoutRef.current;
       if (!current) return;
-      const placed = nextRoomPlacement(roomsRef.current, current.metres, w, h);
       nextIdRef.current += 1;
-      const room = {
-        id: `${kind}-${nextIdRef.current}`,
-        kind,
-        ...placed,
-      };
+      const id = `${kind}-${nextIdRef.current}`;
+      let room;
+      if (kind === "porch") {
+        const placed = nextPorchPlacement(roomsRef.current, current.metres, w, h);
+        room = keepPorchOutside(null, { id, kind, rot: 0, ...placed }, current.metres, {
+          slide: true,
+        });
+      } else {
+        const inner = insetPolygon(current.metres, WALL_THICKNESS_M) || current.metres;
+        const placed = nextRoomPlacement(roomsRef.current, inner, w, h);
+        room = keepRoomInside(null, { id, kind, rot: 0, ...placed }, inner);
+      }
       onRoomsChange((prev) => prev.concat(room));
     },
     [nextIdRef, onRoomsChange]
@@ -1134,6 +2375,14 @@ function DesignModal({
 
   const addBathroom = useCallback(() => {
     addRoom("bathroom", BATHROOM_W_M, BATHROOM_H_M);
+  }, [addRoom]);
+
+  const addKitchen = useCallback(() => {
+    addRoom("kitchen", KITCHEN_W_M, KITCHEN_H_M);
+  }, [addRoom]);
+
+  const addPorch = useCallback(() => {
+    addRoom("porch", PORCH_W_M, PORCH_H_M);
   }, [addRoom]);
 
   const updateRoom = useCallback(
@@ -1157,19 +2406,34 @@ function DesignModal({
         if (handle === "rotate") {
           e.preventDefault();
           const rotated = rotateRoom90(room);
+          const axes = isPorch(room)
+            ? mergeSnapAxes(
+                buildingSnapAxes(layout.metres),
+                roomEdgeAxes(porchRooms(roomsRef.current), room.id)
+              )
+            : mergeSnapAxes(
+                innerMetres ? buildingSnapAxes(innerMetres) : null,
+                roomEdgeAxes(interiorRooms(roomsRef.current), room.id)
+              );
           const snapped = snapRoomMove(
             rotated.x,
             rotated.y,
             rotated.w,
             rotated.h,
-            snapAxes.xs,
-            snapAxes.ys,
+            axes.xs,
+            axes.ys,
             snapThreshM
           );
-          updateRoom(room.id, { ...rotated, ...snapped });
+          const next = { ...rotated, ...snapped };
+          updateRoom(
+            room.id,
+            isPorch(room)
+              ? keepPorchOutside(room, next, layout.metres, { slide: true })
+              : keepRoomInside(room, next, innerMetres)
+          );
           return;
         }
-        if (handle === "move") {
+        if (handle === "move" || (isPorch(room) && (hitPorchCorner(r, raw, hs) || pointInPxRect(r, raw)))) {
           e.preventDefault();
           el.setPointerCapture(e.pointerId);
           const grab = pxToMetres(raw, layout);
@@ -1181,6 +2445,7 @@ function DesignModal({
           };
           return;
         }
+        if (isPorch(room)) continue;
         const verts = [
           { x: r.x, y: r.y },
           { x: r.x + r.w, y: r.y },
@@ -1223,7 +2488,7 @@ function DesignModal({
         });
       }
     },
-    [buildingMetres, layout, snapAxes.xs, snapAxes.ys, snapThreshM, updateRoom]
+    [buildingMetres, innerMetres, layout, snapThreshM, updateRoom]
   );
 
   const onStagePointerMove = useCallback(
@@ -1239,16 +2504,32 @@ function DesignModal({
       if (drag?.mode === "move") {
         const nx = drag.start.x + (cursorM.x - drag.grab.x);
         const ny = drag.start.y + (cursorM.y - drag.grab.y);
+        const porch = isPorch(drag.start);
+        const axes = porch
+          ? mergeSnapAxes(
+              buildingSnapAxes(layout.metres),
+              roomEdgeAxes(porchRooms(roomsRef.current), drag.id)
+            )
+          : mergeSnapAxes(
+              innerMetres ? buildingSnapAxes(innerMetres) : null,
+              roomEdgeAxes(interiorRooms(roomsRef.current), drag.id)
+            );
         const snapped = snapRoomMove(
           nx,
           ny,
           drag.start.w,
           drag.start.h,
-          snapAxes.xs,
-          snapAxes.ys,
+          axes.xs,
+          axes.ys,
           snapThreshM
         );
-        updateRoom(drag.id, { ...drag.start, ...snapped });
+        const next = { ...drag.start, ...snapped };
+        updateRoom(
+          drag.id,
+          porch
+            ? keepPorchOutside(drag.start, next, layout.metres)
+            : keepRoomInside(drag.start, next, innerMetres)
+        );
         setHover({ id: drag.id, kind: "move" });
         return;
       }
@@ -1268,7 +2549,12 @@ function DesignModal({
         } else if (drag.side === "bottom") {
           next.h = Math.max(ROOM_MIN_M, cursorM.y - start.y);
         }
-        next = snapRoomEdge(start, drag.side, next, snapAxes.xs, snapAxes.ys, snapThreshM);
+        const axes = mergeSnapAxes(
+          innerMetres ? buildingSnapAxes(innerMetres) : null,
+          roomEdgeAxes(roomsRef.current, drag.id)
+        );
+        next = snapRoomEdge(start, drag.side, next, axes.xs, axes.ys, snapThreshM);
+        next = clampRoomEdgeInInner(start, next, drag.side, innerMetres);
         updateRoom(drag.id, { ...start, ...next });
         setHover({
           id: drag.id,
@@ -1277,12 +2563,31 @@ function DesignModal({
         return;
       }
       if (drag?.mode === "building-edge") {
-        const moved = clampEdgeMove(
+        let moved = clampEdgeMove(
           drag.metres,
           drag.index,
           cursorM,
           maxAreaM2,
           1
+        );
+        moved = snapBuildingEdgeMove(moved, drag.index, roomsRef.current, {
+          grid: buildingSnap,
+          thresh: Math.max(snapThreshM, 0.22),
+        });
+        if (maxAreaM2 > 0 && polygonAreaM2(moved, 1) > maxAreaM2 + 1e-9) {
+          moved = clampEdgeMove(drag.metres, drag.index, cursorM, maxAreaM2, 1);
+        }
+        moved = clampBuildingEdgeToRooms(
+          drag.metres,
+          moved,
+          drag.index,
+          roomsRef.current
+        );
+        moved = clampBuildingEdgeToPorches(
+          drag.metres,
+          moved,
+          drag.index,
+          roomsRef.current
         );
         applyBuildingMetres(moved);
         const a = layout.pts[drag.index];
@@ -1300,14 +2605,15 @@ function DesignModal({
         const room = roomsRef.current[i];
         const r = roomToPx(room, layout);
         const handle = hitRoomHandle(r, raw, hs);
-        if (handle === "move") {
-          nextHover = { id: room.id, kind: "move" };
-          break;
-        }
         if (handle === "rotate") {
           nextHover = { id: room.id, kind: "rotate" };
           break;
         }
+        if (handle === "move" || (isPorch(room) && (hitPorchCorner(r, raw, hs) || pointInPxRect(r, raw)))) {
+          nextHover = { id: room.id, kind: "move" };
+          break;
+        }
+        if (isPorch(room)) continue;
         const verts = [
           { x: r.x, y: r.y },
           { x: r.x + r.w, y: r.y },
@@ -1332,7 +2638,7 @@ function DesignModal({
       }
       setHover(nextHover);
     },
-    [applyBuildingMetres, layout, maxAreaM2, snapAxes.xs, snapAxes.ys, snapThreshM, updateRoom]
+    [applyBuildingMetres, buildingSnap, innerMetres, layout, maxAreaM2, snapThreshM, updateRoom]
   );
 
   const onStagePointerUp = useCallback((e) => {
@@ -1351,6 +2657,21 @@ function DesignModal({
       setBuildingMetres((prev) => prev.map((p) => ({ x: p.x, y: p.y })));
     }
   }, []);
+
+  const onDownloadPng = useCallback(async () => {
+    const current = layoutRef.current;
+    if (!current || capturing) return;
+    setCapturing(true);
+    try {
+      const canvas = buildDesignExportCanvas(current, roomsRef.current);
+      const bytes = canvasToPngBytes(canvas);
+      await savePngBytes(bytes, designPngFilename(current.areaM2));
+    } catch (err) {
+      console.error("[QuickConcept] design PNG download failed:", err);
+    } finally {
+      setCapturing(false);
+    }
+  }, [capturing]);
 
   const stageCursor =
     hover?.kind === "move"
@@ -1425,6 +2746,24 @@ function DesignModal({
           >
             Drag a building side to adjust — it updates the map
           </div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={() => setBuildingSnap((on) => !on)}
+              aria-pressed={buildingSnap}
+              style={snapToggleStyle(buildingSnap)}
+            >
+              Snap
+            </button>
+            <button
+              type="button"
+              onClick={() => onMaxAreaChange?.(!maxArea)}
+              aria-pressed={maxArea}
+              style={snapToggleStyle(maxArea)}
+            >
+              {maxArea ? "Max 60 m²" : "Any size"}
+            </button>
+          </div>
         </div>
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
           <div
@@ -1475,6 +2814,30 @@ function DesignModal({
             >
               Add Bathroom
             </button>
+            <button
+              type="button"
+              onClick={addKitchen}
+              disabled={!layout}
+              style={{
+                ...toolbarButtonStyle(Boolean(layout)),
+                width: "100%",
+                minWidth: 0,
+              }}
+            >
+              Add Kitchen
+            </button>
+            <button
+              type="button"
+              onClick={addPorch}
+              disabled={!layout}
+              style={{
+                ...toolbarButtonStyle(Boolean(layout)),
+                width: "100%",
+                minWidth: 0,
+              }}
+            >
+              Add Porch
+            </button>
             {rooms.map((room, index) => {
               const kind = roomKind(room);
               const n = rooms.slice(0, index + 1).filter((r) => roomKind(r) === kind).length;
@@ -1489,7 +2852,7 @@ function DesignModal({
                     padding: "4px 2px",
                   }}
                 >
-                  {kind === "bathroom" ? "Bathroom" : "Bedroom"} {n}
+                  {roomKindLabel(kind)} {n}
                 </div>
               );
             })}
@@ -1522,14 +2885,43 @@ function DesignModal({
                   height="100%"
                   style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
                 >
+                  <defs>
+                    <clipPath id="qc-living-clip">
+                      <polygon
+                        points={(innerPts || layout.pts).map((p) => `${p.x},${p.y}`).join(" ")}
+                      />
+                    </clipPath>
+                  </defs>
+                  {innerPts ? (
+                    <path
+                      d={`${polygonPathD(layout.pts)} ${polygonPathD(innerPts)}`}
+                      fill={WALL_FILL}
+                      fillRule="evenodd"
+                    />
+                  ) : null}
+                  <path
+                    d={livingPathD(innerPts || layout.pts, layout, rooms)}
+                    fill={LIVING_FILL}
+                    fillRule="evenodd"
+                    clipPath="url(#qc-living-clip)"
+                  />
                   <polygon
                     points={layout.pts.map((p) => `${p.x},${p.y}`).join(" ")}
-                    fill="rgba(50, 50, 51, 0.08)"
+                    fill="none"
                     stroke={MONUMENT}
                     strokeWidth="2"
                     strokeLinejoin="round"
                   />
-                  {hover?.id === "building" && hover.edgeIndex != null ? (
+                  {innerPts ? (
+                    <polygon
+                      points={innerPts.map((p) => `${p.x},${p.y}`).join(" ")}
+                      fill="none"
+                      stroke={MONUMENT}
+                      strokeWidth="1.25"
+                      strokeLinejoin="round"
+                    />
+                  ) : null}
+                  {!capturing && hover?.id === "building" && hover.edgeIndex != null ? (
                     <line
                       x1={layout.pts[hover.edgeIndex].x}
                       y1={layout.pts[hover.edgeIndex].y}
@@ -1546,7 +2938,7 @@ function DesignModal({
                     const pad = 2;
                     const active = hover?.id === room.id;
                     const colors = roomColors(room);
-                    const isBathroom = roomKind(room) === "bathroom";
+                    const kind = roomKind(room);
                     return (
                       <g key={room.id}>
                         <rect
@@ -1558,75 +2950,135 @@ function DesignModal({
                           stroke={colors.stroke}
                           strokeWidth={active ? 2.5 : 2}
                         />
-                        {isBathroom ? (
+                        {kind === "bathroom" ? (
                           <BathroomFixtures room={room} layout={layout} />
+                        ) : kind === "kitchen" ? (
+                          <KitchenFixtures room={room} layout={layout} />
+                        ) : kind === "porch" ? (
+                          <PorchDecking room={room} layout={layout} />
                         ) : (
                           <BedroomBed room={room} layout={layout} />
                         )}
-                        <rect
-                          x={r.x + pad}
-                          y={r.y + pad}
-                          width={hs}
-                          height={hs}
-                          fill={colors.stroke}
-                          stroke={WHITE}
-                          strokeWidth="1"
-                        />
-                        <g
-                          transform={`translate(${r.x + r.w - pad - hs / 2}, ${r.y + pad + hs / 2})`}
-                        >
-                          <circle r={hs / 2 + 1} fill={WHITE} stroke={colors.stroke} strokeWidth="1.5" />
-                          <path
-                            d={`M ${-hs * 0.22} ${-hs * 0.08} A ${hs * 0.28} ${hs * 0.28} 0 1 1 ${hs * 0.08} ${-hs * 0.22}`}
-                            fill="none"
-                            stroke={colors.stroke}
-                            strokeWidth="1.6"
-                            strokeLinecap="round"
-                          />
-                          <path
-                            d={`M ${hs * 0.08} ${-hs * 0.38} L ${hs * 0.08} ${-hs * 0.08} L ${-hs * 0.16} ${-hs * 0.22}`}
+                        {!capturing && kind === "porch" ? (
+                          [
+                            { x: r.x, y: r.y },
+                            { x: r.x + r.w, y: r.y },
+                            { x: r.x + r.w, y: r.y + r.h },
+                            { x: r.x, y: r.y + r.h },
+                          ].map((c, ci) => (
+                            <rect
+                              key={`porch-corner-${ci}`}
+                              x={c.x - hs / 2}
+                              y={c.y - hs / 2}
+                              width={hs}
+                              height={hs}
+                              fill={colors.stroke}
+                              stroke={WHITE}
+                              strokeWidth="1"
+                            />
+                          ))
+                        ) : !capturing ? (
+                          <rect
+                            x={r.x + pad}
+                            y={r.y + pad}
+                            width={hs}
+                            height={hs}
                             fill={colors.stroke}
+                            stroke={WHITE}
+                            strokeWidth="1"
                           />
-                        </g>
+                        ) : null}
+                        {!capturing ? (
+                          <g
+                            transform={`translate(${r.x + r.w - pad - hs / 2}, ${r.y + pad + hs / 2})`}
+                          >
+                            <circle r={hs / 2 + 1} fill={WHITE} stroke={colors.stroke} strokeWidth="1.5" />
+                            <path
+                              d={`M ${-hs * 0.22} ${-hs * 0.08} A ${hs * 0.28} ${hs * 0.28} 0 1 1 ${hs * 0.08} ${-hs * 0.22}`}
+                              fill="none"
+                              stroke={colors.stroke}
+                              strokeWidth="1.6"
+                              strokeLinecap="round"
+                            />
+                            <path
+                              d={`M ${hs * 0.08} ${-hs * 0.38} L ${hs * 0.08} ${-hs * 0.08} L ${-hs * 0.16} ${-hs * 0.22}`}
+                              fill={colors.stroke}
+                            />
+                          </g>
+                        ) : null}
                       </g>
                     );
                   })}
                 </svg>
-                {layout.areaM2 > 0 ? (
-                  <AreaLabel x={center.x} y={center.y} areaM2={layout.areaM2} />
+                {!capturing && layout?.areaM2 > 0 ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 12,
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      color: MONUMENT,
+                      fontSize: "0.95rem",
+                      fontWeight: 700,
+                      letterSpacing: "0.02em",
+                      whiteSpace: "nowrap",
+                      pointerEvents: "none",
+                      textShadow:
+                        "0 0 4px #fff, 0 0 4px #fff, 0 1px 2px rgba(255,255,255,0.9)",
+                    }}
+                  >
+                    {formatSqm(layout.areaM2)}
+                  </div>
+                ) : null}
+                {livingPt ? (
+                  <RoomDimLabel
+                    x={livingPt.x * layout.scale + layout.originX}
+                    y={livingPt.y * layout.scale + layout.originY}
+                    title="Living"
+                    subtitle={livingDims ? formatRoomDims(livingDims.w, livingDims.h) : null}
+                  />
                 ) : null}
                 {buildingSideLabels.map((side) => (
-                  <LengthLabel key={side.key} x={side.x} y={side.y} text={side.label} />
+                  <EdgeDimLabel
+                    key={side.key}
+                    x={side.x}
+                    y={side.y}
+                    text={side.label}
+                    angleDeg={side.angleDeg}
+                    color={WHITE}
+                  />
                 ))}
                 {rooms.map((room) => {
                   const r = roomToPx(room, layout);
                   return (
-                    <ChipLabel
+                    <RoomDimLabel
                       key={`${room.id}-label`}
                       x={r.x + r.w / 2}
                       y={r.y + r.h / 2}
-                      text={formatRoomDims(room.w, room.h)}
-                      compact
+                      title={roomKindLabel(roomKind(room))}
+                      subtitle={formatRoomDims(room.w, room.h)}
                     />
                   );
                 })}
-                <div
-                  style={{
-                    position: "absolute",
-                    left: 10,
-                    bottom: 10,
-                    background: "rgba(255,255,255,0.92)",
-                    border: `1px solid ${EXPLORER_BORDER}`,
-                    borderRadius: "8px",
-                    padding: "4px 8px",
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    color: MONUMENT,
-                    pointerEvents: "none",
-                  }}
-                >
-                  1 square = 1 m
-                </div>
+                {!capturing ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      bottom: 10,
+                      background: "rgba(255,255,255,0.92)",
+                      border: `1px solid ${EXPLORER_BORDER}`,
+                      borderRadius: "8px",
+                      padding: "4px 8px",
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      color: MONUMENT,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    1 square = 1 m
+                  </div>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -1635,12 +3087,21 @@ function DesignModal({
           style={{
             display: "flex",
             justifyContent: "flex-end",
+            gap: "8px",
             padding: "12px 18px",
             borderTop: `1px solid ${EXPLORER_BORDER}`,
             background: "#f3f3f3",
             flexShrink: 0,
           }}
         >
+          <button
+            type="button"
+            onClick={onDownloadPng}
+            disabled={!layout || capturing}
+            style={toolbarButtonStyle(Boolean(layout) && !capturing)}
+          >
+            {capturing ? "Downloading…" : "Download"}
+          </button>
           <button type="button" onClick={onClose} style={toolbarButtonStyle(true)}>
             OK
           </button>
@@ -1779,8 +3240,11 @@ export default function QuickConcept() {
   const [design, setDesign] = useState(null);
   const [designRooms, setDesignRooms] = useState([]);
   const bedroomIdRef = useRef(0);
+  const designFrameRef = useRef(null);
 
   const [query, setQuery] = useState("");
+  const [quotePick, setQuotePick] = useState("");
+  const [quoteGroups, setQuoteGroups] = useState({ VIC: [], QLD: [] });
   const [loading, setLoading] = useState(false);
   const [parcelLoading, setParcelLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -1837,6 +3301,46 @@ export default function QuickConcept() {
       : [];
   const polySideLabels =
     displayPoly.length >= 2 ? sideLengthLabels(displayPoly, Boolean(polyClosed), ppm) : [];
+  const mapInnerPts =
+    polyClosed && displayPoly.length >= 3
+      ? insetPolygon(displayPoly, WALL_THICKNESS_M * ppm)
+      : null;
+  const mapFrame =
+    polyClosed && displayPoly.length >= 3
+      ? liveDesignFrame(displayPoly, ppm, designFrameRef.current)
+      : null;
+  const mapRoomPolys = mapFrame
+    ? designRooms.map((room) => ({
+        room,
+        pts: roomToMapPixels(room, mapFrame),
+      }))
+    : [];
+  const mapLivingHoles = mapRoomPolys
+    .filter((item) => !isPorch(item.room))
+    .map((item) => item.pts);
+  const mapLivingMetres = mapFrame
+    ? insetPolygon(mapFrame.metres, WALL_THICKNESS_M) || mapFrame.metres
+    : null;
+  const mapLivingRemain = mapLivingMetres
+    ? livingRemainingRect(mapLivingMetres, interiorRooms(designRooms))
+    : null;
+  const mapLivingPt =
+    mapLivingRemain && mapFrame
+      ? designMetresToPixels(
+          [
+            {
+              x: mapLivingRemain.x + mapLivingRemain.w / 2,
+              y: mapLivingRemain.y + mapLivingRemain.h / 2,
+            },
+          ],
+          mapFrame
+        )[0]
+      : mapInnerPts
+        ? polygonCentroid(mapInnerPts)
+        : null;
+  const mapLivingDims = mapLivingRemain
+    ? { w: mapLivingRemain.w, h: mapLivingRemain.h }
+    : null;
 
   const syncGeoFromPixels = useCallback((verts) => {
     const map = mapRef.current;
@@ -1865,6 +3369,9 @@ export default function QuickConcept() {
     setPolyCursor(null);
     setPolyClosed(true);
     polyRef.current = { vertices: verts, closed: true };
+    designFrameRef.current = null;
+    setDesignRooms([]);
+    bedroomIdRef.current = 0;
     syncGeoFromPixels(verts);
   }, [syncGeoFromPixels]);
 
@@ -1879,6 +3386,9 @@ export default function QuickConcept() {
     setPolyClosed(false);
     setHoverEdge(null);
     polyRef.current = { vertices: [], closed: false };
+    designFrameRef.current = null;
+    setDesignRooms([]);
+    bedroomIdRef.current = 0;
   }, []);
 
   const applyDesignBuilding = useCallback(
@@ -1898,13 +3408,19 @@ export default function QuickConcept() {
   const openDesign = useCallback(() => {
     const { vertices, closed } = polyRef.current;
     if (!closed || vertices.length < 3) return;
-    bedroomIdRef.current = 0;
-    setDesignRooms([]);
+    const ppmNow = ppmRef.current;
+    const prev = designFrameRef.current;
+    const live = liveDesignFrame(vertices, ppmNow, prev);
+    if (prev && live && designRooms.length) {
+      setDesignRooms((rooms) => rooms.map((r) => remapRoomToFrame(r, prev, live)));
+    }
+    designFrameRef.current = live;
     setDesign({
       vertices: vertices.map((p) => ({ x: p.x, y: p.y })),
-      ppm: ppmRef.current,
+      ppm: ppmNow,
+      frame: live,
     });
-  }, []);
+  }, [designRooms.length]);
 
   const selectTool = useCallback(
     (next) => {
@@ -1933,6 +3449,9 @@ export default function QuickConcept() {
     setPolyCursor(null);
     setPolyClosed(true);
     polyRef.current = { vertices: pts, closed: true };
+    designFrameRef.current = null;
+    setDesignRooms([]);
+    bedroomIdRef.current = 0;
     syncGeoFromPixels(pts);
     return true;
   }, [syncGeoFromPixels]);
@@ -2208,6 +3727,48 @@ export default function QuickConcept() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/quotes", { headers: getApiHeaders() });
+        const data = await res.json().catch(() => []);
+        if (cancelled) return;
+        if (!res.ok || !Array.isArray(data)) {
+          setQuoteGroups({ VIC: [], QLD: [] });
+          return;
+        }
+        setQuoteGroups(groupQuoteAddresses(data));
+      } catch {
+        if (!cancelled) setQuoteGroups({ VIC: [], QLD: [] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/quotes", { headers: getApiHeaders() });
+        const data = await res.json().catch(() => []);
+        if (cancelled) return;
+        if (!res.ok || !Array.isArray(data)) {
+          setQuoteGroups({ VIC: [], QLD: [] });
+          return;
+        }
+        setQuoteGroups(groupQuoteAddresses(data));
+      } catch {
+        if (!cancelled) setQuoteGroups({ VIC: [], QLD: [] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const fetchEasementsForSite = useCallback(async (lat, lng, searchState, boundaryGeometry, parcelId) => {
     if (searchState !== "VIC") {
       setEasementsGeoJson(null);
@@ -2255,8 +3816,8 @@ export default function QuickConcept() {
     if (!bounds && pinPos) setMapCenter(pinPos);
   }, []);
 
-  const runSearch = useCallback(async () => {
-    const q = query.trim();
+  const runSearch = useCallback(async (nextQuery) => {
+    const q = String(nextQuery != null ? nextQuery : query).trim();
     if (!q) {
       setError("Enter an address to search.");
       return;
@@ -2421,6 +3982,20 @@ export default function QuickConcept() {
     }
   }, [applyParcelFeature, clearAll, fetchEasementsForSite, query]);
 
+  const pickQuoteAddress = useCallback(
+    (id) => {
+      setQuotePick(id);
+      if (!id) return;
+      const item = [...quoteGroups.VIC, ...quoteGroups.QLD].find(
+        (row) => String(row.id) === String(id)
+      );
+      if (!item?.label) return;
+      setQuery(item.label);
+      void runSearch(item.label);
+    },
+    [quoteGroups, runSearch]
+  );
+
   const onViewReady = useCallback((map, nextPpm) => {
     mapRef.current = map;
     ppmRef.current = nextPpm;
@@ -2542,13 +4117,55 @@ export default function QuickConcept() {
               display: "flex",
               gap: "8px",
               alignItems: "center",
+              justifyContent: "flex-end",
               flexShrink: 0,
+              flexWrap: "wrap",
             }}
           >
+            <select
+              value={quotePick}
+              onChange={(e) => pickQuoteAddress(e.target.value)}
+              disabled={busy}
+              aria-label="Quotes list addresses"
+              style={{
+                minWidth: "240px",
+                maxWidth: "340px",
+                padding: "10px 12px",
+                fontSize: "0.9rem",
+                borderRadius: "10px",
+                border: `1px solid ${EXPLORER_BORDER}`,
+                background: WHITE,
+                color: MONUMENT,
+                boxSizing: "border-box",
+              }}
+            >
+              <option value="">Quotes list</option>
+              {quoteGroups.VIC.length ? (
+                <optgroup label="VIC">
+                  {quoteGroups.VIC.map((row) => (
+                    <option key={`vic-${row.id}`} value={String(row.id)}>
+                      {row.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {quoteGroups.QLD.length ? (
+                <optgroup label="QLD">
+                  {quoteGroups.QLD.map((row) => (
+                    <option key={`qld-${row.id}`} value={String(row.id)}>
+                      {row.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+            </select>
             <input
               type="text"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                if (quotePick) setQuotePick("");
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -2559,8 +4176,8 @@ export default function QuickConcept() {
               disabled={busy}
               aria-label="Search address"
               style={{
-                flex: 1,
-                minWidth: 0,
+                width: "280px",
+                maxWidth: "100%",
                 padding: "10px 12px",
                 fontSize: "0.9rem",
                 borderRadius: "10px",
@@ -2755,7 +4372,14 @@ export default function QuickConcept() {
                     compact={shownRect.w < 72 || shownRect.h < 36}
                   />
                   {rectSideLabels.map((side) => (
-                    <LengthLabel key={side.key} x={side.x} y={side.y} text={side.label} />
+                    <EdgeDimLabel
+                      key={side.key}
+                      x={side.x}
+                      y={side.y}
+                      text={side.label}
+                      angleDeg={side.angleDeg}
+                      color={WHITE}
+                    />
                   ))}
                 </>
               ) : null}
@@ -2783,13 +4407,58 @@ export default function QuickConcept() {
                       ))}
                     {displayPoly.length >= 2 ? (
                       polyClosed ? (
-                        <polygon
-                          points={displayPoly.map((p) => `${p.x},${p.y}`).join(" ")}
-                          fill={shapeFill}
-                          stroke={shapeStroke}
-                          strokeWidth="2"
-                          strokeLinejoin="round"
-                        />
+                        <>
+                          {mapInnerPts ? (
+                            <>
+                              <path
+                                d={`${polygonPathD(displayPoly)} ${polygonPathD(mapInnerPts)}`}
+                                fill={showMap ? "rgba(245,245,245,0.88)" : WALL_FILL}
+                                fillRule="evenodd"
+                              />
+                              <path
+                                d={livingHolesPathD(mapInnerPts, mapLivingHoles)}
+                                fill={LIVING_FILL}
+                                fillRule="evenodd"
+                              />
+                            </>
+                          ) : (
+                            <polygon
+                              points={displayPoly.map((p) => `${p.x},${p.y}`).join(" ")}
+                              fill={shapeFill}
+                            />
+                          )}
+                          {mapRoomPolys.map(({ room, pts }) => {
+                            if (pts.length < 3) return null;
+                            const colors = roomColors(room);
+                            return (
+                              <polygon
+                                key={room.id}
+                                points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                                fill={colors.fill}
+                                stroke={colors.stroke}
+                                strokeWidth="1.5"
+                                strokeLinejoin="round"
+                              />
+                            );
+                          })}
+                          <polygon
+                            points={displayPoly.map((p) => `${p.x},${p.y}`).join(" ")}
+                            fill="none"
+                            stroke={shapeStroke}
+                            strokeWidth="2"
+                            strokeLinejoin="round"
+                          />
+                          {mapInnerPts ? (
+                            <polygon
+                              points={mapInnerPts.map((p) => `${p.x},${p.y}`).join(" ")}
+                              fill="none"
+                              stroke={shapeStroke}
+                              strokeWidth="1.25"
+                              strokeLinejoin="round"
+                              opacity="0.9"
+                            />
+                          ) : null}
+                        </>
                       ) : (
                         <polyline
                           points={displayPoly.map((p) => `${p.x},${p.y}`).join(" ")}
@@ -2829,7 +4498,16 @@ export default function QuickConcept() {
                         );
                       })}
                   </svg>
-                  {polyClosed && displayPoly.length >= 3 && polyAreaM2 > 0 ? (
+                  {polyClosed && mapLivingPt ? (
+                    <RoomDimLabel
+                      x={mapLivingPt.x}
+                      y={mapLivingPt.y}
+                      title="Living"
+                      subtitle={
+                        mapLivingDims ? formatRoomDims(mapLivingDims.w, mapLivingDims.h) : null
+                      }
+                    />
+                  ) : polyClosed && displayPoly.length >= 3 && polyAreaM2 > 0 ? (
                     <AreaLabel
                       x={polyCenter.x}
                       y={polyCenter.y}
@@ -2837,8 +4515,28 @@ export default function QuickConcept() {
                       compact={polyAreaM2 < 4}
                     />
                   ) : null}
+                  {mapRoomPolys.map(({ room, pts }) => {
+                    if (pts.length < 3) return null;
+                    const c = polygonCentroidPx(pts);
+                    return (
+                      <RoomDimLabel
+                        key={`${room.id}-map-label`}
+                        x={c.x}
+                        y={c.y}
+                        title={roomKindLabel(roomKind(room))}
+                        subtitle={formatRoomDims(room.w, room.h)}
+                      />
+                    );
+                  })}
                   {polySideLabels.map((side) => (
-                    <LengthLabel key={side.key} x={side.x} y={side.y} text={side.label} />
+                    <EdgeDimLabel
+                      key={side.key}
+                      x={side.x}
+                      y={side.y}
+                      text={side.label}
+                      angleDeg={side.angleDeg}
+                      color={WHITE}
+                    />
                   ))}
                 </>
               ) : null}
@@ -2850,11 +4548,13 @@ export default function QuickConcept() {
         <DesignModal
           vertices={design.vertices}
           ppm={design.ppm}
+          frame={design.frame}
           rooms={designRooms}
           onRoomsChange={setDesignRooms}
           nextIdRef={bedroomIdRef}
           onBuildingChange={applyDesignBuilding}
-          maxAreaM2={maxArea ? MAX_AREA_M2 : 0}
+          maxArea={maxArea}
+          onMaxAreaChange={setMaxArea}
           onClose={closeDesign}
         />
       ) : null}

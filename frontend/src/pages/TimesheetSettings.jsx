@@ -10,7 +10,7 @@ import {
   buildCollatedTimesheetTxt,
   clampPayHours,
   formatHourOptionLabel,
-  isTimesheetExportUser,
+  submittedTimesheetUsers,
 } from "../utils/timeSheetCollate";
 import {
   formatPeriodRange,
@@ -155,20 +155,15 @@ export default function TimesheetSettings() {
   }, [cycleWednesday]);
 
   const timesheetUsers = useMemo(
-    () =>
-      users
-        .filter(isTimesheetExportUser)
-        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })),
-    [users]
+    () => submittedTimesheetUsers(users, sheets),
+    [users, sheets]
   );
 
   const submittedUserIds = useMemo(() => {
     const ids = new Set();
-    for (const sheet of sheets) {
-      if (sheet?.submitted === true) ids.add(Number(sheet.userId));
-    }
+    for (const user of timesheetUsers) ids.add(Number(user.id));
     return ids;
-  }, [sheets]);
+  }, [timesheetUsers]);
 
   const userListColumns = useMemo(() => {
     return [
@@ -373,9 +368,9 @@ export default function TimesheetSettings() {
 
   async function handleExport() {
     if (exporting) return;
-    const included = users.filter(isTimesheetExportUser);
+    const included = submittedTimesheetUsers(users, sheets);
     if (included.length === 0) {
-      alert("Tick Timesheet on at least one user in Settings → Users.");
+      alert("No one has sent a time sheet for this pay cycle yet.");
       return;
     }
     const from = String(fromEmail || "").trim();
@@ -400,9 +395,15 @@ export default function TimesheetSettings() {
           throw new Error(sheetsData.error || `Failed to load time sheets (${sheetsRes.status})`);
         }
 
+        const cycleSheets = Array.isArray(sheetsData.sheets) ? sheetsData.sheets : [];
+        const sentUsers = submittedTimesheetUsers(users, cycleSheets);
+        if (sentUsers.length === 0) {
+          throw new Error("No one has sent a time sheet for this pay cycle yet.");
+        }
+
         const txt = buildCollatedTimesheetTxt({
           users,
-          sheets: Array.isArray(sheetsData.sheets) ? sheetsData.sheets : [],
+          sheets: cycleSheets,
           periodDays,
           rates: {
             baseHourlyHours,
@@ -488,7 +489,7 @@ export default function TimesheetSettings() {
             Timesheet
           </h2>
           <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.4 }}>
-            Export the current pay cycle ({periodLabel}) for users with Timesheet ticked in Settings → Users.
+            Export the current pay cycle ({periodLabel}) for users who have clicked Send this cycle.
           </p>
         </div>
         <button
@@ -613,7 +614,7 @@ export default function TimesheetSettings() {
           <h3 style={userColumnHeadingStyle}>Users</h3>
           {timesheetUsers.length === 0 ? (
             <p style={{ margin: 0, fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.3 }}>
-              Tick Timesheet on at least one user in Settings → Users.
+              No time sheets have been sent for this pay cycle yet.
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
