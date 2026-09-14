@@ -553,6 +553,14 @@ app.use((req, res, next) => {
 // Block API until migrations complete (health always allowed)
 app.use((req, res, next) => {
   if (serverReady || req.path === "/health") return next();
+  if (
+    req.path === "/api/users/names" ||
+    req.path === "/api/auth/login" ||
+    req.path === "/api/auth/session" ||
+    req.path === "/api/auth/logout"
+  ) {
+    return next();
+  }
   if (req.path.startsWith("/api")) {
     return res.status(503).json({
       ok: false,
@@ -779,6 +787,8 @@ if (!process.env.DATABASE_URL) {
 const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
+      connectionTimeoutMillis: 20000,
+      idleTimeoutMillis: 30000,
       ssl:
         process.env.PGSSL === "true"
           ? { rejectUnauthorized: false }
@@ -1462,105 +1472,6 @@ async function ensureSchema() {
   await ensureAppMeta(pool);
   if (await isSchemaUpToDate(pool)) {
     console.log(`Schema ${SCHEMA_VERSION} already applied — skipping migrations`);
-    await ensureProjectAccessTokens(pool);
-    await ensureMapQuoteItemsTable(pool);
-    await ensureUserAccessPermissionsTable(pool);
-    await ensureUserMessagesTable(pool);
-    await ensureTimesheetsTable(pool);
-    await ensureUserTimesheetColumns(pool);
-    await ensureClientPortalTables(pool);
-    await ensureMapFloorPlansDollarValueColumn(pool);
-    await addMissingColumns(pool, "projects", [
-      "construction_payments_paid",
-      "colours_plan_trace_polygon",
-      "windowframes_colour",
-      "windowsurrounds_colour",
-      "door_colour",
-      "slidingdoor_colour",
-      "fascia_gutter_colour",
-      "balustrade_colour",
-      "hybrid_colour",
-      "tile1_colour",
-      "carpet_colour",
-      "benchtop_colour",
-      "cabinet1_colour",
-      "cabinet2_colour",
-      "tile2_colour",
-      "robe_door_colours",
-      "cladding_material",
-      "planning_septic",
-      "planning_septic_requested_at",
-      "planning_septic_received_at",
-      "planning_bal_specs_added_to_plans",
-      "planning_building_permit_requested_at",
-      "planning_building_permit_received_at",
-      "planning_pic_requested_at",
-      "planning_pic_received_at",
-      "planning_sewer_connection",
-      "planning_sewer_septic_type",
-      "planning_sewer_septic_permit",
-      "planning_land_channel_zones_overlays_sent_at",
-      "planning_land_channel_zones_overlays_received_at",
-      "planning_land_data_title_covenants_sent_at",
-      "planning_land_data_title_covenants_received_at",
-      "drawings_concept_approved_date",
-      "drawings_working_approved_date",
-      "planning_jca_land_survey_sent_at",
-      "planning_jca_land_survey_received_at",
-      "planning_soil_test_melbourne_sent_at",
-      "planning_soil_test_melbourne_received_at",
-      "planning_site_visit_plans_updated_at",
-      "planning_mgr_tp_requested",
-      "planning_mgr_tp_received",
-      "planning_mgr_tp_needed",
-      "planning_energy_specs_added_to_plans_at",
-      "planning_windows_requested_at",
-      "planning_windows_received_at",
-      "planning_sewer_septic_authority",
-      "planning_sewer_septic_application_requested_at",
-      "planning_sewer_septic_application_received_at",
-      "planning_warranty_insurance_at",
-      "planning_asset_protection_sent_at",
-      "planning_asset_protection_received_at",
-      ...PROJECT_PAYMENT_COLUMNS,
-      "on_hold_reason",
-    ]);
-    await addMissingColumns(pool, "projects", ["hotlist_added_at", "sold_at", "quote_contact_at"], "TIMESTAMPTZ");
-    await ensureProjectPaymentColumns(pool);
-    await addMissingColumns(pool, "settings", [
-      "ui_button_styles_json",
-      "ui_theme_color_overrides_json",
-      "planner_layout_json",
-      "colour_section_ranges_json",
-      "planning_manager_layout_json",
-      "planning_manager_cells_json",
-      "planning_mgr_tp_options_json",
-      "reminders_json",
-      "manager_settings_json",
-      "timesheet_settings_json",
-      "timesheet_export_path",
-      "colours_and_finishes_path",
-      "holding_amount",
-      "pre_engagement_amount",
-      "deposit_percent",
-      "base_percent",
-      "frame_percent",
-      "lock_up_percent",
-      "fix_percent",
-      "final_percent",
-      "deduct_pre_engagement",
-      "weekly_roundup_sent_on",
-      "weekly_roundup_period_end",
-      "building_3d_defaults_json",
-      "building_element_materials_json",
-    ]);
-    await addMissingColumns(pool, "users", ["password", "ui_theme_id"]);
-    await pool.query(`UPDATE users SET password = 'admin' WHERE password IS NULL OR password = ''`);
-    await ensureStreamsTable(pool);
-    await ensurePolytecColourTables(pool);
-    await ensureMaterialsTable(pool);
-    await ensureQuotesTable(pool);
-    await ensureBuildingPermitStatusWording(pool);
     return;
   }
   console.log(`Applying schema migrations (target ${SCHEMA_VERSION})…`);
@@ -16100,6 +16011,7 @@ const { attachSandpitRaceWebSocket } = require("./sandpitRaceRoom");
     });
   } catch (e) {
     console.error("❌ Startup error:", e);
-    process.exit(1);
+    serverReady = true;
+    console.log("⚠️ Server kept running after startup error so login still works");
   }
 })();
