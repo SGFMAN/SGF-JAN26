@@ -88,6 +88,25 @@ export function isSubmittedTimesheet(sheet) {
   return sheet?.submitted === true || sheet?.submitted === "t" || sheet?.submitted === "true";
 }
 
+/** Users with the Timesheet tick, in name order. */
+export function timesheetTickedUsers(users) {
+  return (Array.isArray(users) ? users : [])
+    .filter(isTimesheetExportUser)
+    .sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
+    );
+}
+
+export function submittedTimesheetUserIds(sheets) {
+  const ids = new Set();
+  for (const sheet of Array.isArray(sheets) ? sheets : []) {
+    if (!isSubmittedTimesheet(sheet)) continue;
+    const userId = Number(sheet.userId);
+    if (Number.isFinite(userId)) ids.add(userId);
+  }
+  return ids;
+}
+
 /** Users who clicked Send for the current pay cycle, in name order. */
 export function submittedTimesheetUsers(users, sheets) {
   const usersById = new Map();

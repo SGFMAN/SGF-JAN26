@@ -11,6 +11,8 @@ import {
   clampPayHours,
   formatHourOptionLabel,
   submittedTimesheetUsers,
+  timesheetTickedUsers,
+  submittedTimesheetUserIds,
 } from "../utils/timeSheetCollate";
 import {
   formatPeriodRange,
@@ -90,12 +92,14 @@ function TimesheetUserRows({ users, submittedUserIds }) {
           lineHeight: 1.3,
         }}
       >
-        <span style={{ fontSize: "0.9rem", color: MONUMENT }}>{user.name || "User"}</span>
+        <span style={{ fontSize: "0.9rem", color: sent ? INDICATOR.green : MONUMENT, fontWeight: sent ? 700 : 500 }}>
+          {user.name || "User"}
+        </span>
         <span
           style={{
             fontSize: "0.85rem",
             fontWeight: 600,
-            color: sent ? INDICATOR.green : INDICATOR.red,
+            color: sent ? INDICATOR.green : UI.textMuted,
             whiteSpace: "nowrap",
           }}
         >
@@ -154,16 +158,9 @@ export default function TimesheetSettings() {
     return formatPeriodRange(periodStart, periodEnd);
   }, [cycleWednesday]);
 
-  const timesheetUsers = useMemo(
-    () => submittedTimesheetUsers(users, sheets),
-    [users, sheets]
-  );
+  const timesheetUsers = useMemo(() => timesheetTickedUsers(users), [users]);
 
-  const submittedUserIds = useMemo(() => {
-    const ids = new Set();
-    for (const user of timesheetUsers) ids.add(Number(user.id));
-    return ids;
-  }, [timesheetUsers]);
+  const submittedUserIds = useMemo(() => submittedTimesheetUserIds(sheets), [sheets]);
 
   const userListColumns = useMemo(() => {
     return [
@@ -614,7 +611,7 @@ export default function TimesheetSettings() {
           <h3 style={userColumnHeadingStyle}>Users</h3>
           {timesheetUsers.length === 0 ? (
             <p style={{ margin: 0, fontSize: "0.85rem", color: UI.textMuted, lineHeight: 1.3 }}>
-              No time sheets have been sent for this pay cycle yet.
+              No users have Timesheet ticked.
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
