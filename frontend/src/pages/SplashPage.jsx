@@ -37,23 +37,37 @@ export default function SplashPage() {
   }, []);
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    let cancelled = false;
+    const delays = [0, 700, 1600, 3200];
 
-  async function fetchUsers() {
-    try {
-      const response = await fetch(`${API_URL}/api/users/names`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch users");
+    async function fetchUsers() {
+      for (let i = 0; i < delays.length; i++) {
+        if (delays[i]) {
+          await new Promise((resolve) => setTimeout(resolve, delays[i]));
+        }
+        if (cancelled) return;
+        try {
+          const response = await fetch(`${API_URL}/api/users/names`);
+          if (!response.ok) {
+            throw new Error("Failed to fetch users");
+          }
+          const data = await response.json();
+          if (cancelled) return;
+          setUsers(Array.isArray(data) ? data : []);
+          setLoading(false);
+          return;
+        } catch (error) {
+          console.error("Error fetching users:", error);
+        }
       }
-      const data = await response.json();
-      setUsers(data);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-    } finally {
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     }
-  }
+
+    fetchUsers();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleLogin() {
     if (!selectedUserId || !password) {

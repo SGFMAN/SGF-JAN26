@@ -294,7 +294,7 @@ export default function HomePage() {
     
     let value = project[fieldName];
     
-    // Deposit Paid filter: pre-engagement complete, else full 5%, else partial / none
+    // Deposit Paid filter: pre-engagement row if that amount is set, else Admin deposit row
     if (fieldName === "deposit") {
       return getDepositPaidFilterCategory(project);
     }

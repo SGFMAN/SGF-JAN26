@@ -29,7 +29,11 @@ import useIsMobile from "../hooks/useIsMobile";
 import ProjectPageMobile from "../mobile/ProjectPageMobile";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { mergeDestructiveButtonStyle, destructiveButtonUsesSavedStyle, buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
-import { invalidateProjectsListCache, refreshProjectsListForNavigation } from "../utils/projectsListCache";
+import {
+  fetchProjectsList,
+  invalidateProjectsListCache,
+  prepareProjectsListForNavigation,
+} from "../utils/projectsListCache";
 
 // COLORBOND® Classic Monument (very dark, almost black-grey)
 import { UI, MENU, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
@@ -487,15 +491,16 @@ export default function ProjectPage() {
       updateTimeoutRef.current = null;
     }
     try {
-      await refreshProjectsListForNavigation();
+      await prepareProjectsListForNavigation();
     } catch {
-      // Still leave so the user is not stuck on the project page.
+      invalidateProjectsListCache();
     }
     if (destination === "history" && location.key !== "default") {
       navigate(-1);
-      return;
+    } else {
+      navigate(isPortalProjectPath ? "/portal" : "/projects");
     }
-    navigate(isPortalProjectPath ? "/portal" : "/projects");
+    void fetchProjectsList({ view: "card", force: true }).catch(() => {});
   }
 
   useEffect(() => {

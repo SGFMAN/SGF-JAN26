@@ -911,7 +911,7 @@ export default function Overview({ project }) {
       const depositFormatted = `$${paid.toLocaleString()}`;
       outstandingItems.push({
         title: "Deposit",
-        message: `Deposit received: ${depositFormatted}. Full deposit / pre-engagement payment is required before we can submit the building permit.`
+        message: `Amount received: ${depositFormatted}. Full pre-engagement (or deposit, on older jobs) must be paid before we can submit the building permit.`
       });
     }
     

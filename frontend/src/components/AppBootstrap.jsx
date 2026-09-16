@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
 import { isAuthenticated, isUserAdmin } from "../utils/auth";
 import { getUserAccessGrants } from "../utils/userAccess";
-import { fetchProjectsList } from "../utils/projectsListCache";
+import { fetchProjectsList, getCachedProjectsList } from "../utils/projectsListCache";
 import { useUiTheme } from "../context/UiThemeProvider";
 import AppLoadingScreen from "./AppLoadingScreen";
 
@@ -18,16 +17,18 @@ function removeStaticBootLoader() {
 }
 
 /**
- * After login only: hold the main staff UI until theme, permissions, and the
- * projects list are ready so menu + heading + projects appear together.
- * Login/splash is never covered.
+ * After login only: preload theme, permissions, and the projects list.
+ * Never blocks Back / route changes. Never leaves the UI on a grey cover
+ * if the list request is slow.
  */
 export default function AppBootstrap({ children }) {
-  const location = useLocation();
   const { ready: themeReady } = useUiTheme();
-  const [sessionReady, setSessionReady] = useState(() => !isAuthenticated());
   const [bootNonce, setBootNonce] = useState(0);
   const loggedIn = isAuthenticated();
+  const [sessionReady, setSessionReady] = useState(() => {
+    if (!isAuthenticated()) return true;
+    return Boolean(getCachedProjectsList("card"));
+  });
 
   useEffect(() => {
     removeStaticBootLoader();
@@ -36,7 +37,7 @@ export default function AppBootstrap({ children }) {
   useEffect(() => {
     function onAuthChange() {
       if (isAuthenticated()) {
-        setSessionReady(false);
+        setSessionReady(Boolean(getCachedProjectsList("card")));
         setBootNonce((n) => n + 1);
       } else {
         setSessionReady(true);
@@ -47,46 +48,43 @@ export default function AppBootstrap({ children }) {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated()) {
+      setSessionReady(true);
+      return undefined;
+    }
+
     let cancelled = false;
+    const timeout = setTimeout(() => {
+      if (!cancelled) setSessionReady(true);
+    }, 2500);
 
-    async function boot() {
-      // Login / splash: show immediately — no loading cover.
-      if (!isAuthenticated()) {
-        if (!cancelled) setSessionReady(true);
-        return;
-      }
-
-      setSessionReady(false);
-
-      if (!themeReady) return;
-
+    (async () => {
       try {
         await Promise.all([
           getUserAccessGrants(),
           isUserAdmin(),
-          fetchProjectsList({ view: "card", retry503Max: 60 }),
+          fetchProjectsList({ view: "card" }),
         ]);
       } catch (err) {
         console.error("App bootstrap failed:", err);
       }
-
       if (!cancelled) setSessionReady(true);
-    }
+    })();
 
-    void boot();
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
     };
-  }, [themeReady, bootNonce, location.pathname, loggedIn]);
+  }, [bootNonce, loggedIn]);
 
-  const ready = !loggedIn || (themeReady && sessionReady);
-  const value = useMemo(() => ({ ready }), [ready]);
-  const showLoadingCover = loggedIn && !ready;
+  const ready = !loggedIn || sessionReady;
+  const value = useMemo(() => ({ ready: ready && (themeReady || !loggedIn) }), [ready, themeReady, loggedIn]);
+  const showLoadingCover = loggedIn && !sessionReady;
 
   return (
     <AppBootstrapContext.Provider value={value}>
       {showLoadingCover ? <AppLoadingScreen message="Loading…" /> : null}
-      {!loggedIn || ready ? children : null}
+      {children}
     </AppBootstrapContext.Provider>
   );
 }

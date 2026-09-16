@@ -40,7 +40,11 @@ import {
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { resolveLoggedInUserEmailTokens } from "../utils/emailUserTokens";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
-import { isLatestRevisionWorkingDrawingsApproved } from "../utils/drawingsStatusRules";
+import {
+  isLatestRevisionWorkingDrawingsApproved,
+  parseDrawingsHistory,
+} from "../utils/drawingsStatusRules";
+import { isOverviewDepositComplete } from "../utils/projectDeposit";
 import { normalizeBodyHtmlForEditor } from "../components/EmailBodyEditor.jsx";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { useManagersAccess } from "../hooks/useManagersAccess";
@@ -262,6 +266,56 @@ function getHolderDaysNum(project) {
   return Math.floor(diffTime / (1000 * 60 * 60 * 24));
 }
 
+function parseIsoDateLocal(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  let match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  match = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (match) {
+    const date = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+}
+
+function daysFromDateToToday(start) {
+  if (!(start instanceof Date) || Number.isNaN(start.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const from = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  return Math.max(0, Math.floor((today - from) / (1000 * 60 * 60 * 24)));
+}
+
+function getDrawingUploadStats(project) {
+  const history = parseDrawingsHistory(project?.drawings_history);
+  const uploaded = history.length;
+  if (!uploaded) return { uploaded: 0, draftingDays: null };
+  let firstDate = null;
+  for (const entry of history) {
+    const parsed = parseIsoDateLocal(entry?.date);
+    if (!parsed) continue;
+    if (!firstDate || parsed < firstDate) firstDate = parsed;
+  }
+  return {
+    uploaded,
+    draftingDays: daysFromDateToToday(firstDate),
+  };
+}
+
+function formatColumnAverage(values) {
+  if (!values.length) return "—";
+  const avg = values.reduce((sum, n) => sum + n, 0) / values.length;
+  const rounded = Math.round(avg * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 /** Highest holder-days first; suburb/street as tiebreaker. */
 function sortProjectsByDaysDescending(projectsList) {
   return [...projectsList].sort((a, b) => {
@@ -330,6 +384,7 @@ export default function DrawingManager() {
   const [notesModalLabel, setNotesModalLabel] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
+  const [paymentSettings, setPaymentSettings] = useState(null);
   /** Snapshot when the modal opened — Cancel restores this (nothing is saved until OK). */
   const notesSnapshotRef = useRef("");
   const reminderBodyRef = useRef(null);
@@ -348,6 +403,12 @@ export default function DrawingManager() {
     fetchProjects();
     fetchDraftspersons();
     isUserAdmin().then(setIsAdmin).catch(() => setIsAdmin(false));
+    fetch(`${API_URL}/api/settings`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setPaymentSettings(data);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -661,24 +722,8 @@ export default function DrawingManager() {
     printWindow.print();
   }
 
-  // Check if deposit is partial (not fully paid)
   function isPartialDeposit(project) {
-    if (!project?.deposit || !project?.project_cost) return true; // No deposit or no cost = partial
-    
-    // Extract numeric values (remove $ and commas)
-    const depositStr = project.deposit.toString().replace(/[^0-9]/g, "");
-    const depositNum = parseInt(depositStr) || 0;
-    
-    const costStr = project.project_cost.toString().replace(/[^0-9]/g, "");
-    const costNum = parseInt(costStr) || 0;
-    
-    if (costNum === 0) return true; // Can't calculate if no cost
-    
-    // Calculate 5% of project cost
-    const fullDepositAmount = Math.floor(costNum / 20); // 5% = divide by 20
-    
-    // If deposit is less than full deposit, it's partial
-    return depositNum < fullDepositAmount || fullDepositAmount === 0;
+    return !isOverviewDepositComplete(project, paymentSettings);
   }
 
   function shouldShowInDrawingManagerList(project) {
@@ -917,6 +962,17 @@ export default function DrawingManager() {
           compareA = holderA.daysNum;
           compareB = holderB.daysNum;
           break;
+        case "revisions":
+          compareA = getDrawingUploadStats(a).uploaded;
+          compareB = getDrawingUploadStats(b).uploaded;
+          break;
+        case "drawingDays": {
+          const daysA = getDrawingUploadStats(a).draftingDays;
+          const daysB = getDrawingUploadStats(b).draftingDays;
+          compareA = daysA == null ? -1 : daysA;
+          compareB = daysB == null ? -1 : daysB;
+          break;
+        }
         default:
           return 0;
       }
@@ -1004,17 +1060,29 @@ export default function DrawingManager() {
   }
 
   const columnHeaderStyle = {
-    padding: "8px 12px",
+    padding: "6px 8px",
     background: MONUMENT,
     color: PAGE_TEXT,
-    borderRadius: "8px",
+    borderRadius: "6px",
     fontWeight: 600,
-    fontSize: "0.85rem",
+    fontSize: "0.8rem",
     position: "sticky",
     top: "0",
     zIndex: 10,
     userSelect: "none",
     transition: "opacity 0.2s",
+  };
+
+  const rowCellStyle = {
+    padding: "4px 8px",
+    background: WHITE,
+    borderRadius: "6px",
+    fontSize: "0.82rem",
+    fontWeight: 500,
+    color: MONUMENT,
+    boxSizing: "border-box",
+    lineHeight: 1.25,
+    boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
   };
 
   function renderSortableColumnHeader(column, label, textAlign = "left") {
@@ -1048,48 +1116,37 @@ export default function DrawingManager() {
       project.draftsperson,
       draftspersonUsers
     );
+    const uploadStats = getDrawingUploadStats(project);
 
     return (
       <React.Fragment key={project.id}>
         <Link
           to={projectPath(project)}
           style={{
-            padding: "8px 12px",
-            background: WHITE,
-            borderRadius: "8px",
+            ...rowCellStyle,
             textDecoration: "none",
-            color: MONUMENT,
-            fontSize: "0.85rem",
-            fontWeight: 500,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
-            gap: "8px",
-            transition: "box-shadow 0.2s",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.boxShadow = "0 4px 8px rgba(0,0,0,0.15)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)";
+            gap: "6px",
+            minWidth: 0,
           }}
         >
-          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {projectName}
           </span>
           {(isOnHoldFlag(project) || isPartialDeposit(project)) && (
-            <span style={{ display: "flex", gap: "6px", flexShrink: 0, alignItems: "center" }}>
+            <span style={{ display: "flex", gap: "4px", flexShrink: 0, alignItems: "center" }}>
               {isOnHoldFlag(project) && (
                 <span
                   style={{
-                    padding: "4px 8px",
+                    padding: "1px 5px",
                     background: BANNER.onHold,
                     color: BANNER.onHoldText,
-                    borderRadius: "4px",
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
+                    borderRadius: "3px",
+                    fontSize: "0.65rem",
+                    fontWeight: 700,
                     whiteSpace: "nowrap",
+                    lineHeight: 1.3,
                   }}
                 >
                   ON HOLD
@@ -1098,13 +1155,14 @@ export default function DrawingManager() {
               {isPartialDeposit(project) && (
                 <span
                   style={{
-                    padding: "4px 8px",
+                    padding: "1px 5px",
                     background: INDICATOR.orange,
                     color: WHITE,
-                    borderRadius: "4px",
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
+                    borderRadius: "3px",
+                    fontSize: "0.65rem",
+                    fontWeight: 700,
                     whiteSpace: "nowrap",
+                    lineHeight: 1.3,
                   }}
                 >
                   NEEDS DEPOSIT
@@ -1114,21 +1172,47 @@ export default function DrawingManager() {
           )}
         </Link>
 
+        <div
+          style={{
+            ...rowCellStyle,
+            textAlign: "center",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            whiteSpace: "nowrap",
+          }}
+          title={`${uploadStats.uploaded} revision${uploadStats.uploaded === 1 ? "" : "s"} uploaded`}
+        >
+          {uploadStats.uploaded}
+        </div>
+
+        <div
+          style={{
+            ...rowCellStyle,
+            textAlign: "center",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            whiteSpace: "nowrap",
+          }}
+          title={
+            uploadStats.draftingDays != null
+              ? `${uploadStats.draftingDays} drawing day${uploadStats.draftingDays === 1 ? "" : "s"} from first upload to today`
+              : "No drawing uploaded yet"
+          }
+        >
+          {uploadStats.draftingDays != null ? uploadStats.draftingDays : "—"}
+        </div>
+
         <select
           value={canonicalDraftspersonName(project.draftsperson, draftspersonUsers)}
           onChange={(e) => handleDraftspersonChange(project, e.target.value)}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           style={{
-            padding: "8px 12px",
-            background: WHITE,
-            color: MONUMENT,
-            borderRadius: "8px",
-            fontSize: "0.85rem",
-            fontWeight: 500,
+            ...rowCellStyle,
             border: "none",
             cursor: "pointer",
-            boxSizing: "border-box",
             width: "100%",
             minWidth: 0,
             whiteSpace: "nowrap",
@@ -1148,29 +1232,16 @@ export default function DrawingManager() {
         <div
           onClick={() => handleToggleHolder(project)}
           style={{
-            padding: "8px 12px",
-            background: WHITE,
-            color: MONUMENT,
-            borderRadius: "8px",
-            fontSize: "0.85rem",
-            fontWeight: 500,
+            ...rowCellStyle,
             display: "flex",
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "center",
             textAlign: "center",
             cursor: "pointer",
-            transition: "background 0.2s",
             gap: "4px",
             width: "100%",
-            boxSizing: "border-box",
             whiteSpace: "nowrap",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = UI.inputBg;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = WHITE;
           }}
         >
           <span>{holderDisplay.text}</span>
@@ -1179,32 +1250,27 @@ export default function DrawingManager() {
 
         <div
           style={{
-            padding: "8px 12px",
-            background: WHITE,
-            borderRadius: "8px",
-            fontSize: "0.85rem",
-            fontWeight: 500,
+            ...rowCellStyle,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
           }}
         >
           <button
             type="button"
             onClick={() => openNotesModalForProject(project)}
             style={{
-              padding: "6px 12px",
-              fontSize: "0.78rem",
+              padding: "2px 8px",
+              fontSize: "0.72rem",
               fontWeight: 600,
               color: MONUMENT,
-              background: UI.inputBg,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
+              background: "transparent",
+              border: outlineBorder,
+              borderRadius: "4px",
               cursor: "pointer",
               lineHeight: 1.2,
               width: "100%",
-              maxWidth: "100px",
+              maxWidth: "72px",
             }}
             title="Notes for this job"
           >
@@ -1216,11 +1282,7 @@ export default function DrawingManager() {
 
         <div
           style={{
-            padding: "8px 12px",
-            background: WHITE,
-            borderRadius: "8px",
-            fontSize: "0.85rem",
-            fontWeight: 500,
+            ...rowCellStyle,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1231,17 +1293,17 @@ export default function DrawingManager() {
             onClick={() => openReminderEmailModal(project)}
             style={{
               width: "100%",
-              maxWidth: "120px",
-              padding: "6px 10px",
+              maxWidth: "92px",
+              padding: "2px 8px",
               background: "#4D93D9",
               color: PAGE_TEXT,
               border: "none",
-              borderRadius: "6px",
-              fontSize: "0.8rem",
+              borderRadius: "4px",
+              fontSize: "0.72rem",
               fontWeight: 600,
               cursor: "pointer",
-              transition: "background 0.2s",
               whiteSpace: "nowrap",
+              lineHeight: 1.2,
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "#3d7bc9";
@@ -1575,7 +1637,7 @@ export default function DrawingManager() {
 
                   const { draftsperson: draftspersonColWidth, drawingsWith: drawingsWithColWidth } =
                     getDraftspersonDrawingsWithColumnWidths(activeProjects);
-                  const gridTemplateColumns = `minmax(0, 1fr) ${draftspersonColWidth} ${drawingsWithColWidth} max-content max-content`;
+                  const gridTemplateColumns = `minmax(0, 1fr) max-content max-content ${draftspersonColWidth} ${drawingsWithColWidth} max-content max-content`;
 
                   if (activeProjects.length === 0) {
                     return (
@@ -1585,20 +1647,68 @@ export default function DrawingManager() {
                     );
                   }
 
+                  const revisionValues = [];
+                  const drawingDayValues = [];
+                  for (const project of activeProjects) {
+                    const stats = getDrawingUploadStats(project);
+                    revisionValues.push(stats.uploaded);
+                    if (stats.draftingDays != null) drawingDayValues.push(stats.draftingDays);
+                  }
+                  const avgCellStyle = {
+                    ...rowCellStyle,
+                    fontWeight: 700,
+                    background: MONUMENT,
+                    color: PAGE_TEXT,
+                    textAlign: "center",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    whiteSpace: "nowrap",
+                    boxShadow: "none",
+                  };
+
                   return (
                     <div
                       style={{
                         display: "grid",
                         gridTemplateColumns,
-                        gap: "12px",
+                        gap: "6px 8px",
+                        alignItems: "center",
                       }}
                     >
                       {renderSortableColumnHeader("project", "Project", "left")}
+                      {renderSortableColumnHeader("revisions", "Revisions", "center")}
+                      {renderSortableColumnHeader("drawingDays", "Drawing Days", "center")}
                       {renderSortableColumnHeader("draftsperson", "Draftsperson", "center")}
                       {renderSortableColumnHeader("drawingsWith", "Drawings With", "center")}
                       <div style={{ ...columnHeaderStyle, textAlign: "center" }}>Notes</div>
                       <div style={{ ...columnHeaderStyle, textAlign: "center" }}>Email</div>
                       {activeProjects.map((project) => renderDrawingManagerProjectRow(project))}
+                      <div
+                        style={{
+                          ...avgCellStyle,
+                          justifyContent: "flex-start",
+                          textAlign: "left",
+                        }}
+                      >
+                        Average
+                      </div>
+                      <div
+                        style={avgCellStyle}
+                        title={`Average revisions across ${revisionValues.length} job${revisionValues.length === 1 ? "" : "s"}`}
+                      >
+                        {formatColumnAverage(revisionValues)}
+                      </div>
+                      <div
+                        style={avgCellStyle}
+                        title={`Average drawing days across ${drawingDayValues.length} job${drawingDayValues.length === 1 ? "" : "s"} with an upload date`}
+                      >
+                        {formatColumnAverage(drawingDayValues)}
+                      </div>
+                      <div />
+                      <div />
+                      <div />
+                      <div />
                     </div>
                   );
                 })()}

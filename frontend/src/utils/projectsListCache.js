@@ -127,13 +127,22 @@ async function flushPendingProjectSaves() {
 }
 
 /**
+ * Flush pending project saves and drop the list cache.
+ * Does not wait for a full projects download — callers should navigate first
+ * and let the destination page (or a background prefetch) load the list.
+ */
+export async function prepareProjectsListForNavigation() {
+  await flushPendingProjectSaves();
+  await waitForProjectMutations();
+  invalidateProjectsListCache();
+}
+
+/**
  * Wait for pending saves, then reload the card list into cache
  * so the previous page mounts with up-to-date grouping.
  */
 export async function refreshProjectsListForNavigation() {
-  await flushPendingProjectSaves();
-  await waitForProjectMutations();
-  invalidateProjectsListCache();
+  await prepareProjectsListForNavigation();
   try {
     await fetchProjectsList({ view: "card", force: true });
   } catch {

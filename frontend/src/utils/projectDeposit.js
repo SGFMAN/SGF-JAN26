@@ -1,7 +1,10 @@
 /**
- * Single definition of “full 5% deposit” vs paid amount (matches Admin / New Project flows).
- * 5% = Math.floor(projectCost / 20), not Math.round(cost * 0.05).
+ * Deposit-paid status uses Admin payment rows only (Amount, Paid, Owed).
+ * If Pre-engagement Amount > 0, that row governs.
+ * If Pre-engagement Amount is 0 (old jobs), the Deposit row governs.
  */
+
+import { getAdminDepositAmount } from "./paymentStageAmounts.js";
 
 /** Stable deposit-type keys from New Project → Project Cost modal. */
 export const DEPOSIT_TYPE = {
@@ -58,72 +61,87 @@ export function getPreEngagementRequiredAmount(project) {
   return parseMoneyToInt(project?.pre_engagement_required);
 }
 
-/** Best-effort “amount paid toward deposit / pre-engagement” for overview status. */
-export function getAnyDepositAmountPaid(project) {
-  if (!project || typeof project !== "object") return 0;
-  const pePaid = parseMoneyToInt(project.pre_engagement_paid);
-  const legacyPaid = parseMoneyToInt(getDepositPaidValue(project));
-  return Math.max(pePaid, legacyPaid);
+/**
+ * Admin row that governs “deposit paid”:
+ * Pre-engagement Amount > 0 → Pre-engagement Amount / Paid / Owed.
+ * Pre-engagement Amount is 0 → Deposit Amount / Paid / Owed.
+ */
+export function getGoverningDepositPayment(project, settings) {
+  if (!project || typeof project !== "object") {
+    return { amount: 0, paid: 0, owed: 0, source: "deposit" };
+  }
+  const peAmount = getPreEngagementRequiredAmount(project);
+  if (peAmount > 0) {
+    const paid = parseMoneyToInt(project.pre_engagement_paid);
+    return {
+      amount: peAmount,
+      paid,
+      owed: Math.max(0, peAmount - paid),
+      source: "pre_engagement",
+    };
+  }
+  const amount = getAdminDepositAmount(project, settings);
+  const paid = parseMoneyToInt(getDepositPaidValue(project));
+  return {
+    amount,
+    paid,
+    owed: Math.max(0, amount - paid),
+    source: "deposit",
+  };
 }
 
-/**
- * Overview / design-phase deposit complete:
- * - If pre_engagement_required is set → paid >= that amount
- * - Else → legacy full 5% of project cost paid
- */
-export function isOverviewDepositComplete(project) {
-  if (!project || typeof project !== "object") return false;
-  const peRequired = getPreEngagementRequiredAmount(project);
-  const paid = getAnyDepositAmountPaid(project);
-  if (peRequired > 0) {
-    return paid >= peRequired;
-  }
-  const fullFive = fullFivePercentDeposit(project.project_cost);
-  return fullFive > 0 && paid >= fullFive;
+/** Amount paid on the governing Admin row (pre-engagement or deposit). */
+export function getAnyDepositAmountPaid(project, settings) {
+  return getGoverningDepositPayment(project, settings).paid;
+}
+
+/** Rounding / leftover dollars still treated as paid. */
+export const DEPOSIT_PAID_TOLERANCE_DOLLARS = 5;
+
+/** True when the governing Admin row is paid, allowing up to $5 still owed. */
+export function isOverviewDepositComplete(project, settings) {
+  const { amount, owed } = getGoverningDepositPayment(project, settings);
+  return amount > 0 && owed <= DEPOSIT_PAID_TOLERANCE_DOLLARS;
 }
 
 /** `Full Deposit` | `Partial Deposit` | `No Deposit` */
-export function getOverviewDepositStatusLabel(project) {
-  if (isOverviewDepositComplete(project)) return "Full Deposit";
-  if (getAnyDepositAmountPaid(project) > 0) return "Partial Deposit";
+export function getOverviewDepositStatusLabel(project, settings) {
+  if (isOverviewDepositComplete(project, settings)) return "Full Deposit";
+  if (getAnyDepositAmountPaid(project, settings) > 0) return "Partial Deposit";
   return "No Deposit";
 }
 
 /** `complete` (green) | `partial` (orange) | `none` (red) */
-export function getOverviewDepositStatusLevel(project) {
-  if (isOverviewDepositComplete(project)) return "complete";
-  if (getAnyDepositAmountPaid(project) > 0) return "partial";
+export function getOverviewDepositStatusLevel(project, settings) {
+  if (isOverviewDepositComplete(project, settings)) return "complete";
+  if (getAnyDepositAmountPaid(project, settings) > 0) return "partial";
   return "none";
 }
 
-/** Required dollars for deposit complete (pre-engagement required, else 5% of cost). */
-export function getOverviewDepositRequiredAmount(project) {
-  const peRequired = getPreEngagementRequiredAmount(project);
-  if (peRequired > 0) return peRequired;
-  return fullFivePercentDeposit(project?.project_cost);
+/** Required dollars on the governing Admin row. */
+export function getOverviewDepositRequiredAmount(project, settings) {
+  return getGoverningDepositPayment(project, settings).amount;
 }
 
-/** Amount still owed toward deposit complete (never negative). */
-export function getOverviewDepositOwedAmount(project) {
-  const required = getOverviewDepositRequiredAmount(project);
-  if (required <= 0) return 0;
-  return Math.max(0, required - getAnyDepositAmountPaid(project));
+/** Amount still owed on the governing Admin row (never negative). */
+export function getOverviewDepositOwedAmount(project, settings) {
+  return getGoverningDepositPayment(project, settings).owed;
 }
 
 /** Main-menu Deposit Paid filter categories (excludes the special “Deposit Owed” match-all). */
-export function getDepositPaidFilterCategory(project) {
-  if (isOverviewDepositComplete(project)) return "Full Deposit";
-  if (getAnyDepositAmountPaid(project) > 0) return "Partial Deposit";
+export function getDepositPaidFilterCategory(project, settings) {
+  if (isOverviewDepositComplete(project, settings)) return "Full Deposit";
+  if (getAnyDepositAmountPaid(project, settings) > 0) return "Partial Deposit";
   return "No Deposit Paid";
 }
 
-/** Match Deposit Paid filter value, including “Deposit Owed” (owed > 0). */
-export function projectMatchesDepositPaidFilter(project, selectedValue) {
+/** Match Deposit Paid filter value, including “Deposit Owed” (still owing more than $5). */
+export function projectMatchesDepositPaidFilter(project, selectedValue, settings) {
   if (!selectedValue) return true;
   if (selectedValue === "Deposit Owed") {
-    return getOverviewDepositOwedAmount(project) > 0;
+    return getOverviewDepositOwedAmount(project, settings) > DEPOSIT_PAID_TOLERANCE_DOLLARS;
   }
-  return getDepositPaidFilterCategory(project) === selectedValue;
+  return getDepositPaidFilterCategory(project, settings) === selectedValue;
 }
 
 /**

@@ -19,13 +19,30 @@ function parseMoneyInt(value) {
   return parseInt(String(value).replace(/[^0-9]/g, ""), 10) || 0;
 }
 
+const DEPOSIT_PAID_TOLERANCE_DOLLARS = 5;
+
+function isPaidWithinTolerance(amount, paid) {
+  return amount > 0 && amount - paid <= DEPOSIT_PAID_TOLERANCE_DOLLARS;
+}
+
 function deriveDepositStatus(row) {
-  const depositNum = parseMoneyInt(row.deposit);
+  const peAmount = parseMoneyInt(row.pre_engagement_required);
+  if (peAmount > 0) {
+    const pePaid = parseMoneyInt(row.pre_engagement_paid);
+    if (isPaidWithinTolerance(peAmount, pePaid)) return "Full Deposit";
+    if (pePaid > 0) return "Partial Deposit";
+    return "No Deposit";
+  }
   const costNum = parseMoneyInt(row.project_cost);
-  if (!depositNum || !costNum) return "No Deposit";
-  const fullDeposit = Math.floor(costNum / 20);
-  if (fullDeposit > 0 && depositNum >= fullDeposit) return "Full Deposit";
-  return "Partial Deposit";
+  const depositAmount = costNum > 0 ? Math.round((costNum * 5) / 100) : 0;
+  const paidRaw =
+    row.deposit_paid != null && row.deposit_paid !== ""
+      ? row.deposit_paid
+      : row.deposit;
+  const paid = parseMoneyInt(paidRaw);
+  if (isPaidWithinTolerance(depositAmount, paid)) return "Full Deposit";
+  if (paid > 0) return "Partial Deposit";
+  return "No Deposit";
 }
 
 function deriveContractStatusText(row) {
@@ -129,6 +146,9 @@ const CLIENT_PROJECT_SELECT = `
     classification,
     qp_number,
     deposit,
+    deposit_paid,
+    pre_engagement_required,
+    pre_engagement_paid,
     project_cost,
     drawings_status,
     drawings_pdf_location,

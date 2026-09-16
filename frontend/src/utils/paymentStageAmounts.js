@@ -6,7 +6,7 @@
  * Pre-engagement Amount itself is a stored project field (pre_engagement_required).
  */
 
-import { formatMoneyInput, parseMoneyToInt } from "./projectDeposit";
+import { formatMoneyInput, parseMoneyToInt } from "./projectDeposit.js";
 
 export const DEFAULT_PAYMENT_STAGE_PERCENTS = {
   deposit: 5,
@@ -105,4 +105,13 @@ export function calculatePaymentAmounts(projectCostValue, settings, preEngagemen
     fix: percentOfProjectCost(baseCost, percents.fix),
     final: percentOfProjectCost(baseCost, percents.final),
   };
+}
+
+/** Admin Deposit Amount for a project (calculated, not stored). */
+export function getAdminDepositAmount(project, settings) {
+  return calculatePaymentAmounts(
+    project?.project_cost,
+    settings,
+    project?.pre_engagement_required
+  ).deposit;
 }

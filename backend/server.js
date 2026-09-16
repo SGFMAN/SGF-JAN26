@@ -787,14 +787,23 @@ if (!process.env.DATABASE_URL) {
 const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
-      connectionTimeoutMillis: 20000,
-      idleTimeoutMillis: 30000,
+      max: 8,
+      connectionTimeoutMillis: 30000,
+      idleTimeoutMillis: 120000,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
       ssl:
         process.env.PGSSL === "true"
           ? { rejectUnauthorized: false }
           : undefined,
     })
   : null;
+
+if (pool) {
+  pool.on("error", (err) => {
+    console.error("Unexpected PostgreSQL pool error:", err?.message || err);
+  });
+}
 
 const {
   DRAFTSPERSON_UNASSIGNED,
@@ -4425,14 +4434,22 @@ app.post("/api/projects/:id/open-project-folder", async (req, res) => {
 // User names for login dropdown (no passwords)
 app.get("/api/users/names", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  try {
-    const usersResult = await pool.query(
-      `SELECT id, name FROM users ORDER BY name ASC, id ASC`
-    );
-    res.json(usersResult.rows);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+  const sql = `SELECT id, name FROM users ORDER BY name ASC, id ASC`;
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const usersResult = await pool.query(sql);
+      return res.json(usersResult.rows);
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e?.message || e);
+      const retryable = /timeout|ECONNRESET|terminat|closed the connection/i.test(msg);
+      if (!retryable || attempt === 3) break;
+      await new Promise((r) => setTimeout(r, 400 * attempt));
+    }
   }
+  console.error("Error fetching user names:", lastErr);
+  res.status(500).json({ error: lastErr?.message || "Failed to load users" });
 });
 
 // Login with per-user password

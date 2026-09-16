@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { isFullFivePercentDepositPaid } from "../utils/projectDeposit";
+import { getOverviewDepositStatusLevel, isOverviewDepositComplete } from "../utils/projectDeposit";
 import { portalProjectPath, projectPath } from "../utils/projectUrl";
 import { isSecretAreaProject, unlockSecretAreaSession } from "../utils/secretAreaProject";
 import SiteVisit from "./SiteVisit";
@@ -442,11 +442,12 @@ function getSiteVisitPlanningTileState(statusValue) {
   return { color: TILE_RED, label: "Not Complete" };
 }
 
-function getDepositStatus(depositValue, projectCostValue) {
-  const isFull = isFullFivePercentDepositPaid(depositValue, projectCostValue);
+function getDepositStatus(project) {
+  const isFull = isOverviewDepositComplete(project);
+  const level = getOverviewDepositStatusLevel(project);
   return {
     label: isFull ? "Full Deposit Paid" : "Partial Deposit Paid",
-    color: isFull ? TILE_GREEN : TILE_RED,
+    color: level === "complete" ? TILE_GREEN : level === "partial" ? TILE_ORANGE : TILE_RED,
   };
 }
 
@@ -464,7 +465,7 @@ export default function PlanningNew({ project, onUpdate, initialPlanningSection 
   const drawingStates = getDrawingTileStates(project?.drawings_status);
   const surveyTileState = getSurveySoilTileState(project?.survey_status);
   const soilTileState = getSurveySoilTileState(project?.soil_status);
-  const depositStatus = getDepositStatus(project?.deposit, project?.project_cost);
+  const depositStatus = getDepositStatus(project);
   const secretAreaEligible = isSecretAreaProject(project);
   /** Which planning subsection is shown in the main panel (matches PLANNING_CATEGORIES labels). */
   const [planningSection, setPlanningSection] = useState(() =>
