@@ -726,6 +726,11 @@ export default function DrawingManager() {
     return !isOverviewDepositComplete(project, paymentSettings);
   }
 
+  function getOnHoldReasonBadge(project) {
+    const reason = project?.on_hold_reason != null ? String(project.on_hold_reason).trim() : "";
+    return reason ? reason.toUpperCase() : "ON HOLD";
+  }
+
   function shouldShowInDrawingManagerList(project) {
     // Permit Phase stays on the Permit tab after WD approval / Drawings Complete.
     if (isPermitPhaseStatus(project?.status)) return true;
@@ -1149,10 +1154,10 @@ export default function DrawingManager() {
                     lineHeight: 1.3,
                   }}
                 >
-                  ON HOLD
+                  {getOnHoldReasonBadge(project)}
                 </span>
               )}
-              {isPartialDeposit(project) && (
+              {!isOnHoldFlag(project) && isPartialDeposit(project) && (
                 <span
                   style={{
                     padding: "1px 5px",

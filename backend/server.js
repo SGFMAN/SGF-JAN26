@@ -13642,7 +13642,7 @@ app.get("/api/hotlist", async (req, res) => {
   if (!(await requireHotlistSalesAccess(req, res))) return;
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, hotlist_notes, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
+      "SELECT id, name, status, suburb, street, state, stream, salesperson, client_name, email, phone, agreement_sent, hotlist_notes, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
       ["Hotlist"]
     );
     res.json(r.rows);
@@ -13663,7 +13663,7 @@ app.get("/api/hotlist/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, hotlist_notes, updated_at FROM projects WHERE id = $1 AND status = $2",
+      "SELECT id, name, status, suburb, street, state, stream, salesperson, client_name, email, phone, agreement_sent, hotlist_notes, updated_at FROM projects WHERE id = $1 AND status = $2",
       [id, "Hotlist"]
     );
     
@@ -13826,6 +13826,41 @@ app.patch("/api/hotlist/:id/notes", async (req, res) => {
        WHERE id = $2 AND status = $3
        RETURNING id, hotlist_notes, updated_at`,
       [notesVal, id, "Hotlist"]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Assign the salesperson in charge of selling this hotlist entry
+app.patch("/api/hotlist/:id/salesperson", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  const raw = req.body?.salesperson;
+  if (raw != null && typeof raw !== "string") {
+    return res.status(400).json({ error: "salesperson (string) required" });
+  }
+  const salespersonVal = raw == null ? null : String(raw).trim() || null;
+
+  try {
+    const r = await pool.query(
+      `UPDATE projects
+       SET salesperson = $1, updated_at = NOW()
+       WHERE id = $2 AND status = $3
+       RETURNING id, salesperson, updated_at`,
+      [salespersonVal, id, "Hotlist"]
     );
 
     if (r.rowCount === 0) {

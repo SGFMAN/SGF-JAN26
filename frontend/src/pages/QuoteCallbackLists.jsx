@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import ModalBackdrop from "../components/ModalBackdrop";
 import { getApiHeaders } from "../utils/auth";
@@ -55,11 +55,36 @@ function formatCallbackLine(row) {
     String(row?.suburb || "").trim(),
     String(row?.street || "").trim(),
     String(row?.client_name || "").trim(),
-    String(row?.email || "").trim(),
     String(row?.phone || "").trim(),
   ]
     .filter(Boolean)
     .join(" ") || "—";
+}
+
+function callbackEmail(row) {
+  return String(row?.email || "").trim();
+}
+
+async function copyTextToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand("copy");
+      return true;
+    } catch {
+      return false;
+    } finally {
+      document.body.removeChild(textArea);
+    }
+  }
 }
 
 function groupCallbackItems(items) {
@@ -99,6 +124,8 @@ export default function QuoteCallbackLists() {
   const [eraseList, setEraseList] = useState(null);
   const [erasing, setErasing] = useState(false);
   const [promotedIds, setPromotedIds] = useState({});
+  const [copiedKey, setCopiedKey] = useState("");
+  const copiedTimerRef = useRef(null);
   const [, setUiButtonStyleRevision] = useState(0);
 
   useEffect(() => {
@@ -148,6 +175,12 @@ export default function QuoteCallbackLists() {
   useEffect(() => {
     void loadLists();
   }, [loadLists]);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -210,6 +243,23 @@ export default function QuoteCallbackLists() {
     }
   }
 
+  async function handleCopyEmail(item, list) {
+    const email = callbackEmail(item);
+    if (!email) return;
+    const copyKey = `${list.id}:${item.key}`;
+    const ok = await copyTextToClipboard(email);
+    if (!ok) {
+      alert("Failed to copy email. Please copy manually: " + email);
+      return;
+    }
+    setCopiedKey(copyKey);
+    if (copiedTimerRef.current) window.clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = window.setTimeout(() => {
+      setCopiedKey((current) => (current === copyKey ? "" : current));
+      copiedTimerRef.current = null;
+    }, 1200);
+  }
+
   async function handleAddToHotlist(item) {
     const projectId = Number(item?.projectId);
     if (!Number.isFinite(projectId)) {
@@ -258,6 +308,9 @@ export default function QuoteCallbackLists() {
             const rowBusy = savingKey === `${list.id}:${item.key}`;
             const promoting = savingKey === `hotlist:${projectId}`;
             const alreadyAdded = hasProject && Boolean(promotedIds[projectId]);
+            const email = callbackEmail(item);
+            const itemCopyKey = `${list.id}:${item.key}`;
+            const justCopied = copiedKey === itemCopyKey;
             return (
               <div
                 key={item.key}
@@ -269,24 +322,22 @@ export default function QuoteCallbackLists() {
                   opacity: rowBusy || promoting ? 0.7 : 1,
                 }}
               >
-                <label
+                <input
+                  type="checkbox"
+                  checked={Boolean(item.called)}
+                  disabled={rowBusy || promoting}
+                  onChange={(e) => handleToggleCalled(list, item, e.target.checked)}
+                  aria-label={`Mark called: ${formatCallbackLine(item)}`}
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: "10px",
-                    flex: 1,
-                    minWidth: 0,
-                    cursor: rowBusy ? "default" : "pointer",
+                    width: "18px",
+                    height: "18px",
+                    marginTop: "2px",
+                    flexShrink: 0,
+                    cursor: rowBusy || promoting ? "default" : "pointer",
                   }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={Boolean(item.called)}
-                    disabled={rowBusy || promoting}
-                    onChange={(e) => handleToggleCalled(list, item, e.target.checked)}
-                    style={{ width: "18px", height: "18px", marginTop: "2px", flexShrink: 0, cursor: "pointer" }}
-                  />
-                  <span
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
                     style={{
                       fontSize: "0.9rem",
                       color: MONUMENT,
@@ -294,11 +345,42 @@ export default function QuoteCallbackLists() {
                       wordBreak: "break-word",
                       textDecoration: item.called ? "line-through" : "none",
                       opacity: item.called ? 0.65 : 1,
+                      cursor: "default",
+                      userSelect: "text",
                     }}
                   >
                     {formatCallbackLine(item)}
-                  </span>
-                </label>
+                  </div>
+                  {email ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void handleCopyEmail(item, list);
+                      }}
+                      title={`Copy ${email}`}
+                      style={{
+                        marginTop: "4px",
+                        background: MONUMENT,
+                        color: PAGE_TEXT,
+                        border: "none",
+                        borderRadius: "6px",
+                        padding: "3px 8px",
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        maxWidth: "100%",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {justCopied ? "Copied" : email}
+                    </button>
+                  ) : null}
+                </div>
                 {hasProject ? (
                   <button
                     type="button"

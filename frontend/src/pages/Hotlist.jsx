@@ -23,6 +23,7 @@ import {
 import { getHotlistAgreementRowBackground, getHotlistStreamAccent, getStreamGroupColors } from "../utils/streamColors";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { FALLBACK_STREAMS, fetchStreams, projectStreamOptions } from "../utils/streamsCatalog";
+import { filterSalesTeamUsers } from "../utils/salesPersonFiguresCompute";
 
 import { UI, MENU, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
@@ -144,6 +145,8 @@ export default function Hotlist() {
   const [hotlistProjectStreamOptions, setHotlistProjectStreamOptions] = useState(
     HOTLIST_PROJECT_STREAM_OPTIONS_FALLBACK
   );
+  const [salesTeamUsers, setSalesTeamUsers] = useState([]);
+  const [loadingSalesUsers, setLoadingSalesUsers] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -190,6 +193,26 @@ export default function Hotlist() {
 
   useEffect(() => {
     fetchHotlist();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingSalesUsers(true);
+    fetch(`${API_URL}/api/users`, { headers: getApiHeaders() })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((users) => {
+        if (!cancelled) setSalesTeamUsers(filterSalesTeamUsers(users));
+      })
+      .catch((err) => {
+        console.error("Error fetching sales team users:", err);
+        if (!cancelled) setSalesTeamUsers([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSalesUsers(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Soft-refresh when navigating back / focusing this page
@@ -507,6 +530,34 @@ export default function Hotlist() {
     }
   }
 
+  async function handleHotlistSalespersonChange(item, nextSalesperson) {
+    const salespersonVal =
+      nextSalesperson != null && String(nextSalesperson).trim()
+        ? String(nextSalesperson).trim()
+        : "";
+    const previous = item.salesperson || "";
+    setHotlistItems((prev) =>
+      prev.map((it) => (it.id === item.id ? { ...it, salesperson: salespersonVal } : it))
+    );
+    try {
+      const response = await fetch(`${API_URL}/api/hotlist/${item.id}/salesperson`, {
+        method: "PATCH",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ salesperson: salespersonVal }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        throw new Error(errorText);
+      }
+    } catch (err) {
+      setHotlistItems((prev) =>
+        prev.map((it) => (it.id === item.id ? { ...it, salesperson: previous } : it))
+      );
+      console.error("Error updating hotlist salesperson:", err);
+      alert("Error updating salesperson: " + err.message);
+    }
+  }
+
   async function handleHotlistStreamChange(item, nextStream) {
     const streamVal = nextStream != null && String(nextStream).trim() ? String(nextStream).trim() : null;
     try {
@@ -820,7 +871,7 @@ export default function Hotlist() {
       projectCost: "",
       deposit: "",
       stream: item.stream || "",
-      salesperson: "",
+      salesperson: item.salesperson || "",
       specs: "",
       classification: "",
       proposalFile: null,
@@ -1144,6 +1195,44 @@ export default function Hotlist() {
           </div>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", flex: "0 1 auto" }}>
+          <select
+            aria-label="Salesperson"
+            value={item.salesperson || ""}
+            onChange={(e) => handleHotlistSalespersonChange(item, e.target.value)}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "8px",
+              border: outlineBorder,
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              color: useLightText ? PAGE_TEXT : MONUMENT,
+              background: useLightText ? "rgba(255,255,255,0.22)" : "#e8e8ea",
+              minWidth: "160px",
+              maxWidth: "220px",
+              cursor: "pointer",
+            }}
+          >
+            <option value="" style={{ color: MONUMENT, backgroundColor: WHITE }}>
+              — Salesperson —
+            </option>
+            {loadingSalesUsers ? (
+              <option value="" style={{ color: MONUMENT, backgroundColor: WHITE }}>
+                Loading...
+              </option>
+            ) : (
+              salesTeamUsers.map((user) => (
+                <option key={user.id} value={user.name} style={{ color: MONUMENT, backgroundColor: WHITE }}>
+                  {user.name}
+                </option>
+              ))
+            )}
+            {item.salesperson &&
+            !salesTeamUsers.some((user) => user.name === item.salesperson) ? (
+              <option value={item.salesperson} style={{ color: MONUMENT, backgroundColor: WHITE }}>
+                {item.salesperson} (current)
+              </option>
+            ) : null}
+          </select>
           <select
             aria-label="Project stream"
             value={streamVal || ""}
