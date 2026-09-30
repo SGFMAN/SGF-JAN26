@@ -912,7 +912,11 @@ function parseEmailGeneralJsonColumn(raw) {
     qldSoldFromEmail: "",
     qldSoldToEmail: "",
   };
-  const empty = { hotList: { ...emptyHotList }, siteVisits: { toEmail: "", fromEmail: "" } };
+  const empty = {
+    hotList: { ...emptyHotList },
+    siteVisits: { toEmail: "", fromEmail: "" },
+    investorLead: { fromEmail: "", toEmail: "", templateId: "", templateName: "" },
+  };
   if (raw == null || raw === "") return empty;
   let o = raw;
   if (typeof raw === "string") {
@@ -925,6 +929,7 @@ function parseEmailGeneralJsonColumn(raw) {
   if (!o || typeof o !== "object" || Array.isArray(o)) return empty;
   const hl = o.hotList && typeof o.hotList === "object" && !Array.isArray(o.hotList) ? o.hotList : {};
   const sv = o.siteVisits && typeof o.siteVisits === "object" && !Array.isArray(o.siteVisits) ? o.siteVisits : {};
+  const il = o.investorLead && typeof o.investorLead === "object" && !Array.isArray(o.investorLead) ? o.investorLead : {};
   const dbRoot =
     o.depositBalance && typeof o.depositBalance === "object" && !Array.isArray(o.depositBalance)
       ? o.depositBalance
@@ -953,6 +958,12 @@ function parseEmailGeneralJsonColumn(raw) {
     siteVisits: {
       toEmail: trim(sv.toEmail),
       fromEmail: trim(sv.fromEmail),
+    },
+    investorLead: {
+      fromEmail: trim(il.fromEmail),
+      toEmail: trim(il.toEmail),
+      templateId: trim(il.templateId),
+      templateName: trim(il.templateName),
     },
   };
 }

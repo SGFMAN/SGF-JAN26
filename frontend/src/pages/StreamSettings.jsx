@@ -23,6 +23,7 @@ import {
   fetchStreams,
 } from "../utils/streamsCatalog";
 import { UI } from "../utils/uiThemeTokens.js";
+import { getApiHeaders } from "../utils/auth";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
@@ -660,6 +661,47 @@ function NewProjectClientEmailToSelect({ value, disabled, onValueChange, onCommi
   );
 }
 
+function investorLeadTemplateLabel(template) {
+  const name = String(template?.name || "").trim() || "Untitled";
+  const group = String(template?.template_group || "").trim();
+  return group ? `${group} — ${name}` : name;
+}
+
+function InvestorLeadTemplateSelect({ templates, templateId, templateName, disabled, onCommit }) {
+  const savedId = templateId == null ? "" : String(templateId).trim();
+  const list = Array.isArray(templates) ? templates : [];
+  const sorted = [...list].sort((a, b) =>
+    investorLeadTemplateLabel(a).localeCompare(investorLeadTemplateLabel(b), undefined, { sensitivity: "base" })
+  );
+  const known = savedId !== "" && sorted.some((t) => String(t.id) === savedId);
+  const orphan = savedId !== "" && !known;
+
+  return (
+    <select
+      value={savedId}
+      disabled={disabled}
+      onChange={(e) => {
+        const id = e.target.value;
+        const tpl = sorted.find((t) => String(t.id) === id);
+        onCommit(id, tpl ? String(tpl.name || "").trim() : "");
+      }}
+      style={selectStyle}
+    >
+      <option value="">— None —</option>
+      {sorted.map((template) => (
+        <option key={template.id} value={String(template.id)}>
+          {investorLeadTemplateLabel(template)}
+        </option>
+      ))}
+      {orphan ? (
+        <option value={savedId}>
+          {templateName ? `${templateName} (not in template list)` : "Saved template (not in template list)"}
+        </option>
+      ) : null}
+    </select>
+  );
+}
+
 function DrawingNotifySmtpSelect({ smtpOptions, value, disabled, onValueChange, onCommit }) {
   const v = value == null ? "" : String(value).trim();
   const resolved =
@@ -704,6 +746,7 @@ const GLOBAL_EMAIL_SECTIONS = [
   { key: "windows", label: "Windows" },
   { key: "newProject", label: "New Project" },
   { key: "finalCertificates", label: "Final Certificates" },
+  { key: "dj", label: "D&J" },
 ];
 
 export default function StreamSettings() {
@@ -729,6 +772,8 @@ export default function StreamSettings() {
   const [hotListSoldSectionOpen, setHotListSoldSectionOpen] = useState(false);
   const [windowsOrderingSectionOpen, setWindowsOrderingSectionOpen] = useState(false);
   const [finalCertificatesSectionOpen, setFinalCertificatesSectionOpen] = useState(false);
+  const [investorLeadSectionOpen, setInvestorLeadSectionOpen] = useState(false);
+  const [emailTemplates, setEmailTemplates] = useState([]);
   const [emailGeneral, setEmailGeneral] = useState(() => parseEmailGeneralJson(null));
   const emailGeneralRef = useRef(emailGeneral);
   const streamDisplayList = emailSettingsDisplayItems(streamsCatalog);
@@ -860,6 +905,18 @@ export default function StreamSettings() {
       setSmtpSlotEmails(smtpSlotEmailsFromSettings(data));
       setEmailGeneral(eg);
       emailGeneralRef.current = eg;
+      try {
+        const templateRes = await fetch(`${API_URL}/api/email-templates`, { headers: getApiHeaders() });
+        if (templateRes.ok) {
+          const templateData = await templateRes.json();
+          setEmailTemplates(Array.isArray(templateData) ? templateData : []);
+        } else {
+          setEmailTemplates([]);
+        }
+      } catch (templateErr) {
+        console.error("Error fetching email templates:", templateErr);
+        setEmailTemplates([]);
+      }
     } catch (e) {
       console.error(e);
       setStreamSettingsMap(
@@ -950,6 +1007,25 @@ export default function StreamSettings() {
   }
 
   function flushPersistHotListEmail() {
+    void persistEmailGeneral(emailGeneralRef.current);
+  }
+
+  function patchInvestorLead(patch) {
+    setEmailGeneral((prev) => {
+      const next = {
+        ...prev,
+        investorLead: { ...(prev.investorLead || {}), ...patch },
+      };
+      emailGeneralRef.current = next;
+      return next;
+    });
+  }
+
+  function updateInvestorLeadField(fieldKey, value) {
+    patchInvestorLead({ [fieldKey]: value });
+  }
+
+  function flushPersistInvestorLeadEmail() {
     void persistEmailGeneral(emailGeneralRef.current);
   }
 
@@ -2464,6 +2540,104 @@ export default function StreamSettings() {
                           </div>
                         );
                       })}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ) : globalEmailSection === "dj" ? (
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              <div style={{ ...columnPanelStyle, minHeight: "100%" }}>
+                <h4 style={{ ...columnTitleStyle, marginBottom: "10px" }}>D&J</h4>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: investorLeadSectionOpen ? "10px" : "0",
+                    maxWidth: "420px",
+                    ...NEW_PROJECT_SECTION_BLUE,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "8px",
+                      padding: "2px 0 8px 0",
+                      borderBottom: investorLeadSectionOpen ? "1px solid #4d93d955" : "none",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setInvestorLeadSectionOpen((o) => !o)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "8px",
+                        flex: 1,
+                        minWidth: 0,
+                        margin: 0,
+                        padding: 0,
+                        border: "none",
+                        background: "transparent",
+                        cursor: saving ? "wait" : "pointer",
+                        textAlign: "left",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: "0.82rem",
+                          fontWeight: 700,
+                          color: "var(--sgf-text-primary)",
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        Investor Lead
+                      </span>
+                      <span aria-hidden style={{ fontSize: "0.75rem", color: "var(--sgf-text-primary)", flexShrink: 0 }}>
+                        {investorLeadSectionOpen ? "▾" : "▸"}
+                      </span>
+                    </button>
+                  </div>
+                  {investorLeadSectionOpen ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>From</span>
+                        <DrawingNotifySmtpSelect
+                          smtpOptions={smtpSlotEmails}
+                          value={emailGeneral.investorLead?.fromEmail || ""}
+                          disabled={saving}
+                          onValueChange={(next) => updateInvestorLeadField("fromEmail", next)}
+                          onCommit={flushPersistInvestorLeadEmail}
+                        />
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>To</span>
+                        <DrawingNotifySmtpSelect
+                          smtpOptions={smtpSlotEmails}
+                          value={emailGeneral.investorLead?.toEmail || ""}
+                          disabled={saving}
+                          onValueChange={(next) => updateInvestorLeadField("toEmail", next)}
+                          onCommit={flushPersistInvestorLeadEmail}
+                        />
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>Template</span>
+                        <InvestorLeadTemplateSelect
+                          templates={emailTemplates}
+                          templateId={emailGeneral.investorLead?.templateId || ""}
+                          templateName={emailGeneral.investorLead?.templateName || ""}
+                          disabled={saving}
+                          onCommit={(id, name) => {
+                            patchInvestorLead({ templateId: id, templateName: name });
+                            flushPersistInvestorLeadEmail();
+                          }}
+                        />
+                      </div>
                     </div>
                   ) : null}
                 </div>

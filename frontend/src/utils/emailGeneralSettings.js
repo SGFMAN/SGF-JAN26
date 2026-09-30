@@ -556,6 +556,7 @@ export function parseEmailGeneralJson(raw) {
     conceptApproved: { vic: emptyDrawingsFromToBranch(), qld: emptyDrawingsFromToBranch() },
     wdsApproved: { vic: emptyDrawingsWdsApprovedBranch(), qld: emptyDrawingsWdsApprovedBranch() },
     siteVisits: { toEmail: "", fromEmail: "" },
+    investorLead: { fromEmail: "", toEmail: "", templateId: "", templateName: "" },
   };
   if (raw == null || raw === "") return base;
   let o = raw;
@@ -594,6 +595,8 @@ export function parseEmailGeneralJson(raw) {
     o.wdsApproved && typeof o.wdsApproved === "object" && !Array.isArray(o.wdsApproved) ? o.wdsApproved : {};
   const svRoot =
     o.siteVisits && typeof o.siteVisits === "object" && !Array.isArray(o.siteVisits) ? o.siteVisits : {};
+  const ilRoot =
+    o.investorLead && typeof o.investorLead === "object" && !Array.isArray(o.investorLead) ? o.investorLead : {};
   const vicFrom = T(hl.soldFromEmail);
   const vicTo = T(hl.soldToEmail);
   const qldFrom = T(hl.qldSoldFromEmail);
@@ -656,6 +659,12 @@ export function parseEmailGeneralJson(raw) {
     siteVisits: {
       toEmail: T(svRoot.toEmail),
       fromEmail: T(svRoot.fromEmail),
+    },
+    investorLead: {
+      fromEmail: T(ilRoot.fromEmail),
+      toEmail: T(ilRoot.toEmail),
+      templateId: T(ilRoot.templateId),
+      templateName: T(ilRoot.templateName),
     },
   };
 }
