@@ -1011,22 +1011,22 @@ export default function StreamSettings() {
   }
 
   function patchInvestorLead(patch) {
-    setEmailGeneral((prev) => {
-      const next = {
-        ...prev,
-        investorLead: { ...(prev.investorLead || {}), ...patch },
-      };
-      emailGeneralRef.current = next;
-      return next;
-    });
+    const prev = emailGeneralRef.current || {};
+    const next = {
+      ...prev,
+      investorLead: { ...(prev.investorLead || {}), ...patch },
+    };
+    emailGeneralRef.current = next;
+    setEmailGeneral(next);
+    return next;
   }
 
   function updateInvestorLeadField(fieldKey, value) {
-    patchInvestorLead({ [fieldKey]: value });
+    return patchInvestorLead({ [fieldKey]: value });
   }
 
-  function flushPersistInvestorLeadEmail() {
-    void persistEmailGeneral(emailGeneralRef.current);
+  function flushPersistInvestorLeadEmail(nextJson) {
+    void persistEmailGeneral(nextJson || emailGeneralRef.current);
   }
 
   function updateWindowsField(fieldKey, value) {
@@ -2617,12 +2617,14 @@ export default function StreamSettings() {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>To</span>
-                        <DrawingNotifySmtpSelect
-                          smtpOptions={smtpSlotEmails}
+                        <input
+                          type="text"
                           value={emailGeneral.investorLead?.toEmail || ""}
                           disabled={saving}
-                          onValueChange={(next) => updateInvestorLeadField("toEmail", next)}
-                          onCommit={flushPersistInvestorLeadEmail}
+                          placeholder="name@example.com"
+                          onChange={(e) => updateInvestorLeadField("toEmail", e.target.value)}
+                          onBlur={() => flushPersistInvestorLeadEmail()}
+                          style={inputStyle}
                         />
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -2633,8 +2635,8 @@ export default function StreamSettings() {
                           templateName={emailGeneral.investorLead?.templateName || ""}
                           disabled={saving}
                           onCommit={(id, name) => {
-                            patchInvestorLead({ templateId: id, templateName: name });
-                            flushPersistInvestorLeadEmail();
+                            const next = patchInvestorLead({ templateId: id, templateName: name });
+                            flushPersistInvestorLeadEmail(next);
                           }}
                         />
                       </div>

@@ -4,6 +4,7 @@ import Overview from "./Overview";
 import ProjectInfo from "./ProjectInfo";
 import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
+import NewProject_InvestorClient from "./NewProject_InvestorClient";
 import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import ClientInfo from "./ClientInfo";
@@ -1285,12 +1286,18 @@ export default function ProjectPage() {
               newJobDepositType: renovationDupFormData.depositType || "",
               depositType: renovationDupFormData.depositType || "",
             });
-            setRenovationDupStep(6);
+            setRenovationDupStep("investor");
           }
         }}
         onCreate={handleRenovationDupCreate}
         introExtra="This new job uses the same Windows folder as the renovation you started from. Uploading replaces Proposal.PDF on disk (renovation: inside 12. RENOVATION). Or use Next to keep the existing Proposal.PDF on disk."
         transparentBackdrop
+      />
+      <NewProject_InvestorClient
+        isOpen={renovationDupOpen && renovationDupStep === "investor"}
+        project={renovationDupCreatedForEmail}
+        onBack={() => setRenovationDupStep(5)}
+        onContinue={() => setRenovationDupStep(6)}
       />
       <NewProject_6_EmailInternal
         isOpen={renovationDupOpen && renovationDupStep === 6}
@@ -1441,12 +1448,18 @@ export default function ProjectPage() {
               newJobDepositType: linkRenoDupFormData.depositType || "",
               depositType: linkRenoDupFormData.depositType || "",
             });
-            setLinkRenoDupStep("emailint");
+            setLinkRenoDupStep("investor");
           }
         }}
         onCreate={handleRenovationDupCreate}
         introExtra='The new job is Renovation: your PDF is saved as Proposal.PDF inside the existing "12. RENOVATION" folder only, so the original job’s Proposal.PDF in the folder root is not replaced. Upload a renovation proposal, or cancel.'
         transparentBackdrop
+      />
+      <NewProject_InvestorClient
+        isOpen={linkRenoDupOpen && linkRenoDupStep === "investor"}
+        project={linkRenoDupCreatedForEmail}
+        onBack={() => setLinkRenoDupStep("pdf")}
+        onContinue={() => setLinkRenoDupStep("emailint")}
       />
       <NewProject_6_EmailInternal
         isOpen={linkRenoDupOpen && linkRenoDupStep === "emailint"}

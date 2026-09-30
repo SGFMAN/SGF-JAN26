@@ -5,6 +5,7 @@ import NewProject2 from "./NewProject_2_ClientDetails";
 import NewProject_3_ProjectCost from "./NewProject_3_ProjectCost";
 import NewProject_4_FoldersOption from "./NewProject_4_FoldersOption";
 import NewProject_5_PDFUpload from "./NewProject_5_PDFUpload";
+import NewProject_InvestorClient from "./NewProject_InvestorClient";
 import NewProject_6_EmailInternal from "./NewProject_6_EmailInternal";
 import NewProject_7_EmailClient from "./NewProject_7_EmailClient";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
@@ -120,7 +121,8 @@ export default function Hotlist() {
   const [soldEmailFrom, setSoldEmailFrom] = useState("");
   const [soldEmailSubject, setSoldEmailSubject] = useState("");
   const [soldEmailBody, setSoldEmailBody] = useState("");
-  const [currentModal, setCurrentModal] = useState(1); // New/Edit: 1–2 (address+stream, client). Sold: 3–7 (ProjectCost→…)
+  const [currentModal, setCurrentModal] = useState(1); // New/Edit: 1–2. Sold: 3 cost, 4 folders, 5 PDF, 8 investor, 6–7 emails
+  const [investorBackModal, setInvestorBackModal] = useState(5);
   const [createdProjectAccessToken, setCreatedProjectAccessToken] = useState(null);
   const [createdProjectForEmail, setCreatedProjectForEmail] = useState(null);
   /** Stable token for post–sold-flow navigation (survives modal state resets). */
@@ -1916,18 +1918,26 @@ export default function Hotlist() {
               onYes={() => setCurrentModal(5)}
               onNo={async () => {
                 try {
+                  if (createdProjectForEmail?.id) {
+                    setInvestorBackModal(4);
+                    setCurrentModal(8);
+                    return;
+                  }
                   const project = await handleCreateProjectFromSold(formData);
                   if (project) {
-                    setCreatedProjectForEmail({
+                    const forEmail = {
                       ...project,
                       newJobDepositType: formData.depositType || "",
                       depositType: formData.depositType || "",
-                    });
+                    };
+                    setCreatedProjectForEmail(forEmail);
+                    handleFormDataChange({ ...formData, createdProject: forEmail });
                     if (project.access_token) {
                       createdProjectTokenRef.current = project.access_token;
                     }
                   }
-                  setCurrentModal(6);
+                  setInvestorBackModal(4);
+                  setCurrentModal(8);
                 } catch (e) {
                   // Error already shown in handleCreateProjectFromSold
                 }
@@ -1952,9 +1962,18 @@ export default function Hotlist() {
                     createdProjectTokenRef.current = project.access_token;
                   }
                 }
-                setCurrentModal(6);
+                setInvestorBackModal(5);
+                setCurrentModal(8);
               }}
               onCreate={handleCreateProjectFromSold}
+            />
+          )}
+          {currentModal === 8 && (
+            <NewProject_InvestorClient
+              isOpen={true}
+              project={createdProjectForEmail}
+              onBack={() => setCurrentModal(investorBackModal)}
+              onContinue={() => setCurrentModal(6)}
             />
           )}
           {currentModal === 6 && (
