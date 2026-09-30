@@ -1,6 +1,6 @@
 /**
- * Friday 3pm Melbourne weekly roundup email to Ben.
- * Counts the labelled Saturday–Friday week (Saturday 00:00 through send time).
+ * Tuesday 7am Melbourne weekly roundup email to Ben.
+ * Counts Monday 5pm → Monday 5pm (the week that ended yesterday).
  */
 
 const nodemailer = require("nodemailer");
@@ -10,9 +10,9 @@ const sharp = require("sharp");
 const TZ = "Australia/Melbourne";
 const TO_ADDRESS = "ben@superiorgrannyflats.com.au";
 const SUBJECT = "Weekly Sales Round Up";
-const FRIDAY_INDEX = 5;
-const SATURDAY_INDEX = 6;
-const SEND_HOUR = 15;
+const MONDAY_INDEX = 1;
+const SEND_HOUR = 7;
+const PERIOD_HOUR = 17;
 const TICK_MS = 20 * 1000;
 const FAIL_BACKOFF_MS = 2 * 60 * 1000;
 const WEEKDAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
@@ -22,6 +22,7 @@ const QLD_MAROON = "#D54358";
 const STREAM_GREEN = "#92D050";
 const SOLD_IMAGE_PATH = path.join(__dirname, "..", "frontend", "src", "images", "sold.webp");
 const SOLD_LABEL_WIDTH_PX = 120;
+let roundupSchemaReady = false;
 
 function melbourneParts(now = new Date()) {
   const parts = {};
@@ -70,12 +71,13 @@ function melbourneLocalToUtc(ymd, hour, minute) {
   return new Date(`${naive}+10:00`);
 }
 
-function previousFriday3pm(now = new Date()) {
+function mostRecentCompletedMondayYmd(now = new Date()) {
   const clock = melbourneParts(now);
-  let daysBack = (clock.weekdayIndex - FRIDAY_INDEX + 7) % 7;
-  if (daysBack === 0) daysBack = 7;
-  const friday = addDaysYmd(clock.date, -daysBack);
-  return melbourneLocalToUtc(friday, SEND_HOUR, 0);
+  const daysSinceMonday = (clock.weekdayIndex - MONDAY_INDEX + 7) % 7;
+  const thisMonday = addDaysYmd(clock.date, -daysSinceMonday);
+  const thisMonday5pm = melbourneLocalToUtc(thisMonday, PERIOD_HOUR, 0);
+  if (now.getTime() >= thisMonday5pm.getTime()) return thisMonday;
+  return addDaysYmd(thisMonday, -7);
 }
 
 function formatAuDate(ymd) {
@@ -85,37 +87,58 @@ function formatAuDate(ymd) {
 }
 
 function reportingWeekDates(now = new Date()) {
-  const clock = melbourneParts(now);
-  const daysSinceSaturday = (clock.weekdayIndex - SATURDAY_INDEX + 7) % 7;
-  const saturday = addDaysYmd(clock.date, -daysSinceSaturday);
-  const friday = addDaysYmd(saturday, 6);
-  return { saturday, friday };
+  const endMonday = mostRecentCompletedMondayYmd(now);
+  const startMonday = addDaysYmd(endMonday, -7);
+  return { startMonday, endMonday };
 }
 
 function reportingWeekPeriod(now = new Date()) {
-  const { saturday, friday } = reportingWeekDates(now);
+  const { startMonday, endMonday } = reportingWeekDates(now);
   return {
-    saturday,
-    friday,
-    start: melbourneLocalToUtc(saturday, 0, 0),
-    endExclusive: melbourneLocalToUtc(addDaysYmd(friday, 1), 0, 0),
+    startMonday,
+    endMonday,
+    start: melbourneLocalToUtc(startMonday, PERIOD_HOUR, 0),
+    endExclusive: melbourneLocalToUtc(endMonday, PERIOD_HOUR, 0),
   };
 }
 
-/** Previous completed Sat–Fri week (the last roundup week when called mid-week). */
+function roundupSendAt(period) {
+  return melbourneLocalToUtc(addDaysYmd(period.endMonday, 1), SEND_HOUR, 0);
+}
+
+/** Previous completed Mon 5pm–Mon 5pm week. */
 function lastCompletedReportingWeekPeriod(now = new Date()) {
-  const current = reportingWeekDates(now);
-  const saturday = addDaysYmd(current.saturday, -7);
-  const friday = addDaysYmd(current.friday, -7);
-  return {
-    saturday,
-    friday,
-    start: melbourneLocalToUtc(saturday, 0, 0),
-    endExclusive: melbourneLocalToUtc(addDaysYmd(friday, 1), 0, 0),
-  };
+  const current = reportingWeekPeriod(now);
+  return reportingWeekPeriod(new Date(current.start.getTime() - 1000));
 }
 
 async function ensureRoundupColumns(pool) {
+  if (roundupSchemaReady) return;
+
+  const existing = await pool.query(`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE (table_schema = 'public' AND table_name = 'projects' AND column_name IN (
+        'quote_contact_at', 'quote_reminder_4_sent_at', 'hotlist_added_at', 'sold_at'
+      ))
+      OR (table_schema = 'public' AND table_name = 'settings' AND column_name IN (
+        'weekly_roundup_sent_on', 'weekly_roundup_period_end'
+      ))
+  `);
+  const have = new Set(existing.rows.map((row) => `${row.table_name}.${row.column_name}`));
+  const needed = [
+    "projects.quote_contact_at",
+    "projects.quote_reminder_4_sent_at",
+    "projects.hotlist_added_at",
+    "projects.sold_at",
+    "settings.weekly_roundup_sent_on",
+    "settings.weekly_roundup_period_end",
+  ];
+  if (needed.every((key) => have.has(key))) {
+    roundupSchemaReady = true;
+    return;
+  }
+
   await pool.query(`
     ALTER TABLE projects
       ADD COLUMN IF NOT EXISTS quote_contact_at TIMESTAMPTZ,
@@ -173,6 +196,7 @@ async function ensureRoundupColumns(pool) {
     WHERE sold_at IS NULL
       AND project_log ILIKE '%Pre-Engagement Phase (Sold)%'
   `);
+  roundupSchemaReady = true;
 }
 
 /** VIC / QLD from stream when set, otherwise project state. */
@@ -344,15 +368,20 @@ function textRegionLines(vic, qld, other) {
   return lines;
 }
 
+function formatWeekSpan(weekDates) {
+  const start = formatAuDate(weekDates.startMonday);
+  const end = formatAuDate(weekDates.endMonday);
+  return `Mon ${start} 5pm to Mon ${end} 5pm`;
+}
+
 function buildRoundupContent(figures, weekDates) {
-  const sat = formatAuDate(weekDates.saturday);
-  const fri = formatAuDate(weekDates.friday);
+  const span = formatWeekSpan(weekDates);
   const pad = (label) => label.padEnd(8, " ");
   const text = [
     "Hi Team,",
     "",
     "Please see below the weekly sales round up for the week",
-    `Sat ${sat} to Friday ${fri}`,
+    span,
     "",
     "This week we had;",
     "",
@@ -376,7 +405,7 @@ function buildRoundupContent(figures, weekDates) {
     "Hi Team,",
     "",
     "Please see below the weekly sales round up for the week",
-    `Sat ${escapeHtml(sat)} to Friday ${escapeHtml(fri)}`,
+    escapeHtml(span),
     "",
     "This week we had;",
   ]
@@ -421,6 +450,10 @@ async function sendRoundupEmail(helpers, { from, text, html, attachments }) {
     host,
     port,
     secure,
+    requireTLS: !secure,
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 60000,
     auth: { user: smtpUser, pass: smtpPass },
   });
   await transporter.sendMail({
@@ -445,11 +478,11 @@ async function getPeriodStart(pool, now) {
     const d = prev instanceof Date ? prev : new Date(prev);
     if (!Number.isNaN(d.getTime())) return d;
   }
-  return previousFriday3pm(now);
+  return reportingWeekPeriod(now).endExclusive;
 }
 
-async function markRoundupSent(pool, { melbourneDate, periodEnd, markFriday }) {
-  if (markFriday) {
+async function markRoundupSent(pool, { melbourneDate, periodEnd, markSent }) {
+  if (markSent) {
     await pool.query(
       `UPDATE settings
        SET weekly_roundup_sent_on = $1, weekly_roundup_period_end = $2, updated_at = NOW()
@@ -466,16 +499,14 @@ async function markRoundupSent(pool, { melbourneDate, periodEnd, markFriday }) {
   }
 }
 
-async function sendWeeklyRoundup(pool, helpers, { markFriday = false, skipMark = false } = {}) {
+async function sendWeeklyRoundup(pool, helpers, { markSent = false, markFriday = false, skipMark = false } = {}) {
   const now = new Date();
-  const clock = melbourneParts(now);
   const week = reportingWeekPeriod(now);
-  const periodStart = week.start;
-  const periodEnd = now.getTime() < week.endExclusive.getTime() ? now : week.endExclusive;
-  const figures = await collectWeeklyFigures(pool, periodStart, periodEnd);
+  const sendDay = addDaysYmd(week.endMonday, 1);
+  const figures = await collectWeeklyFigures(pool, week.start, week.endExclusive);
   const from = await helpers.getDefaultSystemSmtpFrom(pool);
   if (!from) throw new Error("No SMTP From address for weekly roundup");
-  const { text, html } = buildRoundupContent(figures, reportingWeekDates(now));
+  const { text, html } = buildRoundupContent(figures, week);
   const attachments = [];
   try {
     attachments.push(await loadSoldImageAttachment());
@@ -485,9 +516,9 @@ async function sendWeeklyRoundup(pool, helpers, { markFriday = false, skipMark =
   await sendRoundupEmail(helpers, { from, text, html, attachments });
   if (!skipMark) {
     await markRoundupSent(pool, {
-      melbourneDate: clock.date,
-      periodEnd: now,
-      markFriday,
+      melbourneDate: sendDay,
+      periodEnd: week.endExclusive,
+      markSent: markSent || markFriday,
     });
   }
   console.log(
@@ -497,22 +528,25 @@ async function sendWeeklyRoundup(pool, helpers, { markFriday = false, skipMark =
 }
 
 async function runWeeklyRoundupTick(pool, helpers) {
-  await ensureRoundupColumns(pool);
-  const clock = melbourneParts();
+  try {
+    await ensureRoundupColumns(pool);
+  } catch (e) {
+    console.error("[weekly-roundup] schema:", e.message || e);
+  }
+  const now = new Date();
+  const week = reportingWeekPeriod(now);
+  const sendDay = addDaysYmd(week.endMonday, 1);
+  const sendAt = roundupSendAt(week);
   const sentOnRes = await pool.query(`SELECT weekly_roundup_sent_on FROM settings WHERE id = 1`);
   const sentOn = sentOnRes.rows[0]?.weekly_roundup_sent_on
     ? String(sentOnRes.rows[0].weekly_roundup_sent_on).slice(0, 10)
     : "";
-  const fridayWindow =
-    clock.weekdayIndex === FRIDAY_INDEX && clock.minutesOfDay >= SEND_HOUR * 60;
-  const alreadyThisFriday = sentOn === clock.date;
 
-  if (fridayWindow && !alreadyThisFriday) {
-    await sendWeeklyRoundup(pool, helpers, { markFriday: true });
-    return { sent: "weekly" };
-  }
+  if (now.getTime() < sendAt.getTime()) return { sent: null };
+  if (sentOn === sendDay) return { sent: null };
 
-  return { sent: null };
+  await sendWeeklyRoundup(pool, helpers, { markSent: true });
+  return { sent: "weekly" };
 }
 
 function startWeeklyRoundupScheduler(helpers) {

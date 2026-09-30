@@ -12,6 +12,7 @@ import {
   isExcludedFromProjectLists,
   isOnHoldFlag,
   isPermitPhaseStatus,
+  isReadyToBuildStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
 import { fetchProjectsList, getCachedProjectsList } from "../utils/projectsListCache";
@@ -38,11 +39,12 @@ const STATUS_FILTERS_ROW_1 = [
 
 const STATUS_FILTERS_ROW_2 = [
   { key: "permit", label: "Permit" },
+  { key: "readyToBuild", label: "Ready to Build" },
   { key: "construction", label: "Construction" },
-  { key: "onHold", label: "On Hold" },
 ];
 
 const STATUS_FILTERS_ROW_3 = [
+  { key: "onHold", label: "On Hold" },
   { key: "archive", label: "Archive" },
 ];
 
@@ -58,6 +60,8 @@ function matchesStatusFilter(project, statusFilter) {
       return isDesignPhaseStatus(project.status);
     case "permit":
       return isPermitPhaseStatus(project.status);
+    case "readyToBuild":
+      return isReadyToBuildStatus(project.status);
     case "construction":
       return isConstructionPhaseStatus(project.status);
     case "onHold":

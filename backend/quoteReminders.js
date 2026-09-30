@@ -107,6 +107,8 @@ function replaceQuoteReminderTokens(text, quote) {
     "{Suburb}": quote?.suburb || "",
     "{State}": quote?.state || "",
     "{ClientName}": firstNameOnly(quote?.client_name || quote?.name || ""),
+    "{ClientEmail}": quote?.email || "",
+    "{ClientPhone}": quote?.phone || "",
     "{Contact1}": quote?.email || "",
     "{Email}": quote?.email || "",
     "{Phone}": quote?.phone || "",

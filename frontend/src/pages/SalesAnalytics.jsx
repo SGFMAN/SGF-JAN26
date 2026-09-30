@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import useAppLogo from "../hooks/useAppLogo.js";
 import {
+  averageJobsPerElapsedMonth,
   computeMonthlySalesBreakdown,
   computePieValueBreakdown,
   computePreviousPeriodMonthlyBreakdown,
@@ -15,6 +16,7 @@ import {
   getCurrentFinancialYearEnd,
   getCurrentPeriodSlotIndex,
   getEffectivePeriodMonthIndexForSlot,
+  getPeriodMonthSlots,
   getPreviousPeriodKey,
   isCurrentPeriod,
   SALES_YEAR_VIEW,
@@ -40,6 +42,23 @@ const MONTHS = [
 
 const SALES_ANALYTICS_MONTHLY_TARGETS_KEY = "sgf_salesAnalytics_monthlyTargets_v1";
 const DEFAULT_MONTHLY_SALES_TARGETS = { vic: 10, qld: 10, greenStreams: 6 };
+
+function formatAverageJobs(n) {
+  if (!Number.isFinite(n)) return "";
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function averageLineBottomPx(average) {
+  const maxJobsRounded = 50;
+  const barAreaHeight = 550;
+  const bottomOffset = (600 - barAreaHeight) / 2;
+  const clamped = Math.min(Math.max(Number(average) || 0, 0), maxJobsRounded);
+  return {
+    bottom: bottomOffset + (clamped / maxJobsRounded) * barAreaHeight,
+    clamped,
+  };
+}
 
 function clampMonthlyTargetInt(value, fallback) {
   const v = typeof value === "number" ? value : parseInt(String(value), 10);
@@ -544,6 +563,8 @@ export default function SalesAnalytics() {
   const [yearView, setYearView] = useState(SALES_YEAR_VIEW.CALENDAR);
   const [selectedView, setSelectedView] = useState("bar"); // "bar" | "line" | "pie" | "rates" | "targets"
   const [showLastYearOutline, setShowLastYearOutline] = useState(true);
+  const [showBarAverage, setShowBarAverage] = useState(false);
+  const [showBarPreviousAverage, setShowBarPreviousAverage] = useState(false);
   const [showMonthlyTargets, setShowMonthlyTargets] = useState(false);
   const [showAdjustedTargets, setShowAdjustedTargets] = useState(false);
   const [showBarVic, setShowBarVic] = useState(true);
@@ -675,6 +696,36 @@ export default function SalesAnalytics() {
     () => computePreviousPeriodMonthlyBreakdown(projects, selectedYear, yearView, streamsCatalog),
     [projects, selectedYear, yearView, streamsCatalog]
   );
+
+  const barMonthlyAverage = React.useMemo(() => {
+    const slots = getPeriodMonthSlots(selectedYear, yearView);
+    const counts = monthlyData.map((month) => {
+      let count = 0;
+      if (showBarVic) count += month.vicSalesCount || 0;
+      if (showBarQld) count += month.qldSalesCount || 0;
+      if (showBarGreen) count += month.greenStreamSalesCount || 0;
+      return count;
+    });
+    return averageJobsPerElapsedMonth(
+      counts,
+      slots,
+      isCurrentPeriod(selectedYear, yearView),
+      new Date()
+    );
+  }, [monthlyData, selectedYear, yearView, showBarVic, showBarQld, showBarGreen]);
+
+  const barPreviousYearAverage = React.useMemo(() => {
+    const previousKey = getPreviousPeriodKey(selectedYear, yearView);
+    const slots = getPeriodMonthSlots(previousKey, yearView);
+    const counts = previousYearData.map((month) => {
+      let count = 0;
+      if (showBarVic) count += month.vicSalesCount || 0;
+      if (showBarQld) count += month.qldSalesCount || 0;
+      if (showBarGreen) count += month.greenStreamSalesCount || 0;
+      return count;
+    });
+    return averageJobsPerElapsedMonth(counts, slots, false, new Date());
+  }, [previousYearData, selectedYear, yearView, showBarVic, showBarQld, showBarGreen]);
 
   const pieData = React.useMemo(() => {
     const { vic, qld, green, total } = pieValueBreakdown;
@@ -863,6 +914,52 @@ export default function SalesAnalytics() {
             >
               Show Last Year
             </button>
+            {selectedView === "bar" && (
+            <>
+            <button
+              type="button"
+              aria-pressed={showBarAverage}
+              title="Horizontal line at the average jobs per month. Finished months count in full. A month in progress counts only for the days elapsed, so on 15 March only about half of that month's sales are included."
+              onClick={() => setShowBarAverage((v) => !v)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: showBarAverage ? "2px solid #323233" : "2px solid transparent",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                color: MONUMENT,
+                background: WHITE,
+                cursor: "pointer",
+                outline: "none",
+                whiteSpace: "nowrap",
+                boxShadow: showBarAverage ? "inset 0 0 0 1px rgba(0,0,0,0.06)" : "none",
+              }}
+            >
+              Show Average
+            </button>
+            <button
+              type="button"
+              aria-pressed={showBarPreviousAverage}
+              title="Horizontal line at the previous year's average jobs per month. That year is finished, so every month counts in full."
+              onClick={() => setShowBarPreviousAverage((v) => !v)}
+              style={{
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: showBarPreviousAverage ? "2px solid #C8960A" : "2px solid transparent",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                color: MONUMENT,
+                background: WHITE,
+                cursor: "pointer",
+                outline: "none",
+                whiteSpace: "nowrap",
+                boxShadow: showBarPreviousAverage ? "inset 0 0 0 1px rgba(0,0,0,0.06)" : "none",
+              }}
+            >
+              Show Last Year Average
+            </button>
+            </>
+            )}
             <button
               type="button"
               aria-pressed={showMonthlyTargets}
@@ -1989,6 +2086,86 @@ export default function SalesAnalytics() {
                         );
                       })}
                       </div>
+                      {showBarAverage && barMonthlyAverage && (() => {
+                        const { bottom, clamped } = averageLineBottomPx(barMonthlyAverage.average);
+                        const label = formatAverageJobs(barMonthlyAverage.average);
+                        const monthsLabel = formatAverageJobs(barMonthlyAverage.months);
+                        return (
+                          <div
+                            title={`Average ${label} jobs per month across ${monthsLabel} months. A month in progress counts only for the share of days elapsed.`}
+                            style={{
+                              position: "absolute",
+                              left: "10px",
+                              right: "10px",
+                              bottom: `${bottom}px`,
+                              height: 0,
+                              borderTop: "3px solid #111111",
+                              boxShadow: "0 -1px 0 #ffffff, 0 1px 0 #ffffff",
+                              zIndex: 6,
+                              pointerEvents: "none",
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "absolute",
+                                right: 0,
+                                top: clamped >= 46 ? 6 : -22,
+                                background: "rgba(255,255,255,0.94)",
+                                color: MONUMENT,
+                                fontSize: "0.75rem",
+                                fontWeight: 800,
+                                lineHeight: 1,
+                                padding: "3px 6px",
+                                borderRadius: "4px",
+                                border: "1px solid #111111",
+                              }}
+                            >
+                              Avg {label}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      {showBarPreviousAverage && barPreviousYearAverage && (() => {
+                        const { bottom, clamped } = averageLineBottomPx(barPreviousYearAverage.average);
+                        const label = formatAverageJobs(barPreviousYearAverage.average);
+                        const nearCurrent =
+                          showBarAverage &&
+                          barMonthlyAverage &&
+                          Math.abs(barMonthlyAverage.average - barPreviousYearAverage.average) < 2;
+                        return (
+                          <div
+                            title={`${previousPeriodLabel} average ${label} jobs per month (full year).`}
+                            style={{
+                              position: "absolute",
+                              left: "10px",
+                              right: "10px",
+                              bottom: `${bottom}px`,
+                              height: 0,
+                              borderTop: "3px dashed #C8960A",
+                              zIndex: 6,
+                              pointerEvents: "none",
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "absolute",
+                                left: 0,
+                                top: clamped >= 46 ? 6 : nearCurrent ? 4 : -22,
+                                background: "rgba(255,255,255,0.94)",
+                                color: "#6B5200",
+                                fontSize: "0.75rem",
+                                fontWeight: 800,
+                                lineHeight: 1,
+                                padding: "3px 6px",
+                                borderRadius: "4px",
+                                border: "1px solid #C8960A",
+                              }}
+                            >
+                              {previousPeriodLabel} avg {label}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </>

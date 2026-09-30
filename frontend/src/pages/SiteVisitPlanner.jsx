@@ -6,6 +6,7 @@ import "react-day-picker/style.css";
 import { isUserAdmin } from "../utils/auth";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
+import { replaceClientContactTokens } from "../utils/emailClientTokens";
 import {
   formatDepositPaidToken,
   formatDepositStatusToken,
@@ -280,6 +281,7 @@ export default function SiteVisitPlanner() {
     replaced = replaced.replace(/{ProjectName}/g, project.name || "");
     replaced = replaceStreamEmailToken(replaced, project);
     replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
+    replaced = replaceClientContactTokens(replaced, project);
     replaced = replaced.replace(/{ProjectCost}/g, project.project_cost ? `$${project.project_cost.toLocaleString()}` : "");
     replaced = replaced.replace(/{Street}/g, project.street || "");
     replaced = replaced.replace(/{Suburb}/g, project.suburb || "");
@@ -1236,6 +1238,27 @@ ${rows || "<div>No site visits in this group.</div>"}
             }}
           >
             Permit
+          </Link>
+          <Link
+            to="/ready-to-build"
+            style={{
+              background: "transparent",
+              color: UI.textSecondary,
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 8px",
+              fontSize: "0.95rem",
+              fontWeight: 500,
+              textAlign: "center",
+              textDecoration: "none",
+              letterSpacing: "0.5px",
+              cursor: "pointer",
+              transition: "background 0.18s, color 0.15s",
+              marginBottom: "0px",
+              display: "block",
+            }}
+          >
+            Ready to Build
           </Link>
           <Link
             to="/construction-phase"

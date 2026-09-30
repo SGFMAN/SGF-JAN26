@@ -7,6 +7,7 @@ import { fetchProjectsList } from "../utils/projectsListCache.js";
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
+import { replaceClientContactTokens } from "../utils/emailClientTokens";
 import { replaceContractAndColorStatusTokens } from "../utils/designPhaseStatusTiles";
 import {
   formatDepositPaidToken,
@@ -20,6 +21,28 @@ const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const VIC_BLUE_LIGHT = STREAM.vicBlueLight;
 const API_URL = "";
+
+const BODY_TOKEN_GROUPS = [
+  { id: "project", label: "PROJECT", tokens: ["ProjectName", "Stream"] },
+  { id: "client", label: "CLIENT", tokens: ["ClientName", "ClientEmail", "ClientPhone"] },
+  { id: "sales", label: "SALES", tokens: ["DepositPaid", "DepositStatus", "DepositBalance", "Salesperson", "SalespersonPosition", "SalespersonPhone", "SalespersonEmail"] },
+  { id: "user", label: "USER", tokens: ["UserName", "UserPosition", "UserEmail"] },
+  { id: "site", label: "SITE VISIT", tokens: ["SiteVisitScheduledDate", "SiteVisitScheduledPeriod"] },
+  { id: "misc", label: "Misc", tokens: ["Draftsperson", "ColourConsultant", "Contract Status", "Color Status", "LINK"] },
+];
+
+function bodyTokenButtonStyle(isLink) {
+  return {
+    padding: "6px 12px",
+    fontSize: "0.85rem",
+    fontWeight: 500,
+    color: MONUMENT,
+    background: isLink ? VIC_BLUE_LIGHT : WHITE,
+    border: `1px solid ${SECTION_GREY}`,
+    borderRadius: "6px",
+    cursor: "pointer",
+  };
+}
 const TEMPLATE_TEST_EMAIL_TO = "ben@superiorgrannyflats.com.au";
 const TEMPLATE_SECTIONS = ["Colours", "Drawings", "New Project", "Misc"];
 const ADD_NEW_GROUP_VALUE = "__add_new_group__";
@@ -89,6 +112,7 @@ async function applyTemplateTestTokens(text, project, opts = {}) {
   replaced = replaced.replace(/{ProjectName}/g, project.name || "");
   replaced = replaceStreamEmailToken(replaced, project);
   replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
+  replaced = replaceClientContactTokens(replaced, project);
   replaced = replaced.replace(
     /{ProjectCost}/g,
     project.project_cost ? `$${Number(project.project_cost).toLocaleString()}` : ""
@@ -197,6 +221,7 @@ export default function EmailTemplate() {
   const [copySourceTemplateId, setCopySourceTemplateId] = useState(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [bodyTokenGroupId, setBodyTokenGroupId] = useState("project");
   const [loading, setLoading] = useState(true);
   const [openSection, setOpenSection] = useState("Colours");
   const [testSending, setTestSending] = useState(false);
@@ -1090,327 +1115,48 @@ export default function EmailTemplate() {
         <h2 style={{ fontSize: "1.15rem", marginTop: 0, marginBottom: 0, color: MONUMENT, flexShrink: 0 }}>
           Body
         </h2>
-        <div style={{ display: "flex", gap: "8px", marginBottom: "8px", flexWrap: "wrap", flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={() => bodyEditorRef.current?.insertLink?.()}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: VIC_BLUE_LIGHT,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            [LINK]
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "ProjectName")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{ProjectName}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "Stream")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{Stream}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "ClientName")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{ClientName}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "DepositPaid")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{DepositPaid}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "DepositStatus")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{DepositStatus}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "DepositBalance")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{DepositBalance}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "Salesperson")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{Salesperson}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "SalespersonPosition")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{SalespersonPosition}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "SalespersonPhone")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{SalespersonPhone}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "SalespersonEmail")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{SalespersonEmail}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "UserName")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{UserName}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "UserPosition")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{UserPosition}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "UserEmail")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{UserEmail}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "SiteVisitScheduledDate")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{SiteVisitScheduledDate}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "Draftsperson")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{Draftsperson}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "SiteVisitScheduledPeriod")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{SiteVisitScheduledPeriod}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "ColourConsultant")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{ColourConsultant}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "Contract Status")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{Contract Status}"}
-          </button>
-          <button
-            type="button"
-            onClick={() => insertToken("body", "Color Status")}
-            style={{
-              padding: "6px 12px",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              color: MONUMENT,
-              background: WHITE,
-              border: `1px solid ${SECTION_GREY}`,
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            {"{Color Status}"}
-          </button>
+        <div style={{ flexShrink: 0, marginBottom: "8px" }}>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
+            {BODY_TOKEN_GROUPS.map((group) => {
+              const selected = bodyTokenGroupId === group.id;
+              return (
+                <button
+                  key={group.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setBodyTokenGroupId(group.id)}
+                  style={{
+                    padding: "5px 10px",
+                    fontSize: "0.75rem",
+                    fontWeight: 700,
+                    letterSpacing: "0.03em",
+                    color: selected ? PAGE_TEXT : MONUMENT,
+                    background: selected ? STREAM.vicBlue : STREAM.vicBlueLight,
+                    border: `1px solid ${STREAM.vicBlue}`,
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {group.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            {(BODY_TOKEN_GROUPS.find((group) => group.id === bodyTokenGroupId) || BODY_TOKEN_GROUPS[0]).tokens.map((token) => {
+              const isLink = token === "LINK";
+              return (
+                <button
+                  key={token}
+                  type="button"
+                  onClick={() => (isLink ? bodyEditorRef.current?.insertLink?.() : insertToken("body", token))}
+                  style={bodyTokenButtonStyle(isLink)}
+                >
+                  {isLink ? "[LINK]" : `{${token}}`}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <EmailBodyEditor
           ref={bodyEditorRef}

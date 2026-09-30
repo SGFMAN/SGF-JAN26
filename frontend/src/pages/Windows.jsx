@@ -7,6 +7,7 @@ import {
 } from "../utils/emailGeneralSettings";
 import { getApiHeaders } from "../utils/auth";
 import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
+import { replaceClientContactTokens } from "../utils/emailClientTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI, INDICATOR } from "../utils/uiThemeTokens.js";
@@ -413,6 +414,7 @@ export default function Windows({ project, onUpdate, showResetWindowData = false
           .replace(/\{SUBURB\}/g, suburb)
           .replace(/\{STREET\}/g, street)
           .replace(/\{ProjectName\}/g, projectName);
+        body = replaceClientContactTokens(body, project);
         body = replaceStreamEmailToken(body, project);
 
         setEmailBody(

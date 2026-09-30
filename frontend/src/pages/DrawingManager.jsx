@@ -39,6 +39,7 @@ import {
 } from "../utils/draftspersonUsers";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { resolveLoggedInUserEmailTokens } from "../utils/emailUserTokens";
+import { clientContactTokenValue } from "../utils/emailClientTokens";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import {
   isLatestRevisionWorkingDrawingsApproved,
@@ -591,6 +592,10 @@ export default function DrawingManager() {
         projectname: projectName,
         ClientName: clientName,
         clientname: clientName,
+        ClientEmail: clientContactTokenValue(project, "email"),
+        clientemail: clientContactTokenValue(project, "email"),
+        ClientPhone: clientContactTokenValue(project, "phone"),
+        clientphone: clientContactTokenValue(project, "phone"),
         Draftsperson: draftspersonName,
         draftsperson: draftspersonName,
         Position: draftspersonPosition,

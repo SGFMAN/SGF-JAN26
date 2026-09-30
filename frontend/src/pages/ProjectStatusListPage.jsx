@@ -31,6 +31,7 @@ export default function ProjectStatusListPage({
   pathname,
   matchStatus,
   emptyLabel,
+  getCardNote,
 }) {
   const logo = useAppLogo();
   const location = useLocation();
@@ -273,7 +274,7 @@ export default function ProjectStatusListPage({
                       {showGroupHeader && (
                         <ProjectListGroupHeader label={groupKey} isFirst={index === 0} />
                       )}
-                      <ProjectRectangleCard project={project} />
+                      <ProjectRectangleCard project={project} note={getCardNote?.(project) || ""} />
                     </Fragment>
                   );
                 })}

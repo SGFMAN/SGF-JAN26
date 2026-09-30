@@ -10,6 +10,7 @@ import { CLASSIFICATION_OPTIONS, CLASSIFICATION_ABBREV_MAP as CLASSIFICATION_MAP
 import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
+import { replaceClientContactTokens } from "../utils/emailClientTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import {
   formatDepositPaidToken,
@@ -364,6 +365,7 @@ export default function NewProject4({ isOpen, onClose, formData, onFormDataChang
     replaced = replaced.replace(/{ProjectName}/g, project.name || "");
     replaced = replaceStreamEmailToken(replaced, project);
     replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
+    replaced = replaceClientContactTokens(replaced, project);
     replaced = replaced.replace(/{ProjectCost}/g, project.project_cost ? `$${project.project_cost.toLocaleString()}` : "");
     replaced = replaced.replace(/{Street}/g, project.street || "");
     replaced = replaced.replace(/{Suburb}/g, project.suburb || "");

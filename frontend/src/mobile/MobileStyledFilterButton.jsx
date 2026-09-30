@@ -87,6 +87,7 @@ export const MOBILE_STATUS_BUTTON_IDS = {
   preEngagement: 4,
   design: 4,
   permit: 4,
+  readyToBuild: 4,
   construction: 4,
   onHold: 4,
   archive: 4,

@@ -7,6 +7,7 @@ import {
   isExcludedFromProjectLists,
   isOnHoldFlag,
   isPermitPhaseStatus,
+  isReadyToBuildStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
 import { Link } from "react-router-dom";
@@ -42,6 +43,7 @@ const STATUS_MANAGER_VIEWS = [
   { key: "pre-engagement", label: "Pre-Engagement", match: (project) => isPreEngagementPhaseStatus(project.status) },
   { key: "design", label: "Design", match: (project) => isDesignPhaseStatus(project.status) },
   { key: "permit", label: "Permit", match: (project) => isPermitPhaseStatus(project.status) },
+  { key: "ready-to-build", label: "Ready to Build", match: (project) => isReadyToBuildStatus(project.status) },
   { key: "construction", label: "Construction", match: (project) => isConstructionPhaseStatus(project.status) },
   {
     key: "on-hold",

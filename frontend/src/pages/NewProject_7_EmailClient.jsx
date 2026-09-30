@@ -14,6 +14,7 @@ import {
   replaceDepositBalanceToken,
 } from "../utils/projectDeposit";
 import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
+import { replaceClientContactTokens } from "../utils/emailClientTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI } from "../utils/uiThemeTokens.js";
@@ -84,6 +85,7 @@ export default function NewProject_7_EmailClient({
     const clientFullName = project.client_name || "";
     const clientFirstName = clientFullName.trim().split(/\s+/)[0] || clientFullName;
     replaced = replaced.replace(/{ClientName}/g, clientFirstName);
+    replaced = replaceClientContactTokens(replaced, project);
     replaced = replaced.replace(/{Salesperson}/g, project.salesperson || "");
 
     // Project cost

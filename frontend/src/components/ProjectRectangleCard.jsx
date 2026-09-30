@@ -6,7 +6,7 @@ import { projectPath } from "../utils/projectUrl";
 import { OnHoldSash, CancelledSash } from "./ProjectStatusSash";
 import { isOnHoldFlag } from "../utils/projectStatus";
 
-import { UI, PROJECT_CARD, outlineBorder } from "../utils/uiThemeTokens.js";
+import { UI, PROJECT_CARD, STREAM, outlineBorder } from "../utils/uiThemeTokens.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const CARD_TEXT = PROJECT_CARD.text;
@@ -17,9 +17,9 @@ const CARD_H = 100;
 
 /**
  * Same dark rectangle as the main /projects (Design Phase) grid.
- * @param {{ project: object, fitColumn?: boolean, onInteract?: () => void }} props — when fitColumn, scales to parent width. If onInteract is set, it runs instead of linking to the project page.
+ * @param {{ project: object, fitColumn?: boolean, onInteract?: () => void, note?: string }} props — when fitColumn, scales to parent width. If onInteract is set, it runs instead of linking to the project page.
  */
-export default function ProjectRectangleCard({ project, fitColumn = false, onInteract }) {
+export default function ProjectRectangleCard({ project, fitColumn = false, onInteract, note }) {
   const measureRef = useRef(null);
   const [scale, setScale] = useState(1);
 
@@ -166,6 +166,29 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
     face
   );
 
+  const caption = note ? (
+    <div
+      style={{
+        marginTop: "6px",
+        width: fitColumn ? "100%" : `${CARD_W}px`,
+        fontSize: "0.78rem",
+        fontWeight: 700,
+        color: STREAM.qldRed,
+        textAlign: "center",
+        lineHeight: 1.25,
+      }}
+    >
+      {note}
+    </div>
+  ) : null;
+
+  const block = (
+    <div style={{ width: fitColumn ? "100%" : `${CARD_W}px`, minWidth: 0 }}>
+      {inner}
+      {caption}
+    </div>
+  );
+
   const outerStyle = {
     textDecoration: "none",
     display: "block",
@@ -188,14 +211,14 @@ export default function ProjectRectangleCard({ project, fitColumn = false, onInt
           }
         }}
       >
-        {inner}
+        {block}
       </div>
     );
   }
 
   return (
     <Link to={projectPath(project)} style={outerStyle}>
-      {inner}
+      {block}
     </Link>
   );
 }

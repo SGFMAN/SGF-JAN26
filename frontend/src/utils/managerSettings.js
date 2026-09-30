@@ -3,10 +3,12 @@ import {
   PRE_ENGAGEMENT_PHASE,
   DESIGN_PHASE,
   PERMIT_PHASE,
+  READY_TO_BUILD,
   CONSTRUCTION_PHASE,
   isPreEngagementPhaseStatus,
   isDesignPhaseStatus,
   isPermitPhaseStatus,
+  isReadyToBuildStatus,
   isConstructionPhaseStatus,
   isCancelledStatus,
   isCompleteStatus,
@@ -105,6 +107,7 @@ export function projectMatchesNextOutsIncludedPhase(status, includedPhases) {
   if (set.has(PRE_ENGAGEMENT_PHASE) && isPreEngagementPhaseStatus(status)) return true;
   if (set.has(DESIGN_PHASE) && isDesignPhaseStatus(status)) return true;
   if (set.has(PERMIT_PHASE) && isPermitPhaseStatus(status)) return true;
+  if (set.has(READY_TO_BUILD) && isReadyToBuildStatus(status)) return true;
   if (set.has(CONSTRUCTION_PHASE) && isConstructionPhaseStatus(status)) return true;
   if (set.has("Cancelled") && isCancelledStatus(status)) return true;
   if (set.has("Complete") && isCompleteStatus(status)) return true;

@@ -239,6 +239,8 @@ export default function ProjectPage() {
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshWarning, setRefreshWarning] = useState("");
+  const projectRef = useRef(null);
   const [activeView, setActiveView] = useState("overview");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -443,9 +445,15 @@ export default function ProjectPage() {
       const data = await response.json();
       console.log("Project data:", data);
       console.log("on_hold value in fetched project:", data?.on_hold, "type:", typeof data?.on_hold);
+      projectRef.current = data;
       setProject(data);
+      setRefreshWarning("");
     } catch (err) {
       console.error("Error fetching project:", err);
+      if (skipLoading && projectRef.current) {
+        setRefreshWarning("Could not refresh this project. What you are typing is still here.");
+        return;
+      }
       setError(err.message || "Failed to load project");
     } finally {
       if (!skipLoading) {
@@ -1153,6 +1161,9 @@ export default function ProjectPage() {
           )}
           {!loading && !error && project && (
             <>
+              {refreshWarning ? (
+                <p style={{ color: "#8a5a00", margin: "0 0 12px" }}>{refreshWarning}</p>
+              ) : null}
               {activeView === "overview" && <Overview project={project} />}
               {activeView === "project-info" && (
                 <div

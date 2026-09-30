@@ -115,3 +115,45 @@ export function computePieValueBreakdown(projects, streams) {
   const total = vicTotal + qldTotal + greenTotal;
   return { vic: vicTotal, qld: qldTotal, green: greenTotal, total };
 }
+
+/**
+ * Share of a chart month that counts toward the average.
+ * Past periods count every month in full. In the current period, finished months
+ * count as 1, the month in progress counts as days elapsed ÷ days in that month
+ * (15 March is 15/31), and months that have not started count as 0.
+ */
+export function periodMonthElapsedFraction(slot, periodIsCurrent, referenceDate = new Date()) {
+  if (!periodIsCurrent) return 1;
+  const slotYear = parseInt(String(slot?.calendarYear), 10);
+  const slotMonth = slot?.monthIndex;
+  if (!Number.isFinite(slotYear) || !Number.isFinite(slotMonth)) return 0;
+  const year = referenceDate.getFullYear();
+  const month = referenceDate.getMonth();
+  if (slotYear < year || (slotYear === year && slotMonth < month)) return 1;
+  if (slotYear === year && slotMonth === month) {
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    if (daysInMonth <= 0) return 0;
+    return referenceDate.getDate() / daysInMonth;
+  }
+  return 0;
+}
+
+/**
+ * Average jobs per month across months that have started.
+ * Finished months count in full: 12, 13 and 5 → (12 + 13 + 5) / 3 = 10.
+ * A month in progress counts only the elapsed share of its sales.
+ * Halfway through March, 5 sales count as 2.5: (12 + 13 + 2.5) / 3.
+ */
+export function averageJobsPerElapsedMonth(counts, slots, periodIsCurrent, referenceDate = new Date()) {
+  let sales = 0;
+  let months = 0;
+  const n = Math.min(Array.isArray(counts) ? counts.length : 0, Array.isArray(slots) ? slots.length : 0);
+  for (let i = 0; i < n; i++) {
+    const weight = periodMonthElapsedFraction(slots[i], periodIsCurrent, referenceDate);
+    if (weight <= 0) continue;
+    sales += (Number(counts[i]) || 0) * weight;
+    months += 1;
+  }
+  if (months <= 0) return null;
+  return { average: sales / months, sales, months };
+}

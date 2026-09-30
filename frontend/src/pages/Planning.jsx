@@ -7,10 +7,11 @@ import {
 } from "../utils/streamNewProjectEmail";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
+import { replaceClientContactTokens } from "../utils/emailClientTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 
 import { UI } from "../utils/uiThemeTokens.js";
-import { BUILDING_PERMIT_STATUS_OPTIONS, normalizeBuildingPermitStatus } from "../constants/planningStatusFields.js";
+import { BUILDING_PERMIT_STATUS_OPTIONS, buildingPermitFieldsForStatus, normalizeBuildingPermitStatus } from "../constants/planningStatusFields.js";
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
 const WHITE = UI.cardBg;
@@ -83,10 +84,18 @@ export default function Planning({ project, onUpdate }) {
   }, [showSepticEmailModal]);
 
   async function saveField(fieldName, value) {
-    if (!project?.id) return;
-    try {
-      const updateData = { [fieldName]: value === "" ? null : value };
+    await saveFieldsPayload({ [fieldName]: value === "" ? null : value });
+  }
 
+  async function saveFieldsPayload(fields) {
+    if (!project?.id) return;
+    const updateData = {};
+    for (const [k, v] of Object.entries(fields || {})) {
+      if (v === undefined) continue;
+      updateData[k] = v === "" ? null : v;
+    }
+    if (Object.keys(updateData).length === 0) return;
+    try {
       const response = await fetch(`${API_URL}/api/projects/${project.id}`, {
         method: "PUT",
         headers: {
@@ -100,13 +109,12 @@ export default function Planning({ project, onUpdate }) {
         throw new Error(errorData.error || "Failed to save");
       }
 
-      // Refresh project data
       if (onUpdate) {
         onUpdate();
       }
     } catch (error) {
-      console.error(`Error saving ${fieldName}:`, error);
-      alert(`Error saving ${fieldName}: ${error.message}`);
+      console.error("Error saving planning fields:", error);
+      alert(`Error saving: ${error.message}`);
     }
   }
 
@@ -131,7 +139,7 @@ export default function Planning({ project, onUpdate }) {
   function handleBuildingPermitStatusChange(e) {
     const newValue = normalizeBuildingPermitStatus(e.target.value);
     setBuildingPermitStatus(newValue);
-    saveField("building_permit_status", newValue);
+    void saveFieldsPayload(buildingPermitFieldsForStatus(newValue, project));
   }
 
   function handlePicChange(e) {
@@ -206,8 +214,7 @@ export default function Planning({ project, onUpdate }) {
     replaced = replaced.replace(/{ProjectName}/g, projectName || "");
     replaced = replaceStreamEmailToken(replaced, projectData);
     replaced = replaced.replace(/{ClientName}/g, projectData.client_name || "");
-    replaced = replaced.replace(/{ClientEmail}/g, projectData.email || "");
-    replaced = replaced.replace(/{ClientPhone}/g, projectData.phone || "");
+    replaced = replaceClientContactTokens(replaced, projectData);
     replaced = replaced.replace(/{Salesperson}/g, projectData.salesperson || "");
 
     if (replaced.includes("{SalespersonPosition}")) {

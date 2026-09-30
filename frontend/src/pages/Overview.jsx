@@ -6,6 +6,7 @@ import { PROCESS_RULES, getRequirementStatus, getUnmetRequirements, getMetRequir
 import { DRAFTSPERSON_UNASSIGNED } from "../utils/draftspersonSentinel";
 import { getUserPrimaryPositionName } from "../utils/userPosition";
 import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
+import { replaceClientContactTokens } from "../utils/emailClientTokens";
 import { replaceContractAndColorStatusTokens } from "../utils/designPhaseStatusTiles";
 import { normalizeBodyHtmlForEditor } from "../components/EmailBodyEditor.jsx";
 import {
@@ -264,6 +265,7 @@ export default function Overview({ project }) {
     replaced = replaced.replace(/{ProjectName}/g, project.name || "");
     replaced = replaceStreamEmailToken(replaced, project);
     replaced = replaced.replace(/{ClientName}/g, project.client_name || "");
+    replaced = replaceClientContactTokens(replaced, project);
     replaced = replaced.replace(/{ProjectCost}/g, project.project_cost ? `$${project.project_cost.toLocaleString()}` : "");
     replaced = replaced.replace(/{Street}/g, project.street || "");
     replaced = replaced.replace(/{Suburb}/g, project.suburb || "");

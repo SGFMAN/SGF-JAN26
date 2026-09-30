@@ -18,6 +18,7 @@ import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { isUserAdmin, getApiHeaders } from "../utils/auth";
 import { fetchColourGroupCatalogue } from "../utils/colourCatalogueCache";
 import { replaceLoggedInUserEmailTokens, replaceStreamEmailToken } from "../utils/emailUserTokens";
+import { replaceClientContactTokens } from "../utils/emailClientTokens";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import { COLORBOND_COLOURS } from "../constants/colorbondColours";
 import {
@@ -1131,6 +1132,7 @@ export default function Colours({ project, onUpdate }) {
                            .replace(/\{ClientName\}/g, clientName)
                            .replace(/\{ProjectName\}/g, projectName)
                            .replace(/\{ColourConsultant\}/g, colourConsultantName);
+          subject = replaceClientContactTokens(subject, project);
           subject = replaceStreamEmailToken(subject, project);
           setEmailSubject(await replaceLoggedInUserEmailTokens(subject));
           
@@ -1142,6 +1144,7 @@ export default function Colours({ project, onUpdate }) {
                        .replace(/\{ClientName\}/g, clientName)
                        .replace(/\{ProjectName\}/g, projectName)
                        .replace(/\{ColourConsultant\}/g, colourConsultantName);
+            body = replaceClientContactTokens(body, project);
             body = replaceStreamEmailToken(body, project);
             setEmailBody(
               convertEmailBodyNewlinesToBr(await replaceLoggedInUserEmailTokens(body))

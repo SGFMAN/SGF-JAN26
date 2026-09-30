@@ -6,12 +6,14 @@
 export const PRE_ENGAGEMENT_PHASE = "Pre-Engagement Phase";
 export const DESIGN_PHASE = "Design Phase";
 export const PERMIT_PHASE = "Permit Phase";
+export const READY_TO_BUILD = "Ready to Build";
 export const CONSTRUCTION_PHASE = "Construction Phase";
 
 export const PROJECT_STATUS_OPTIONS = [
   PRE_ENGAGEMENT_PHASE,
   DESIGN_PHASE,
   PERMIT_PHASE,
+  READY_TO_BUILD,
   CONSTRUCTION_PHASE,
   "Cancelled",
   "Complete",
@@ -60,6 +62,18 @@ export function isPreEngagementPhaseStatus(status) {
 
 export function isPermitPhaseStatus(status) {
   return normalizeStatus(status).toLowerCase() === "permit phase";
+}
+
+export function isReadyToBuildStatus(status) {
+  return normalizeStatus(status).toLowerCase() === "ready to build";
+}
+
+export function shouldPromoteToReadyToBuild(status) {
+  return (
+    isPreEngagementPhaseStatus(status) ||
+    isDesignPhaseStatus(status) ||
+    isPermitPhaseStatus(status)
+  );
 }
 
 /**

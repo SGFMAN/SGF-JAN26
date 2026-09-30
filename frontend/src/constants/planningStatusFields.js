@@ -1,5 +1,10 @@
 /** Shared Planning status fields — temporary Planning page + underconstruction Planning. */
 
+import {
+  READY_TO_BUILD,
+  shouldPromoteToReadyToBuild,
+} from "../utils/projectStatus";
+
 /** Town Planning / BAL / Sewer Connection */
 export const PLANNING_REQUIREMENT_SELECT_OPTIONS = [
   "Not Selected",
@@ -93,6 +98,14 @@ export function getSewerConnectionStatusLabel(project) {
     return isSepticPermitChecked(project) ? "Complete" : "Needs Septic Permit";
   }
   return "Not Selected";
+}
+
+/** Ready to Build cards: NEEDS PIC / NEEDS SEPTIC when the required checkbox is unticked. */
+export function getReadyToBuildSewerNote(project) {
+  const label = getSewerConnectionStatusLabel(project);
+  if (label === "Needs PIC") return "NEEDS PIC";
+  if (label === "Needs Septic Permit") return "NEEDS SEPTIC";
+  return "";
 }
 
 /** Overview RAG: Not Selected → red; PIC or Septic Permit checked → green; else orange. */
@@ -195,13 +208,17 @@ export function buildingPermitFieldsForStatus(nextRaw, project) {
   const next = normalizeBuildingPermitStatus(nextRaw);
   const now = new Date().toISOString();
   if (next === BUILDING_PERMIT_STATUS_PERMIT_ISSUED) {
-    return {
+    const fields = {
       building_permit_status: next,
       planning_building_permit_requested_at:
         project?.planning_building_permit_requested_at || now,
       planning_building_permit_received_at:
         project?.planning_building_permit_received_at || now,
     };
+    if (shouldPromoteToReadyToBuild(project?.status)) {
+      fields.status = READY_TO_BUILD;
+    }
+    return fields;
   }
   if (next === BUILDING_PERMIT_STATUS_NOT_SUBMITTED) {
     return {

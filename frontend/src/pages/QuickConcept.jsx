@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import L from "leaflet";
 import { MapContainer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import { jsPDF } from "jspdf";
 import ToolsSidebarMenu from "../components/ToolsSidebarMenu";
 import { MapBasemapTileLayer } from "../components/MapBasemapControls";
 import EasementsLayer from "../components/EasementsLayer";
@@ -21,6 +22,18 @@ import {
 } from "../utils/mapBasemaps";
 import { PARCEL_BOUNDARY_STYLE } from "../utils/parcelBoundaryStyle";
 import { UI } from "../utils/uiThemeTokens.js";
+import {
+  benchAlongLoop,
+  buildWallLoops,
+  loopPointAt,
+  nearestOnLoops,
+  nearestParamOnLoop,
+  snapLoopParam,
+} from "../utils/kitchenCustomRun.js";
+import QuickConcept3DPreview from "../components/QuickConcept3DPreview";
+import sgfHomesLogo from "../images/SGF Homes.png";
+import ModalBackdrop from "../components/ModalBackdrop";
+import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -28,6 +41,7 @@ const LIGHT_MONUMENT = UI.pageBg;
 const WHITE = UI.cardBg;
 const PAGE_TEXT = UI.pageText;
 const EXPLORER_BORDER = "#d1d1d1";
+const QUOTE_EMAIL_FROM = "info@superiorgrannyflats.com.au";
 
 /** Fallback canvas scale before a site is loaded: 1 metre = this many CSS pixels. */
 const DEFAULT_PPM = 40;
@@ -57,19 +71,62 @@ function quoteSearchAddress(quote) {
   return [street, locality].filter(Boolean).join(", ");
 }
 
+function quoteListLabel(quote) {
+  const street = String(quote?.street || "").trim();
+  const suburb = String(quote?.suburb || "").trim();
+  if (suburb && street) return `${suburb} - ${street}`;
+  return suburb || street;
+}
+
+function quoteClientFirstName(quote) {
+  const n = String(quote?.client_name || "").trim();
+  if (!n) return "";
+  return n.split(/\s+/)[0] || "";
+}
+
 function groupQuoteAddresses(quotes) {
   const groups = { VIC: [], QLD: [] };
   for (const quote of quotes || []) {
     const state = quoteAddressState(quote);
     if (!state) continue;
-    const label = quoteSearchAddress(quote);
+    const label = quoteListLabel(quote);
     if (!label) continue;
-    groups[state].push({ id: quote.id, label });
+    groups[state].push({
+      id: quote.id,
+      label,
+      search: quoteSearchAddress(quote) || label,
+      email: String(quote?.email || "").trim(),
+      firstName: quoteClientFirstName(quote),
+    });
   }
   const byLabel = (a, b) => a.label.localeCompare(b.label, "en", { sensitivity: "base" });
   groups.VIC.sort(byLabel);
   groups.QLD.sort(byLabel);
   return groups;
+}
+
+function quoteContactFromPick(quotePick, quoteGroups) {
+  if (!quotePick) return { email: "", firstName: "" };
+  const item = [...(quoteGroups?.VIC || []), ...(quoteGroups?.QLD || [])].find(
+    (row) => String(row.id) === String(quotePick)
+  );
+  return {
+    email: item?.email || "",
+    firstName: item?.firstName || "",
+  };
+}
+
+function projectSiteAddress(quotePick, quoteGroups, resultLabel, query) {
+  if (quotePick) {
+    const item = [...(quoteGroups?.VIC || []), ...(quoteGroups?.QLD || [])].find(
+      (row) => String(row.id) === String(quotePick)
+    );
+    if (item?.search) return item.search;
+    if (item?.label) return item.label;
+  }
+  const fromSearch = String(resultLabel || "").trim();
+  if (fromSearch) return fromSearch;
+  return String(query || "").trim();
 }
 
 function toolbarButtonStyle(enabled = true) {
@@ -307,7 +364,7 @@ function formatSqm(m2) {
   return `${n} m²`;
 }
 
-function designExportBoundsPx(layout, rooms, pad = 32) {
+function designExportBoundsPx(layout, rooms, pad = 8) {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -326,12 +383,11 @@ function designExportBoundsPx(layout, rooms, pad = 32) {
     add(r.x + r.w, r.y + r.h);
   }
   if (!Number.isFinite(minX)) return null;
-  const topBand = 40;
   return {
     x: minX - pad,
-    y: minY - pad - topBand,
+    y: minY - pad,
     w: maxX - minX + pad * 2,
-    h: maxY - minY + pad * 2 + topBand,
+    h: maxY - minY + pad * 2,
   };
 }
 
@@ -385,9 +441,2381 @@ function drawHaloText(ctx, text, x, y, color, halo) {
   ctx.restore();
 }
 
-function buildDesignExportCanvas(layout, rooms) {
-  const scale = 2;
-  const box = designExportBoundsPx(layout, rooms) || { x: 0, y: 0, w: 640, h: 480 };
+function uniqueSortedMetres(values, tol = 0.04) {
+  const sorted = (values || []).filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  const out = [];
+  for (const v of sorted) {
+    if (!out.length || v - out[out.length - 1] > tol) out.push(v);
+    else out[out.length - 1] = (out[out.length - 1] + v) / 2;
+  }
+  return out;
+}
+
+function drawCanvasRoundRect(ctx, x, y, w, h, r) {
+  const rad = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  if (rad <= 0.5) {
+    ctx.rect(x, y, w, h);
+    return;
+  }
+  ctx.moveTo(x + rad, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rad);
+  ctx.arcTo(x + w, y + h, x, y + h, rad);
+  ctx.arcTo(x, y + h, x, y, rad);
+  ctx.arcTo(x, y, x + w, y, rad);
+  ctx.closePath();
+}
+
+function kitchenLayoutKind(room) {
+  const v = String(room?.kitchenLayout || "")
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+  if (
+    v === "cbar-right" ||
+    v === "c-bar-right" ||
+    v === "cshape-bar-right" ||
+    v === "c-shape-bar-right" ||
+    v === "wrap-c-right"
+  ) {
+    return "cbar-right";
+  }
+  if (
+    v === "cbar-left" ||
+    v === "c-bar-left" ||
+    v === "cshape-bar-left" ||
+    v === "c-shape-bar-left" ||
+    v === "wrap-c-left"
+  ) {
+    return "cbar-left";
+  }
+  if (
+    v === "cshape" ||
+    v === "c-shape" ||
+    v === "c" ||
+    v === "ushape" ||
+    v === "u-shape"
+  ) {
+    return "cshape";
+  }
+  if (
+    v === "bar-right" ||
+    v === "breakfast-right" ||
+    v === "u-right" ||
+    v === "wrap-right"
+  ) {
+    return "bar-right";
+  }
+  if (
+    v === "bar-left" ||
+    v === "breakfast-left" ||
+    v === "u-left" ||
+    v === "wrap-left" ||
+    v === "bar" ||
+    v === "breakfast"
+  ) {
+    return "bar-left";
+  }
+  if (v === "lshape-right" || v === "l-shape-right" || v === "l-right" || v === "lright") {
+    return "lshape-right";
+  }
+  if (
+    v === "lshape" ||
+    v === "l-shape" ||
+    v === "l" ||
+    v === "lshape-left" ||
+    v === "l-shape-left" ||
+    v === "l-left" ||
+    v === "lleft"
+  ) {
+    return "lshape-left";
+  }
+  if (v === "island") return "island";
+  if (v === "custom") return "custom";
+  return "galley";
+}
+
+function kitchenHasLeftReturn(kind) {
+  return (
+    kind === "lshape-left" ||
+    kind === "bar-left" ||
+    kind === "cshape" ||
+    kind === "cbar-left" ||
+    kind === "cbar-right"
+  );
+}
+
+function kitchenHasRightReturn(kind) {
+  return (
+    kind === "lshape-right" ||
+    kind === "bar-right" ||
+    kind === "cshape" ||
+    kind === "cbar-left" ||
+    kind === "cbar-right"
+  );
+}
+
+function kitchenHasWrap(kind) {
+  return kind === "bar-left" || kind === "bar-right" || kind === "cbar-left" || kind === "cbar-right";
+}
+
+function kitchenWrapSide(kind) {
+  return kind === "bar-right" || kind === "cbar-right" ? "right" : "left";
+}
+
+function roomLayoutLongIsX(room) {
+  if (room?.layoutLongIsX === true) return true;
+  if (room?.layoutLongIsX === false) return false;
+  const { w, h } = unrotatedSize(room);
+  return w >= h;
+}
+
+function withLayoutLongIsX(room) {
+  if (room?.layoutLongIsX === true || room?.layoutLongIsX === false) return room;
+  return { ...room, layoutLongIsX: roomLayoutLongIsX(room) };
+}
+
+function fitRoomToMinSize(room, inner) {
+  const frozen = withLayoutLongIsX(room);
+  const { minW, minH } = roomMinSize(frozen);
+  let w = snapMetresToStep(Math.max(minW, frozen.w));
+  let h = snapMetresToStep(Math.max(minH, frozen.h));
+  if (w < minW) w = minW;
+  if (h < minH) h = minH;
+  let x = frozen.x;
+  let y = frozen.y;
+  if (inner?.length) {
+    const b = buildingBounds(inner);
+    if (x + w > b.maxX) x = b.maxX - w;
+    if (y + h > b.maxY) y = b.maxY - h;
+    if (x < b.minX) x = b.minX;
+    if (y < b.minY) y = b.minY;
+  }
+  return { ...frozen, x, y, w, h };
+}
+
+function cycleKitchenLayout(room, inner) {
+  const order = KITCHEN_LAYOUTS;
+  const i = Math.max(0, order.indexOf(kitchenLayoutKind(room)));
+  const {
+    kitchenRun0: _r0,
+    kitchenRun1: _r1,
+    cookBench: _cb,
+    cookAlong: _ca,
+    sinkBench: _sb,
+    sinkAlong: _sa,
+    pantryBench: _pb,
+    pantryAlong: _pa,
+    fridgeBench: _fb,
+    fridgeAlong: _fa,
+    kitchenCustomBench: _bench,
+    ...rest
+  } = room;
+  // A drawn custom bench steps back to "custom, ready to draw" before leaving custom.
+  const nextKind = hasCustomBench(room) ? "custom" : order[(i + 1) % order.length];
+  return fitRoomToMinSize({ ...rest, kitchenLayout: nextKind }, inner);
+}
+
+function isCustomKitchen(room) {
+  return roomKind(room) === "kitchen" && kitchenLayoutKind(room) === "custom";
+}
+
+const BENCH_WALL_HIT_PX = 14;
+
+/**
+ * While a custom kitchen is waiting for its bench, the wall face under the cursor
+ * (unless a room's corner icon is there). Returns { room, loop, s } or null.
+ */
+function armedBenchWallAt(raw, layout, innerMetres, rooms) {
+  if (!layout || !innerMetres) return null;
+  const room = (rooms || []).find(isArmedCustomKitchen);
+  if (!room) return null;
+  const hs = handlePx(layout);
+  const onIcon = (rooms || []).some((r) => {
+    const px = roomToPx(r, layout);
+    return (
+      hitRoomHandle(px, raw, hs) ||
+      (roomKind(r) === "kitchen" && hitKitchenLayoutHandle(px, raw, hs)) ||
+      hitCouchOptions(r, layout, raw)
+    );
+  });
+  if (onIcon) return null;
+  const loops = designWallLoops(innerMetres, rooms);
+  const hit = nearestOnLoops(loops, pxToMetres(raw, layout));
+  if (!hit || hit.dist * layout.scale > BENCH_WALL_HIT_PX) return null;
+  const loop = loops[hit.loopIndex];
+  return { room, loop, s: snapLoopParam(loop, hit.s) };
+}
+
+function hasCustomBench(room) {
+  return isCustomKitchen(room) && Boolean(room?.kitchenCustomBench?.segs?.length);
+}
+
+/** A custom kitchen still waiting for its bench to be drawn on a wall. */
+function isArmedCustomKitchen(room) {
+  return isCustomKitchen(room) && !hasCustomBench(room);
+}
+
+/** Wall faces around the open-plan area (external walls + bedroom/bathroom walls). */
+function designWallLoops(innerMetres, rooms) {
+  const t = WALL_THICKNESS_M;
+  const blocks = (rooms || [])
+    .filter(roomNeedsPartitionWalls)
+    .map((r) => ({ x: r.x - t, y: r.y - t, w: r.w + t * 2, h: r.h + t * 2 }));
+  return buildWallLoops(innerMetres, blocks);
+}
+
+/** Turn a drawn bench (world metres) into the kitchen room: its box becomes the room. */
+function finalizeCustomBench(room, bench) {
+  const xs = bench.poly.map((p) => p.x);
+  const ys = bench.poly.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  const w = Math.max(...xs) - x;
+  const h = Math.max(...ys) - y;
+  const segs = bench.segs.map((s) => ({
+    ...s,
+    rect: { x: s.rect.x - x, y: s.rect.y - y, w: s.rect.w, h: s.rect.h },
+    t0: s.t0 - (s.alongX ? x : y),
+    t1: s.t1 - (s.alongX ? x : y),
+  }));
+  const poly = bench.poly.map((p) => ({ x: p.x - x, y: p.y - y }));
+  return placeCustomKitchenAppliances({
+    ...stripKitchenAppliances(room),
+    x,
+    y,
+    w,
+    h,
+    rot: 0,
+    layoutLongIsX: w >= h,
+    kitchenCustomBench: { segs, poly },
+  });
+}
+
+function stripKitchenAppliances(room) {
+  const {
+    cookBench: _cb,
+    cookAlong: _ca,
+    sinkBench: _sb,
+    sinkAlong: _sa,
+    pantryBench: _pb,
+    pantryAlong: _pa,
+    fridgeBench: _fb,
+    fridgeAlong: _fa,
+    ...rest
+  } = room;
+  return rest;
+}
+
+/** Custom-kitchen bench pieces (unrotated local), in the order they were drawn along the walls. */
+function customKitchenSegments(room) {
+  return hasCustomBench(room) ? room.kitchenCustomBench.segs : [];
+}
+
+/**
+ * Fridge, pantry, cooktop then sink laid out in drawing order along a finished custom run,
+ * moving to the next wall when an item won't fit on the current one.
+ */
+function placeCustomKitchenAppliances(room) {
+  const benches = kitchenWorkBenches(room);
+  let next = stripKitchenAppliances(room);
+  if (!benches.length) return next;
+  const items = [
+    { type: "fridge", size: FRIDGE_ALONG_M, gap: 0 },
+    { type: "pantry", size: PANTRY_M, gap: 0 },
+    { type: "cook", size: COOKTOP_M, gap: 0.3 },
+    { type: "sink", size: SINK_ALONG_M, gap: 0.6 },
+  ];
+  let bi = 0;
+  let used = 0;
+  for (const it of items) {
+    let placed = false;
+    while (bi < benches.length) {
+      const b = benches[bi];
+      const len = b.t1 - b.t0;
+      const gap = used > 0 ? it.gap : 0;
+      if (used + gap + it.size <= len + 1e-6) {
+        const off = used + gap;
+        const along = b.dir > 0 ? b.t0 + off : b.t1 - off - it.size;
+        next = applyKitchenApplianceAlong(next, it.type, along, b.id);
+        used = off + it.size;
+        placed = true;
+        break;
+      }
+      bi += 1;
+      used = 0;
+    }
+    if (!placed) {
+      const b = benches.reduce((best, x) => (x.t1 - x.t0 > best.t1 - best.t0 ? x : best), benches[0]);
+      const along = Math.max(b.t0, Math.min(b.t1 - it.size, (b.t0 + b.t1 - it.size) / 2));
+      next = applyKitchenApplianceAlong(next, it.type, along, b.id);
+    }
+  }
+  return next;
+}
+
+function rectPolygon(rect) {
+  return [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y + rect.h },
+    { x: rect.x, y: rect.y + rect.h },
+  ];
+}
+
+function kitchenLPolygon(w, h, depth, side, longIsX) {
+  if (longIsX) {
+    if (side === "left") {
+      return [
+        { x: 0, y: 0 },
+        { x: depth, y: 0 },
+        { x: depth, y: h - depth },
+        { x: w, y: h - depth },
+        { x: w, y: h },
+        { x: 0, y: h },
+      ];
+    }
+    return [
+      { x: w - depth, y: 0 },
+      { x: w, y: 0 },
+      { x: w, y: h },
+      { x: 0, y: h },
+      { x: 0, y: h - depth },
+      { x: w - depth, y: h - depth },
+    ];
+  }
+  if (side === "left") {
+    return [
+      { x: 0, y: 0 },
+      { x: depth, y: 0 },
+      { x: depth, y: h - depth },
+      { x: w, y: h - depth },
+      { x: w, y: h },
+      { x: 0, y: h },
+    ];
+  }
+  return [
+    { x: 0, y: 0 },
+    { x: w, y: 0 },
+    { x: w, y: depth },
+    { x: depth, y: depth },
+    { x: depth, y: h },
+    { x: 0, y: h },
+  ];
+}
+
+function kitchenCPolygon(w, h, depth, longIsX) {
+  if (longIsX) {
+    return [
+      { x: 0, y: 0 },
+      { x: depth, y: 0 },
+      { x: depth, y: h - depth },
+      { x: w - depth, y: h - depth },
+      { x: w - depth, y: 0 },
+      { x: w, y: 0 },
+      { x: w, y: h },
+      { x: 0, y: h },
+    ];
+  }
+  return [
+    { x: 0, y: 0 },
+    { x: w, y: 0 },
+    { x: w, y: depth },
+    { x: depth, y: depth },
+    { x: depth, y: h - depth },
+    { x: w, y: h - depth },
+    { x: w, y: h },
+    { x: 0, y: h },
+  ];
+}
+
+function kitchenCBarShape(w, h, depth, barDepth, longIsX, side, t0, t1) {
+  if (longIsX) {
+    const li = depth;
+    const ri = w - depth;
+    const mi = h - depth;
+    const meetsL = t0 <= li + 1e-9;
+    const meetsR = t1 >= ri - 1e-9;
+    if (meetsL && meetsR) {
+      return {
+        poly: [
+          { x: 0, y: 0 },
+          { x: w, y: 0 },
+          { x: w, y: h },
+          { x: 0, y: h },
+        ],
+        hole: [
+          { x: li, y: barDepth },
+          { x: ri, y: barDepth },
+          { x: ri, y: mi },
+          { x: li, y: mi },
+        ],
+      };
+    }
+    if (side === "left" || meetsL) {
+      return {
+        poly: [
+          { x: 0, y: 0 },
+          { x: t1, y: 0 },
+          { x: t1, y: barDepth },
+          { x: li, y: barDepth },
+          { x: li, y: mi },
+          { x: ri, y: mi },
+          { x: ri, y: 0 },
+          { x: w, y: 0 },
+          { x: w, y: h },
+          { x: 0, y: h },
+        ],
+      };
+    }
+    return {
+      poly: [
+        { x: 0, y: 0 },
+        { x: li, y: 0 },
+        { x: li, y: mi },
+        { x: ri, y: mi },
+        { x: ri, y: barDepth },
+        { x: t0, y: barDepth },
+        { x: t0, y: 0 },
+        { x: w, y: 0 },
+        { x: w, y: h },
+        { x: 0, y: h },
+      ],
+    };
+  }
+  const ti = depth;
+  const bi = h - depth;
+  const mi = depth;
+  const barX = w - barDepth;
+  const meetsT = t0 <= ti + 1e-9;
+  const meetsB = t1 >= bi - 1e-9;
+  if (meetsT && meetsB) {
+    return {
+      poly: [
+        { x: 0, y: 0 },
+        { x: w, y: 0 },
+        { x: w, y: h },
+        { x: 0, y: h },
+      ],
+      hole: [
+        { x: mi, y: ti },
+        { x: barX, y: ti },
+        { x: barX, y: bi },
+        { x: mi, y: bi },
+      ],
+    };
+  }
+  if (side === "right" || meetsT) {
+    return {
+      poly: [
+        { x: 0, y: 0 },
+        { x: w, y: 0 },
+        { x: w, y: t1 },
+        { x: barX, y: t1 },
+        { x: barX, y: ti },
+        { x: mi, y: ti },
+        { x: mi, y: bi },
+        { x: w, y: bi },
+        { x: w, y: h },
+        { x: 0, y: h },
+      ],
+    };
+  }
+  return {
+    poly: [
+      { x: 0, y: 0 },
+      { x: w, y: 0 },
+      { x: w, y: ti },
+      { x: mi, y: ti },
+      { x: mi, y: bi },
+      { x: barX, y: bi },
+      { x: barX, y: t0 },
+      { x: w, y: t0 },
+      { x: w, y: h },
+      { x: 0, y: h },
+    ],
+  };
+}
+
+function kitchenAlongLen(w, h, longIsX) {
+  return longIsX ? w : h;
+}
+
+function wrapRunFromStart(kind, longIsX) {
+  const side = kitchenWrapSide(kind);
+  return (longIsX && side === "left") || (!longIsX && side === "right");
+}
+
+function defaultKitchenRun(along, kind, side, longIsX) {
+  const min = 0.9;
+  const half = Math.max(min, along * 0.5);
+  if (kind === "island") {
+    const t0 = Math.max(0, (along - half) / 2);
+    return { t0, t1: Math.min(along, t0 + half) };
+  }
+  if (wrapRunFromStart(kind, longIsX)) return { t0: 0, t1: Math.min(along, half) };
+  return { t0: Math.max(0, along - half), t1: along };
+}
+
+function kitchenRunRange(room, w, h, longIsX, kind, side) {
+  const along = kitchenAlongLen(w, h, longIsX);
+  const min = 0.9;
+  const stored0 = Number(room?.kitchenRun0);
+  const stored1 = Number(room?.kitchenRun1);
+  let t0;
+  let t1;
+  if (Number.isFinite(stored0) && Number.isFinite(stored1) && stored1 - stored0 >= min - 1e-6) {
+    t0 = stored0;
+    t1 = stored1;
+  } else {
+    const d = defaultKitchenRun(along, kind, side, longIsX);
+    t0 = d.t0;
+    t1 = d.t1;
+  }
+  t0 = Math.max(0, Math.min(t0, along - min));
+  t1 = Math.max(t0 + min, Math.min(along, t1));
+  if (kitchenHasWrap(kind)) {
+    if (wrapRunFromStart(kind, longIsX)) {
+      t0 = 0;
+      t1 = Math.max(t0 + min, Math.min(along, t1));
+    } else {
+      t1 = along;
+      t0 = Math.max(0, Math.min(t0, t1 - min));
+    }
+  }
+  return { t0, t1, along };
+}
+
+function kitchenRunHandleLocals(w, h, barDepth, longIsX, run, ends = ["t0", "t1"]) {
+  const all = longIsX
+    ? [
+        { which: "t0", x: run.t0, y: barDepth / 2 },
+        { which: "t1", x: run.t1, y: barDepth / 2 },
+      ]
+    : [
+        { which: "t0", x: w - barDepth / 2, y: run.t0 },
+        { which: "t1", x: w - barDepth / 2, y: run.t1 },
+      ];
+  return all.filter((h) => ends.includes(h.which));
+}
+
+function kitchenRunResizeKind(room) {
+  const localIsX = roomLayoutLongIsX(room);
+  const rot = roomRotation(room);
+  const worldIsX = rot === 90 || rot === 270 ? !localIsX : localIsX;
+  return worldIsX ? "ew" : "ns";
+}
+
+function kitchenBarLayout(w, h, depth, barDepth, side, longIsX, run) {
+  const t0 = run.t0;
+  const t1 = run.t1;
+  const dashFromInner = barDepth - depth;
+  if (longIsX) {
+    const joinedLeft = t0 <= 1e-6;
+    const joinedRight = t1 >= w - 1e-6;
+    if (side === "left") {
+      const bar = { x: t0, y: 0, w: t1 - t0, h: barDepth };
+      const locals = [
+        { x: 0, y: h - depth, w, h: depth },
+        { x: 0, y: 0, w: depth, h: Math.max(0, h - depth) },
+        bar,
+      ];
+      const poly = joinedLeft
+        ? [
+            { x: 0, y: 0 },
+            { x: t1, y: 0 },
+            { x: t1, y: barDepth },
+            { x: depth, y: barDepth },
+            { x: depth, y: h - depth },
+            { x: w, y: h - depth },
+            { x: w, y: h },
+            { x: 0, y: h },
+          ]
+        : kitchenLPolygon(w, h, depth, "left", true);
+      return {
+        locals,
+        poly,
+        extraPolys: joinedLeft ? [] : [rectPolygon(bar)],
+        dashes: [
+          [
+            { x: t0, y: dashFromInner },
+            { x: t1, y: dashFromInner },
+          ],
+        ],
+      };
+    }
+    const bar = { x: t0, y: 0, w: t1 - t0, h: barDepth };
+    const locals = [
+      { x: 0, y: h - depth, w, h: depth },
+      { x: w - depth, y: 0, w: depth, h: Math.max(0, h - depth) },
+      bar,
+    ];
+    const poly = joinedRight
+      ? [
+          { x: t0, y: 0 },
+          { x: w, y: 0 },
+          { x: w, y: h },
+          { x: 0, y: h },
+          { x: 0, y: h - depth },
+          { x: w - depth, y: h - depth },
+          { x: w - depth, y: barDepth },
+          { x: t0, y: barDepth },
+        ]
+      : kitchenLPolygon(w, h, depth, "right", true);
+    return {
+      locals,
+      poly,
+      extraPolys: joinedRight ? [] : [rectPolygon(bar)],
+      dashes: [
+        [
+          { x: t0, y: dashFromInner },
+          { x: t1, y: dashFromInner },
+        ],
+      ],
+    };
+  }
+  const dashX = w - barDepth + depth;
+  const joinedTop = t0 <= 1e-6;
+  const joinedBottom = t1 >= h - 1e-6;
+  if (side === "left") {
+    const bar = { x: w - barDepth, y: t0, w: barDepth, h: t1 - t0 };
+    const locals = [
+      { x: 0, y: 0, w: depth, h },
+      { x: depth, y: h - depth, w: Math.max(0, w - depth), h: depth },
+      bar,
+    ];
+    const poly = joinedBottom
+      ? [
+          { x: 0, y: 0 },
+          { x: depth, y: 0 },
+          { x: depth, y: h - depth },
+          { x: w - barDepth, y: h - depth },
+          { x: w - barDepth, y: t0 },
+          { x: w, y: t0 },
+          { x: w, y: h },
+          { x: 0, y: h },
+        ]
+      : kitchenLPolygon(w, h, depth, "left", false);
+    return {
+      locals,
+      poly,
+      extraPolys: joinedBottom ? [] : [rectPolygon(bar)],
+      dashes: [
+        [
+          { x: dashX, y: t0 },
+          { x: dashX, y: t1 },
+        ],
+      ],
+    };
+  }
+  const bar = { x: w - barDepth, y: t0, w: barDepth, h: t1 - t0 };
+  const locals = [
+    { x: 0, y: 0, w: depth, h },
+    { x: depth, y: 0, w: Math.max(0, w - depth), h: depth },
+    bar,
+  ];
+  const poly = joinedTop
+    ? [
+        { x: 0, y: 0 },
+        { x: w, y: 0 },
+        { x: w, y: t1 },
+        { x: w - barDepth, y: t1 },
+        { x: w - barDepth, y: depth },
+        { x: depth, y: depth },
+        { x: depth, y: h },
+        { x: 0, y: h },
+      ]
+    : kitchenLPolygon(w, h, depth, "right", false);
+  return {
+    locals,
+    poly,
+    extraPolys: joinedTop ? [] : [rectPolygon(bar)],
+    dashes: [
+      [
+        { x: dashX, y: t0 },
+        { x: dashX, y: t1 },
+      ],
+    ],
+  };
+}
+
+function kitchenWorkBenches(room) {
+  const { w, h } = unrotatedSize(room);
+  const depth = KITCHEN_BENCH_M;
+  const barDepth = KITCHEN_BAR_M;
+  const longIsX = roomLayoutLongIsX(room);
+  const kind = kitchenLayoutKind(room);
+  if (kind === "custom") {
+    return customKitchenSegments(room).map((s, i) => ({
+      id: `c${i}`,
+      group: "run",
+      ...s.rect,
+      alongX: s.alongX,
+      wall: s.wall,
+      dir: s.dir,
+      t0: s.t0,
+      t1: s.t1,
+    }));
+  }
+  const benches = [];
+  if (longIsX) {
+    benches.push({
+      id: "main",
+      group: "run",
+      x: 0,
+      y: h - depth,
+      w,
+      h: depth,
+      alongX: true,
+      wall: "maxY",
+      t0: 0,
+      t1: w,
+    });
+  } else {
+    benches.push({
+      id: "main",
+      group: "run",
+      x: 0,
+      y: 0,
+      w: depth,
+      h,
+      alongX: false,
+      wall: "minX",
+      t0: 0,
+      t1: h,
+    });
+  }
+  const hasLeft = kitchenHasLeftReturn(kind);
+  const hasRight = kitchenHasRightReturn(kind);
+  if (hasLeft) {
+    if (longIsX) {
+      benches.push({
+        id: hasRight ? "return-left" : "return",
+        group: "run",
+        x: 0,
+        y: 0,
+        w: depth,
+        h: Math.max(0.2, h - depth),
+        alongX: false,
+        wall: "minX",
+        t0: 0,
+        t1: Math.max(0.2, h - depth),
+      });
+    } else {
+      benches.push({
+        id: hasRight ? "return-left" : "return",
+        group: "run",
+        x: depth,
+        y: h - depth,
+        w: Math.max(0.2, w - depth),
+        h: depth,
+        alongX: true,
+        wall: "maxY",
+        t0: depth,
+        t1: w,
+      });
+    }
+  }
+  if (hasRight) {
+    if (longIsX) {
+      benches.push({
+        id: hasLeft ? "return-right" : "return",
+        group: "run",
+        x: w - depth,
+        y: 0,
+        w: depth,
+        h: Math.max(0.2, h - depth),
+        alongX: false,
+        wall: "maxX",
+        t0: 0,
+        t1: Math.max(0.2, h - depth),
+      });
+    } else {
+      benches.push({
+        id: hasLeft ? "return-right" : "return",
+        group: "run",
+        x: depth,
+        y: 0,
+        w: Math.max(0.2, w - depth),
+        h: depth,
+        alongX: true,
+        wall: "minY",
+        t0: depth,
+        t1: w,
+      });
+    }
+  }
+  const barFits = longIsX
+    ? h >= depth + barDepth + KITCHEN_CLEAR_M
+    : w >= depth + barDepth + KITCHEN_CLEAR_M;
+  if (kitchenHasWrap(kind) && barFits) {
+    const side = kitchenWrapSide(kind);
+    const run = kitchenRunRange(room, w, h, longIsX, kind, side);
+    if (longIsX) {
+      benches.push({
+        id: "bar",
+        group: "bar",
+        x: run.t0,
+        y: 0,
+        w: Math.max(0.01, run.t1 - run.t0),
+        h: barDepth,
+        alongX: true,
+        wall: "minY",
+        t0: run.t0,
+        t1: run.t1,
+      });
+    } else {
+      benches.push({
+        id: "bar",
+        group: "bar",
+        x: w - barDepth,
+        y: run.t0,
+        w: barDepth,
+        h: Math.max(0.01, run.t1 - run.t0),
+        alongX: false,
+        wall: "maxX",
+        t0: run.t0,
+        t1: run.t1,
+      });
+    }
+  }
+  if (kind === "island") {
+    const run = kitchenRunRange(room, w, h, longIsX, kind, "left");
+    if (longIsX) {
+      const gap = h - depth - barDepth;
+      if (gap + 0.02 >= KITCHEN_CLEAR_M) {
+        benches.push({
+          id: "island",
+          group: "island",
+          x: run.t0,
+          y: 0,
+          w: Math.max(0.01, run.t1 - run.t0),
+          h: barDepth,
+          alongX: true,
+          wall: "minY",
+          t0: run.t0,
+          t1: run.t1,
+        });
+      }
+    } else {
+      const gap = w - depth - barDepth;
+      if (gap + 0.02 >= KITCHEN_CLEAR_M) {
+        benches.push({
+          id: "island",
+          group: "island",
+          x: w - barDepth,
+          y: run.t0,
+          w: barDepth,
+          h: Math.max(0.01, run.t1 - run.t0),
+          alongX: false,
+          wall: "maxX",
+          t0: run.t0,
+          t1: run.t1,
+        });
+      }
+    }
+  }
+  return benches;
+}
+
+function benchAlongAt(bench, x, y) {
+  return bench.alongX ? x : y;
+}
+
+function localPointInRect(p, r, pad = 0) {
+  return p.x >= r.x - pad && p.x <= r.x + r.w + pad && p.y >= r.y - pad && p.y <= r.y + r.h + pad;
+}
+
+function distToRect(p, r) {
+  const dx = p.x < r.x ? r.x - p.x : p.x > r.x + r.w ? p.x - (r.x + r.w) : 0;
+  const dy = p.y < r.y ? r.y - p.y : p.y > r.y + r.h ? p.y - (r.y + r.h) : 0;
+  return Math.hypot(dx, dy);
+}
+
+function insetInRect(p, r) {
+  if (!localPointInRect(p, r)) return -1;
+  return Math.min(p.x - r.x, r.x + r.w - p.x, p.y - r.y, r.y + r.h - p.y);
+}
+
+function applianceLocalOnBench(bench, along, size, hang = false) {
+  const t0 = hang ? along : Math.max(bench.t0, Math.min(bench.t1 - size, along));
+  const pad = (KITCHEN_BENCH_M - size) / 2;
+  if (bench.alongX && bench.wall === "maxY") {
+    return { x: t0, y: bench.y + bench.h - pad - size, w: size, h: size };
+  }
+  if (bench.alongX && bench.wall === "minY") {
+    return { x: t0, y: bench.y + pad, w: size, h: size };
+  }
+  if (bench.wall === "minX") {
+    return { x: bench.x + pad, y: t0, w: size, h: size };
+  }
+  return { x: bench.x + bench.w - pad - size, y: t0, w: size, h: size };
+}
+
+function cookLocalOnBench(bench, along) {
+  return applianceLocalOnBench(bench, along, COOKTOP_M);
+}
+
+function pantryLocalOnBench(bench, along) {
+  return applianceLocalOnBench(bench, along, PANTRY_M, true);
+}
+
+function fridgeLocalOnBench(bench, along) {
+  const a = FRIDGE_ALONG_M;
+  const d = FRIDGE_ACROSS_M;
+  const work = KITCHEN_BENCH_M;
+  const extra = d - work;
+  const t0 = along;
+  if (bench.alongX && bench.wall === "maxY") {
+    return { x: t0, y: bench.y - extra, w: a, h: d };
+  }
+  if (bench.alongX && bench.wall === "minY") {
+    return { x: t0, y: bench.y + bench.h - work, w: a, h: d };
+  }
+  if (bench.wall === "minX") {
+    return { x: bench.x + bench.w - work, y: t0, w: d, h: a };
+  }
+  return { x: bench.x - extra, y: t0, w: d, h: a };
+}
+
+function hangAlongLimits(bench, room, size) {
+  const { w, h } = unrotatedSize(room);
+  const roomMin = 0;
+  const roomMax = (bench.alongX ? w : h) - size;
+  const hangStart = bench.t0 - size;
+  const hangEnd = bench.t1;
+  const onMin = bench.t0;
+  const onMax = bench.t1 - size;
+  return {
+    min: Math.max(hangStart, roomMin),
+    max: Math.min(hangEnd, roomMax),
+    onMin,
+    onMax,
+    hangStart,
+    hangEnd,
+    canHangStart: hangStart >= roomMin - 1e-9,
+    canHangEnd: hangEnd <= roomMax + 1e-9,
+  };
+}
+
+function snapHangAlong(bench, along, room, size) {
+  const lim = hangAlongLimits(bench, room, size);
+  let t = snapPlanMm(along);
+  t = Math.max(lim.min, Math.min(lim.max, t));
+  if (lim.canHangStart && t < lim.onMin) return snapPlanMm(Math.max(lim.min, lim.hangStart));
+  if (lim.canHangEnd && t > lim.onMax) return snapPlanMm(Math.min(lim.max, lim.hangEnd));
+  return snapPlanMm(Math.max(lim.onMin, Math.min(lim.onMax, t)));
+}
+
+function pantryAlongLimits(bench, room) {
+  return hangAlongLimits(bench, room, PANTRY_M);
+}
+
+function snapPantryAlong(bench, along, room) {
+  return snapHangAlong(bench, along, room, PANTRY_M);
+}
+
+function snapFridgeAlong(bench, along, room) {
+  return snapHangAlong(bench, along, room, FRIDGE_ALONG_M);
+}
+
+function sinkFrameOnBench(bench, along) {
+  const t0 = Math.max(bench.t0, Math.min(bench.t1 - SINK_ALONG_M, along));
+  const inset = (KITCHEN_BENCH_M - SINK_ACROSS_M) / 2;
+  if (bench.alongX && bench.wall === "maxY") {
+    const front = bench.y + inset;
+    const t = Math.max(bench.t0, Math.min(bench.t1 - SINK_ALONG_M, t0 + SINK_RIGHT_M));
+    return {
+      origin: { x: t, y: front },
+      along: { x: SINK_ALONG_M, y: 0 },
+      across: { x: 0, y: SINK_ACROSS_M },
+    };
+  }
+  if (bench.alongX && bench.wall === "minY") {
+    const front = bench.y + bench.h - inset;
+    const t = Math.max(bench.t0, Math.min(bench.t1 - SINK_ALONG_M, t0 + SINK_RIGHT_M));
+    return {
+      origin: { x: t, y: front },
+      along: { x: SINK_ALONG_M, y: 0 },
+      across: { x: 0, y: -SINK_ACROSS_M },
+    };
+  }
+  if (bench.wall === "minX") {
+    const front = bench.x + bench.w - inset;
+    const t = Math.max(bench.t0, Math.min(bench.t1 - SINK_ALONG_M, t0 + SINK_RIGHT_M));
+    return {
+      origin: { x: front, y: t },
+      along: { x: 0, y: SINK_ALONG_M },
+      across: { x: -SINK_ACROSS_M, y: 0 },
+    };
+  }
+  const front = bench.x + inset;
+  const t = Math.max(bench.t0, Math.min(bench.t1 - SINK_ALONG_M, t0 + SINK_RIGHT_M));
+  return {
+    origin: { x: front, y: t },
+    along: { x: 0, y: SINK_ALONG_M },
+    across: { x: SINK_ACROSS_M, y: 0 },
+  };
+}
+
+function sinkRectOnBench(bench, along) {
+  const f = sinkFrameOnBench(bench, along);
+  const xs = [f.origin.x, f.origin.x + f.along.x, f.origin.x + f.across.x, f.origin.x + f.along.x + f.across.x];
+  const ys = [f.origin.y, f.origin.y + f.along.y, f.origin.y + f.across.y, f.origin.y + f.along.y + f.across.y];
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+function kitchenApplianceMeta(type) {
+  if (type === "cook") return { benchKey: "cookBench", alongKey: "cookAlong", size: COOKTOP_M };
+  if (type === "pantry") return { benchKey: "pantryBench", alongKey: "pantryAlong", size: PANTRY_M };
+  if (type === "fridge") return { benchKey: "fridgeBench", alongKey: "fridgeAlong", size: FRIDGE_ALONG_M };
+  return { benchKey: "sinkBench", alongKey: "sinkAlong", size: SINK_ALONG_M };
+}
+
+function kitchenHangType(type) {
+  return type === "pantry" || type === "fridge";
+}
+
+function resolveKitchenAppliance(room, type) {
+  const benches = kitchenWorkBenches(room);
+  if (!benches.length) return null;
+  const { benchKey, alongKey, size } = kitchenApplianceMeta(type);
+  let bench = benches.find((b) => b.id === room[benchKey]);
+  if (!bench) bench = benches.find((b) => b.id === "main") || benches[0];
+  let along = Number(room[alongKey]);
+  if (!Number.isFinite(along)) {
+    if (type === "cook") {
+      along = Math.max(bench.t0, Math.min(bench.t1 - size, bench.t0 + 0.2));
+    } else if (type === "pantry") {
+      along = snapPantryAlong(bench, bench.t1, room);
+    } else if (type === "fridge") {
+      along = snapFridgeAlong(bench, bench.t0, room);
+    } else {
+      const cook = resolveKitchenAppliance(room, "cook");
+      const after =
+        cook && cook.bench.id === bench.id ? cook.along + COOKTOP_M + 0.12 : bench.t0 + 0.2;
+      along = Math.max(bench.t0, Math.min(bench.t1 - size, after));
+    }
+  } else if (kitchenHangType(type)) {
+    along = snapHangAlong(bench, along, room, size);
+  } else {
+    along = Math.max(bench.t0, Math.min(Math.max(bench.t0, bench.t1 - size), along));
+  }
+  return { bench, along, size };
+}
+
+function kitchenApplianceSpansOn(room, benchId) {
+  const spans = [];
+  for (const type of ["cook", "sink", "pantry", "fridge"]) {
+    const placed = resolveKitchenAppliance(room, type);
+    if (!placed || placed.bench.id !== benchId) continue;
+    if (kitchenHangType(type)) {
+      const t0 = Math.max(placed.along, placed.bench.t0);
+      const t1 = Math.min(placed.along + placed.size, placed.bench.t1);
+      if (t1 - t0 < 0.05) continue;
+      spans.push({ t0, t1 });
+      continue;
+    }
+    spans.push({ t0: placed.along, t1: placed.along + placed.size });
+  }
+  return spans;
+}
+
+function applianceIsHanging(placed) {
+  if (!placed?.bench) return false;
+  const { along, size, bench } = placed;
+  return along < bench.t0 - 0.02 || along > bench.t1 - size + 0.02;
+}
+
+function pantryIsHanging(placed) {
+  return applianceIsHanging(placed);
+}
+
+function kitchenAppliancesOnBench(room, bench) {
+  const items = [];
+  for (const type of ["cook", "sink", "pantry", "fridge"]) {
+    const placed = resolveKitchenAppliance(room, type);
+    if (!placed || placed.bench.id !== bench.id) continue;
+    items.push({ type, along: placed.along, size: placed.size });
+  }
+  items.sort((a, b) => a.along - b.along);
+  return items;
+}
+
+function kitchenPackedLenOnBench(room, bench) {
+  return kitchenAppliancesOnBench(room, bench).reduce((sum, it) => {
+    if (kitchenHangType(it.type) && applianceIsHanging({ ...it, bench })) return sum;
+    return sum + it.size;
+  }, 0);
+}
+
+function applyKitchenApplianceAlong(room, type, along, benchId) {
+  const { benchKey, alongKey } = kitchenApplianceMeta(type);
+  return { ...room, [benchKey]: benchId, [alongKey]: snapPlanMm(along) };
+}
+
+function compactKitchenAppliances(room) {
+  if (roomKind(room) !== "kitchen") return room;
+  const benches = kitchenWorkBenches(room);
+  let next = room;
+  for (const bench of benches) {
+    const items = kitchenAppliancesOnBench(next, bench);
+    if (!items.length) continue;
+    const hanging = [];
+    const on = [];
+    for (const it of items) {
+      if (kitchenHangType(it.type) && applianceIsHanging({ ...it, bench })) hanging.push(it);
+      else on.push(it);
+    }
+    let limit = bench.t1;
+    for (let i = on.length - 1; i >= 0; i -= 1) {
+      const it = on[i];
+      const minAlong = bench.t0 + on.slice(0, i).reduce((s, x) => s + x.size, 0);
+      it.along = Math.min(it.along, limit - it.size);
+      it.along = Math.max(it.along, minAlong);
+      limit = it.along;
+    }
+    let cursor = bench.t0;
+    for (const it of on) {
+      if (it.along < cursor) it.along = cursor;
+      cursor = it.along + it.size;
+    }
+    if (on.length) {
+      const last = on[on.length - 1];
+      if (last.along + last.size > bench.t1 + 1e-9) {
+        let packed = bench.t0;
+        for (const it of on) {
+          it.along = packed;
+          packed += it.size;
+        }
+      }
+    }
+    for (const it of on) {
+      next = applyKitchenApplianceAlong(next, it.type, it.along, bench.id);
+    }
+    for (const it of hanging) {
+      const hangEnd = it.along + it.size / 2 >= (bench.t0 + bench.t1) / 2;
+      const along = hangEnd ? bench.t1 : bench.t0 - it.size;
+      next = applyKitchenApplianceAlong(next, it.type, along, bench.id);
+    }
+  }
+  return next;
+}
+
+function nearestBenchInGroup(benches, group, local) {
+  let best = null;
+  let bestD = Infinity;
+  for (const b of benches) {
+    if (b.group !== group) continue;
+    const d = distToRect(local, b);
+    if (d < bestD) {
+      bestD = d;
+      best = b;
+    }
+  }
+  return best;
+}
+
+function moveKitchenAppliance(room, type, cursorM, grabAlong) {
+  const benches = kitchenWorkBenches(room);
+  const placed = resolveKitchenAppliance(room, type);
+  if (!placed || !benches.length) return room;
+  const local = worldToUnrotatedLocal(room, cursorM);
+  const last = placed.bench;
+  let next = nearestBenchInGroup(benches, last.group, local) || last;
+  let bestOther = null;
+  let bestInset = -1;
+  for (const b of benches) {
+    if (b.group === last.group) continue;
+    const ins = insetInRect(local, b);
+    if (ins > bestInset) {
+      bestInset = ins;
+      bestOther = b;
+    }
+  }
+  const switched = bestOther && bestInset >= BENCH_SNAP_IN_M;
+  if (switched) next = bestOther;
+  const size = placed.size;
+  const cursorT = benchAlongAt(next, local.x, local.y);
+  let along;
+  if (switched) {
+    along = cursorT - size / 2;
+  } else {
+    along = cursorT - (Number.isFinite(grabAlong) ? grabAlong : size / 2);
+  }
+  if (kitchenHangType(type)) {
+    along = snapHangAlong(next, along, room, size);
+    const { benchKey, alongKey } = kitchenApplianceMeta(type);
+    return { ...room, [benchKey]: next.id, [alongKey]: along };
+  }
+  along = snapPlanMm(Math.max(next.t0, Math.min(next.t1 - size, along)));
+  if (type === "cook") return { ...room, cookBench: next.id, cookAlong: along };
+  return { ...room, sinkBench: next.id, sinkAlong: along };
+}
+
+function startKitchenApplianceDrag(room, type, cursorM) {
+  const placed = resolveKitchenAppliance(room, type);
+  if (!placed) return { mode: type, grabAlong: 0 };
+  const local = worldToUnrotatedLocal(room, cursorM);
+  return {
+    mode: type,
+    grabAlong: benchAlongAt(placed.bench, local.x, local.y) - placed.along,
+  };
+}
+
+function hitKitchenApplianceHandle(room, layout, raw) {
+  const fixtures = kitchenFixtureRects(room);
+  if (!fixtures.hasAppliances) return null;
+  const hs = fixtureGrabPx(layout);
+  const candidates = [
+    fixtures.cookGrab ? { type: "cook", px: mPointToPx(fixtures.cookGrab, layout) } : null,
+    fixtures.sinkGrab ? { type: "sink", px: mPointToPx(fixtures.sinkGrab, layout) } : null,
+    fixtures.pantryGrab ? { type: "pantry", px: mPointToPx(fixtures.pantryGrab, layout) } : null,
+    fixtures.fridgeGrab ? { type: "fridge", px: mPointToPx(fixtures.fridgeGrab, layout) } : null,
+  ];
+  const grab = pickClosestGrab(raw, hs, candidates);
+  if (grab) return grab;
+  if (fixtures.cook && hitLayoutRect(fixtures.cook, layout, raw, 4)) {
+    return { type: "cook", kind: "move" };
+  }
+  if (fixtures.sinkRect && hitLayoutRect(fixtures.sinkRect, layout, raw, 4)) {
+    return { type: "sink", kind: "move" };
+  }
+  if (fixtures.pantry && hitLayoutRect(fixtures.pantry, layout, raw, 4)) {
+    return { type: "pantry", kind: "move" };
+  }
+  if (fixtures.fridge && hitLayoutRect(fixtures.fridge, layout, raw, 4)) {
+    return { type: "fridge", kind: "move" };
+  }
+  return null;
+}
+
+function kitchenFixtureRects(room) {
+  const { w, h } = unrotatedSize(room);
+  const depth = KITCHEN_BENCH_M;
+  const overhang = KITCHEN_OVERHANG_M;
+  const barDepth = KITCHEN_BAR_M;
+  const longIsX = roomLayoutLongIsX(room);
+  const kind = kitchenLayoutKind(room);
+  const main = longIsX
+    ? { x: 0, y: h - depth, w, h: depth }
+    : { x: 0, y: 0, w: depth, h };
+  const locals = [main];
+  let localPolys = [rectPolygon(main)];
+  let localHoles = [];
+  let localDashes = [];
+  let runHandles = [];
+  const barFits = longIsX
+    ? h >= depth + barDepth + KITCHEN_CLEAR_M
+    : w >= depth + barDepth + KITCHEN_CLEAR_M;
+  if (kind === "custom") {
+    const segs = customKitchenSegments(room);
+    locals.length = 0;
+    locals.push(...segs.map((s) => s.rect));
+    localPolys = segs.length ? [room.kitchenCustomBench.poly] : [];
+  } else if (kind === "lshape-left") {
+    if (longIsX) locals.push({ x: 0, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+    else locals.push({ x: depth, y: h - depth, w: Math.max(0.2, w - depth), h: depth });
+    localPolys = [kitchenLPolygon(w, h, depth, "left", longIsX)];
+  } else if (kind === "lshape-right") {
+    if (longIsX) locals.push({ x: w - depth, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+    else locals.push({ x: depth, y: 0, w: Math.max(0.2, w - depth), h: depth });
+    localPolys = [kitchenLPolygon(w, h, depth, "right", longIsX)];
+  } else if (kind === "cshape") {
+    if (longIsX) {
+      locals.push({ x: 0, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+      locals.push({ x: w - depth, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+    } else {
+      locals.push({ x: depth, y: h - depth, w: Math.max(0.2, w - depth), h: depth });
+      locals.push({ x: depth, y: 0, w: Math.max(0.2, w - depth), h: depth });
+    }
+    localPolys = [kitchenCPolygon(w, h, depth, longIsX)];
+  } else if (kitchenHasWrap(kind) && barFits) {
+    const side = kitchenWrapSide(kind);
+    const run = kitchenRunRange(room, w, h, longIsX, kind, side);
+    const bar = kitchenBarLayout(w, h, depth, barDepth, side, longIsX, run);
+    locals.length = 0;
+    locals.push(...bar.locals);
+    if (kind === "cbar-left" || kind === "cbar-right") {
+      if (longIsX) {
+        if (side === "left") {
+          locals.push({ x: w - depth, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+        } else {
+          locals.push({ x: 0, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+        }
+      } else if (side === "left") {
+        locals.push({ x: depth, y: 0, w: Math.max(0.2, w - depth), h: depth });
+      } else {
+        locals.push({ x: depth, y: h - depth, w: Math.max(0.2, w - depth), h: depth });
+      }
+      const shape = kitchenCBarShape(w, h, depth, barDepth, longIsX, side, run.t0, run.t1);
+      localPolys = [shape.poly];
+      localHoles = shape.hole ? [shape.hole] : [];
+    } else {
+      localPolys = [bar.poly, ...(bar.extraPolys || [])];
+    }
+    localDashes = bar.dashes;
+    runHandles = kitchenRunHandleLocals(
+      w,
+      h,
+      barDepth,
+      longIsX,
+      run,
+      wrapRunFromStart(kind, longIsX) ? ["t1"] : ["t0"]
+    );
+  } else if (kind === "bar-left" || kind === "cbar-left") {
+    if (longIsX) locals.push({ x: 0, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+    else locals.push({ x: depth, y: h - depth, w: Math.max(0.2, w - depth), h: depth });
+    if (kind === "cbar-left") {
+      if (longIsX) locals.push({ x: w - depth, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+      else locals.push({ x: depth, y: 0, w: Math.max(0.2, w - depth), h: depth });
+      localPolys = [kitchenCPolygon(w, h, depth, longIsX)];
+    } else {
+      localPolys = [kitchenLPolygon(w, h, depth, "left", longIsX)];
+    }
+  } else if (kind === "bar-right" || kind === "cbar-right") {
+    if (longIsX) locals.push({ x: w - depth, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+    else locals.push({ x: depth, y: 0, w: Math.max(0.2, w - depth), h: depth });
+    if (kind === "cbar-right") {
+      if (longIsX) locals.push({ x: 0, y: 0, w: depth, h: Math.max(0.2, h - depth) });
+      else locals.push({ x: depth, y: h - depth, w: Math.max(0.2, w - depth), h: depth });
+      localPolys = [kitchenCPolygon(w, h, depth, longIsX)];
+    } else {
+      localPolys = [kitchenLPolygon(w, h, depth, "right", longIsX)];
+    }
+  } else if (kind === "island") {
+    const run = kitchenRunRange(room, w, h, longIsX, kind, "left");
+    if (longIsX) {
+      const islandY = 0;
+      const gap = main.y - barDepth;
+      if (gap + 0.02 >= KITCHEN_CLEAR_M) {
+        const island = {
+          x: run.t0,
+          y: islandY,
+          w: Math.max(0.01, run.t1 - run.t0),
+          h: barDepth,
+        };
+        locals.push(island);
+        localPolys.push(rectPolygon(island));
+        localDashes.push([
+          { x: island.x, y: island.y + overhang },
+          { x: island.x + island.w, y: island.y + overhang },
+        ]);
+        runHandles = kitchenRunHandleLocals(w, h, barDepth, longIsX, run);
+      }
+    } else {
+      const islandX = w - barDepth;
+      const gap = islandX - main.w;
+      if (gap + 0.02 >= KITCHEN_CLEAR_M) {
+        const island = {
+          x: islandX,
+          y: run.t0,
+          w: barDepth,
+          h: Math.max(0.01, run.t1 - run.t0),
+        };
+        locals.push(island);
+        localPolys.push(rectPolygon(island));
+        localDashes.push([
+          { x: island.x + depth, y: island.y },
+          { x: island.x + depth, y: island.y + island.h },
+        ]);
+        runHandles = kitchenRunHandleLocals(w, h, barDepth, longIsX, run);
+      }
+    }
+  }
+  const cookPlaced = resolveKitchenAppliance(room, "cook");
+  const sinkPlaced = resolveKitchenAppliance(room, "sink");
+  const pantryPlaced = resolveKitchenAppliance(room, "pantry");
+  const fridgePlaced = resolveKitchenAppliance(room, "fridge");
+  const cookLocal = cookPlaced
+    ? cookLocalOnBench(cookPlaced.bench, cookPlaced.along)
+    : { x: 0, y: 0, w: COOKTOP_M, h: COOKTOP_M };
+  const pantryLocal = pantryPlaced
+    ? pantryLocalOnBench(pantryPlaced.bench, pantryPlaced.along)
+    : { x: 0, y: 0, w: PANTRY_M, h: PANTRY_M };
+  const fridgeLocal = fridgePlaced
+    ? fridgeLocalOnBench(fridgePlaced.bench, fridgePlaced.along)
+    : { x: 0, y: 0, w: FRIDGE_ACROSS_M, h: FRIDGE_ALONG_M };
+  const sinkLocal = sinkPlaced
+    ? sinkFrameOnBench(sinkPlaced.bench, sinkPlaced.along)
+    : {
+        origin: { x: 0, y: 0 },
+        along: { x: SINK_ALONG_M, y: 0 },
+        across: { x: 0, y: -SINK_ACROSS_M },
+      };
+  const sinkBox = sinkPlaced ? sinkRectOnBench(sinkPlaced.bench, sinkPlaced.along) : cookLocal;
+  const cookGrabLocal = {
+    x: cookLocal.x + cookLocal.w / 2,
+    y: cookLocal.y + cookLocal.h / 2,
+  };
+  const pantryGrabLocal = {
+    x: pantryLocal.x + pantryLocal.w / 2,
+    y: pantryLocal.y + pantryLocal.h / 2,
+  };
+  const fridgeGrabLocal = {
+    x: fridgeLocal.x + fridgeLocal.w / 2,
+    y: fridgeLocal.y + fridgeLocal.h / 2,
+  };
+  const sinkGrabLocal = {
+    x: sinkLocal.origin.x + sinkLocal.along.x / 2 + sinkLocal.across.x / 2,
+    y: sinkLocal.origin.y + sinkLocal.along.y / 2 + sinkLocal.across.y / 2,
+  };
+  return {
+    kind,
+    hasAppliances: Boolean(cookPlaced),
+    benches: locals.map((rect) => rotatedLocalRect(room, rect)),
+    benchPolys: localPolys.map((poly) => poly.map((p) => rotatedLocalPoint(room, p))),
+    benchHoles: localHoles.map((poly) => poly.map((p) => rotatedLocalPoint(room, p))),
+    overhangSegs: localDashes.map((seg) => seg.map((p) => rotatedLocalPoint(room, p))),
+    runHandles,
+    cook: rotatedLocalRect(room, cookLocal),
+    pantry: rotatedLocalRect(room, pantryLocal),
+    fridge: rotatedLocalRect(room, fridgeLocal),
+    sinkRect: rotatedLocalRect(room, sinkBox),
+    sinkLocal,
+    cookGrab: rotatedLocalPoint(room, cookGrabLocal),
+    pantryGrab: rotatedLocalPoint(room, pantryGrabLocal),
+    fridgeGrab: rotatedLocalPoint(room, fridgeGrabLocal),
+    sinkGrab: rotatedLocalPoint(room, sinkGrabLocal),
+  };
+}
+
+function sinkMirrored(room) {
+  return Boolean(room?.sinkMirror);
+}
+
+function kitchenSinkParts(W, H, mirror = false) {
+  const sx = W / 1155;
+  const sy = H / 495;
+  const s = Math.min(sx, sy);
+  const rimL = 20 * sx;
+  const rimR = 20 * sx;
+  const rear = 58 * sy;
+  const bowlW = 340 * sx;
+  const bowl1W = bowlW * 0.75;
+  const bowl2W = bowlW;
+  const bowlH = 400 * sy;
+  const frontGap = 495 * sy - bowlH - rear;
+  const bowlY = frontGap;
+  const divider = 35 * sx;
+  const gap = 45 * sx;
+  const drainW = Math.max(8 * sx, W - rimL - rimR - gap - bowl1W - divider - bowl2W);
+  const bowlShift = -30 * sx;
+  const bowl1X = rimL + drainW + gap + bowlShift;
+  const bowl2X = bowl1X + bowl1W + divider;
+  const grooveY0 = 90 * sy;
+  const grooveY1 = H - 90 * sy;
+  const tapX = bowl1X + bowl1W + divider / 2;
+  const grooveX0 = rimL + 55 * sx;
+  const grooveX1 = rimL + drainW - 55 * sx;
+  if (mirror) {
+    const flip = (x, w) => W - x - w;
+    return {
+      drainW,
+      gap,
+      bowl1W,
+      bowl2W,
+      bowlH,
+      bowlY,
+      bowl1X: flip(bowl1X, bowl1W),
+      bowl2X: flip(bowl2X, bowl2W),
+      rx: 42 * s,
+      drainR: 45 * s,
+      tapX: W - tapX,
+      tapY: rear * 0.48,
+      tapR: 9 * s,
+      grooveX0: W - grooveX1,
+      grooveX1: W - grooveX0,
+      grooveY0,
+      grooveY1,
+      grooveCount: Math.max(2, Math.round((grooveY1 - grooveY0) / (35 * sy)) + 1),
+      outerRx: 14 * s,
+      rimL,
+      rear,
+    };
+  }
+  return {
+    drainW,
+    gap,
+    bowl1W,
+    bowl2W,
+    bowlH,
+    bowlY,
+    bowl1X,
+    bowl2X,
+    rx: 42 * s,
+    drainR: 45 * s,
+    tapX,
+    tapY: rear * 0.48,
+    tapR: 9 * s,
+    grooveX0,
+    grooveX1,
+    grooveY0,
+    grooveY1,
+    grooveCount: Math.max(2, Math.round((grooveY1 - grooveY0) / (35 * sy)) + 1),
+    outerRx: 14 * s,
+    rimL,
+    rear,
+  };
+}
+
+function kitchenSinkGrooves(p) {
+  const n = p.grooveCount;
+  const out = [];
+  for (let i = 0; i < n; i += 1) {
+    const t = i / (n - 1);
+    out.push({ y: p.grooveY0 + (p.grooveY1 - p.grooveY0) * t, x1: p.grooveX0, x2: p.grooveX1 });
+  }
+  return out;
+}
+
+function kitchenSinkFramePx(room, layout, sinkLocal) {
+  if (!sinkLocal?.origin) return null;
+  const o = mPointToPx(rotatedLocalPoint(room, sinkLocal.origin), layout);
+  const a = mPointToPx(
+    rotatedLocalPoint(room, {
+      x: sinkLocal.origin.x + sinkLocal.along.x,
+      y: sinkLocal.origin.y + sinkLocal.along.y,
+    }),
+    layout
+  );
+  const c = mPointToPx(
+    rotatedLocalPoint(room, {
+      x: sinkLocal.origin.x + sinkLocal.across.x,
+      y: sinkLocal.origin.y + sinkLocal.across.y,
+    }),
+    layout
+  );
+  const W = Math.hypot(a.x - o.x, a.y - o.y);
+  const H = Math.hypot(c.x - o.x, c.y - o.y);
+  if (W < 8 || H < 6) return null;
+  return { o, a, c, W, H };
+}
+
+function paintKitchenSink(ctx, room, layout, sinkLocal, bw) {
+  const frame = kitchenSinkFramePx(room, layout, sinkLocal);
+  if (!frame) return;
+  const { o, a, c, W, H } = frame;
+  const p = kitchenSinkParts(W, H, sinkMirrored(room));
+  const edge = bw ? "#111" : PLAN_STEEL_EDGE;
+  ctx.save();
+  ctx.transform((a.x - o.x) / W, (a.y - o.y) / W, (c.x - o.x) / H, (c.y - o.y) / H, o.x, o.y);
+  ctx.lineWidth = 1.1;
+  ctx.fillStyle = bw ? "transparent" : canvasSilver(ctx, 0, 0, W, H);
+  ctx.strokeStyle = edge;
+  drawCanvasRoundRect(ctx, 0, 0, W, H, p.outerRx);
+  if (!bw) ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = bw ? "#111" : PLAN_STEEL_GROOVE;
+  ctx.lineWidth = Math.max(0.8, H * 0.028);
+  ctx.lineCap = "round";
+  for (const g of kitchenSinkGrooves(p)) {
+    ctx.beginPath();
+    ctx.moveTo(g.x1, g.y);
+    ctx.lineTo(g.x2, g.y);
+    ctx.stroke();
+  }
+  const bowls = [
+    { x: p.bowl1X, w: p.bowl1W },
+    { x: p.bowl2X, w: p.bowl2W },
+  ];
+  ctx.lineWidth = 1.1;
+  ctx.strokeStyle = edge;
+  for (const b of bowls) {
+    ctx.fillStyle = bw ? "transparent" : canvasSilver(ctx, b.x, p.bowlY, b.w, p.bowlH, true);
+    drawCanvasRoundRect(ctx, b.x, p.bowlY, b.w, p.bowlH, p.rx);
+    if (!bw) ctx.fill();
+    ctx.stroke();
+    const cx = b.x + b.w / 2;
+    const cy = p.bowlY + p.bowlH * 0.58;
+    ctx.beginPath();
+    ctx.arc(cx, cy, p.drainR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, p.drainR * 0.28, 0, Math.PI * 2);
+    if (!bw) {
+      ctx.fillStyle = PLAN_STEEL_EDGE;
+      ctx.fill();
+    } else {
+      ctx.stroke();
+    }
+  }
+  ctx.beginPath();
+  ctx.arc(p.tapX, p.tapY, p.tapR, 0, Math.PI * 2);
+  ctx.strokeStyle = edge;
+  ctx.lineWidth = 1;
+  if (!bw) {
+    ctx.fillStyle = canvasSilver(ctx, p.tapX - p.tapR, p.tapY - p.tapR, p.tapR * 2, p.tapR * 2);
+    ctx.fill();
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function paintKitchenLabelBox(ctx, r, label, bw, stroke) {
+  ctx.fillStyle = bw ? "transparent" : "#ffffff";
+  ctx.strokeStyle = stroke || "#2f2f2f";
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  if (!bw) ctx.fill();
+  ctx.stroke();
+  const short = Math.min(r.w, r.h);
+  ctx.font = `700 ${Math.max(9, short * 0.28)}px "Segoe UI", system-ui, sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = stroke || "#2f2f2f";
+  ctx.fillText(label, r.x + Math.max(3, r.w * 0.08), r.y + r.h - Math.max(3, r.h * 0.08));
+}
+
+function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres) {
+  const kind = roomKind(room);
+  const stroke = bw ? "#111" : null;
+  if (kind === "living") {
+    drawLivingSetCanvas(ctx, room, layout, bw);
+    return;
+  }
+  if (kind === "laundry") {
+    drawLaundryCanvas(ctx, room, layout, bw, stroke, innerMetres);
+    return;
+  }
+  if (kind === "bathroom" || kind === "powder") {
+    const { shower, tank, bowl, toiletGeom } = bathroomFixtures(room);
+    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = stroke || PLAN_CERAMIC_EDGE;
+    if (shower) {
+      const s = mRectToPx(shower, layout);
+      const drainR = Math.max(2, Math.min(s.w, s.h) * 0.07);
+      ctx.fillStyle = bw ? "transparent" : PLAN_GLASS;
+      ctx.beginPath();
+      ctx.rect(s.x, s.y, s.w, s.h);
+      if (!bw) ctx.fill();
+      ctx.stroke();
+      const wasteX = s.x + s.w / 2;
+      const wasteY = s.y + s.h / 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(wasteX, wasteY);
+      ctx.moveTo(s.x + s.w, s.y);
+      ctx.lineTo(wasteX, wasteY);
+      ctx.moveTo(s.x + s.w, s.y + s.h);
+      ctx.lineTo(wasteX, wasteY);
+      ctx.moveTo(s.x, s.y + s.h);
+      ctx.lineTo(wasteX, wasteY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(wasteX, wasteY, drainR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(wasteX, wasteY, Math.max(1, drainR * 0.35), 0, Math.PI * 2);
+      ctx.fillStyle = stroke || PLAN_CERAMIC_EDGE;
+      ctx.fill();
+    }
+    const t = tank ? mRectToPx(tank, layout) : null;
+    const b = bowl ? mRectToPx(bowl, layout) : null;
+    const clearPx = toiletGeom?.clear ? mRectToPx(toiletGeom.clear, layout) : null;
+    if (clearPx) {
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1.15;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = stroke || PLAN_CERAMIC_EDGE;
+      ctx.fillStyle = "transparent";
+      ctx.beginPath();
+      ctx.rect(clearPx.x, clearPx.y, clearPx.w, clearPx.h);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (t && b) {
+      ctx.fillStyle = bw ? "transparent" : PLAN_CERAMIC;
+      ctx.strokeStyle = stroke || PLAN_CERAMIC_EDGE;
+      drawRoundedFrontRect(ctx, b, toiletBowlFront(toiletGeom?.toiletSide));
+      ctx.beginPath();
+      ctx.rect(t.x, t.y, t.w, t.h);
+      if (!bw) ctx.fill();
+      ctx.stroke();
+    }
+    const vanity = bathroomVanity(room, innerMetres);
+    if (vanity) {
+      const vr = mRectToPx(vanity.rect, layout);
+      const basin = mRectToPx(vanity.basin, layout);
+      ctx.lineWidth = 1.2;
+      ctx.fillStyle = bw ? "transparent" : "#ffffff";
+      ctx.strokeStyle = stroke || PLAN_CERAMIC_EDGE;
+      ctx.beginPath();
+      ctx.rect(vr.x, vr.y, vr.w, vr.h);
+      if (!bw) ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(
+        basin.x + basin.w / 2,
+        basin.y + basin.h / 2,
+        basin.w / 2,
+        basin.h / 2,
+        0,
+        0,
+        Math.PI * 2
+      );
+      if (!bw) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+      }
+      ctx.stroke();
+      if (vanity.wm) {
+        const wr = mRectToPx(vanity.wm.rect, layout);
+        ctx.save();
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 1.1;
+        ctx.strokeStyle = stroke || "#2f2f2f";
+        ctx.strokeRect(wr.x, wr.y, wr.w, wr.h);
+        ctx.setLineDash([]);
+        ctx.fillStyle = stroke || "#2f2f2f";
+        ctx.font = `700 ${wmLabelPx(wr)}px "Segoe UI", system-ui, sans-serif`;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText("WM", wr.x + Math.max(3, wr.w * 0.08), wr.y + wr.h - Math.max(3, wr.h * 0.08));
+        ctx.restore();
+      }
+    }
+    const door = roomDoorSwing(room, innerMetres);
+    if (door) {
+      if (bw) {
+        drawDoorSwingCanvas(ctx, door, layout, "#111");
+      } else {
+        drawPlanDoorSwingCanvas(ctx, door, layout);
+        const dl = mPointToPx(door.doorLabel, layout);
+        ctx.font = '700 11px "Segoe UI", system-ui, sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        drawHaloText(ctx, formatPlanMm(door.doorWidth), dl.x, dl.y, PLAN_WOOD_EDGE, "rgba(255,255,255,0.95)");
+      }
+    }
+    return;
+  }
+  if (kind === "kitchen") {
+    const { benchPolys, benchHoles, overhangSegs, cook, pantry, fridge, sinkLocal, hasAppliances } =
+      kitchenFixtureRects(room);
+    ctx.lineWidth = 1.1;
+    ctx.fillStyle = bw ? "transparent" : PLAN_WOOD;
+    ctx.strokeStyle = stroke || PLAN_WOOD_EDGE;
+    ctx.lineJoin = "round";
+    const paintPoly = (poly) => {
+      const pts = poly.map((p) => mPointToPx(p, layout));
+      pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.closePath();
+    };
+    if (benchHoles?.length) {
+      ctx.beginPath();
+      paintPoly(benchPolys[0]);
+      for (const hole of benchHoles) paintPoly(hole);
+      if (!bw) ctx.fill("evenodd");
+      ctx.stroke();
+      for (let i = 1; i < benchPolys.length; i += 1) {
+        ctx.beginPath();
+        paintPoly(benchPolys[i]);
+        if (!bw) ctx.fill();
+        ctx.stroke();
+      }
+    } else {
+      for (const poly of benchPolys) {
+        ctx.beginPath();
+        paintPoly(poly);
+        if (!bw) ctx.fill();
+        ctx.stroke();
+      }
+    }
+    if (overhangSegs.length) {
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1.15;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = stroke || PLAN_WOOD_EDGE;
+      for (const seg of overhangSegs) {
+        const a = mPointToPx(seg[0], layout);
+        const b = mPointToPx(seg[1], layout);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (!hasAppliances) return;
+    const c = mRectToPx(cook, layout);
+    ctx.fillStyle = bw ? "transparent" : PLAN_COOK;
+    ctx.strokeStyle = stroke || "#2f2f2f";
+    drawCanvasRoundRect(ctx, c.x, c.y, c.w, c.h, Math.max(2, layout.scale * 0.04));
+    if (!bw) ctx.fill();
+    ctx.stroke();
+    if (!bw) {
+      ctx.strokeStyle = "#2a2a2a";
+      for (const fx of [0.3, 0.7]) {
+        for (const fy of [0.3, 0.7]) {
+          ctx.beginPath();
+          ctx.arc(
+            c.x + c.w * fx,
+            c.y + c.h * fy,
+            Math.max(2, Math.min(c.w, c.h) * 0.14),
+            0,
+            Math.PI * 2
+          );
+          ctx.stroke();
+        }
+      }
+    }
+    paintKitchenSink(ctx, room, layout, sinkLocal, bw);
+    const ptry = mRectToPx(pantry, layout);
+    paintKitchenLabelBox(ctx, ptry, "P", bw, stroke);
+    const frg = mRectToPx(fridge, layout);
+    paintKitchenLabelBox(ctx, frg, "F", bw, stroke);
+    return;
+  }
+  if (kind === "porch") {
+    const r = roomToPx(room, layout);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.clip();
+    const boardM = 0.09;
+    const gapM = 0.008;
+    const inset = 1.5 / layout.scale;
+    const inner = {
+      x: room.x + inset,
+      y: room.y + inset,
+      w: Math.max(0.05, room.w - inset * 2),
+      h: Math.max(0.05, room.h - inset * 2),
+    };
+    const reverse = roomRotation(room) === 180 || roomRotation(room) === 270;
+    const longIsX = roomLayoutLongIsX(room);
+    const span = longIsX ? inner.h : inner.w;
+    const n = Math.max(2, Math.round((span + gapM) / (boardM + gapM)));
+    const board = (span - (n - 1) * gapM) / n;
+    const stains = ["#c4a574", "#b08968", "#a67c52", "#c19a6b", "#8b5a2b", "#d4b483"];
+    for (let i = 0; i < n; i += 1) {
+      const slot = reverse ? n - 1 - i : i;
+      const off = slot * (board + gapM);
+      const rect = longIsX
+        ? { x: inner.x, y: inner.y + off, w: inner.w, h: board }
+        : { x: inner.x + off, y: inner.y, w: board, h: inner.h };
+      const p = mRectToPx(rect, layout);
+      ctx.fillStyle = bw ? "transparent" : stains[i % stains.length];
+      ctx.strokeStyle = bw ? "#111" : "#4a2c14";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(p.x, p.y, p.w, p.h);
+      if (!bw) ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+    const front = porchFrontDoor(room, layout.metres);
+    if (front) {
+      drawPorchFrontDoorOpening(ctx, front, layout, bw);
+      if (bw) drawDoorSwingCanvas(ctx, front, layout, "#111111");
+      else drawPlanDoorSwingCanvas(ctx, front, layout);
+    }
+    return;
+  }
+  const { bed, pillows, rug, duvet, runner, fold, nightstands } = bedLayout(room, innerMetres);
+  const b = mRectToPx(bed, layout);
+  const rad = Math.max(2, layout.scale * 0.04);
+  if (!bw) {
+    if (rug) {
+      const rp = mRectToPx(rug, layout);
+      ctx.fillStyle = PLAN_RUG;
+      ctx.strokeStyle = PLAN_RUG_EDGE;
+      ctx.lineWidth = 1;
+      drawCanvasRoundRect(ctx, rp.x, rp.y, rp.w, rp.h, Math.max(2, layout.scale * 0.03));
+      ctx.fill();
+      ctx.stroke();
+    }
+    for (const ns of nightstands || []) {
+      const p = mRectToPx(ns, layout);
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+      const lr = Math.min(p.w, p.h) * 0.28;
+      ctx.fillStyle = PLAN_WOOD;
+      ctx.strokeStyle = PLAN_WOOD_EDGE;
+      drawCanvasRoundRect(ctx, p.x, p.y, p.w, p.h, Math.max(1.5, layout.scale * 0.03));
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, lr, 0, Math.PI * 2);
+      ctx.fillStyle = PLAN_LAMP;
+      ctx.strokeStyle = PLAN_WOOD_DARK;
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.fillStyle = PLAN_WOOD;
+    ctx.strokeStyle = PLAN_WOOD_EDGE;
+    ctx.lineWidth = 1.2;
+    drawCanvasRoundRect(ctx, b.x, b.y, b.w, b.h, rad);
+    ctx.fill();
+    ctx.stroke();
+    if (duvet) {
+      const d = mRectToPx(duvet, layout);
+      ctx.fillStyle = PLAN_LINEN;
+      ctx.strokeStyle = PLAN_LINEN_EDGE;
+      ctx.lineWidth = 1;
+      drawCanvasRoundRect(ctx, d.x, d.y, d.w, d.h, Math.max(2, layout.scale * 0.05));
+      ctx.fill();
+      ctx.stroke();
+    }
+    if (fold) {
+      const f = mRectToPx(fold, layout);
+      ctx.fillStyle = PLAN_LINEN_EDGE;
+      ctx.fillRect(f.x, f.y, f.w, f.h);
+    }
+    if (runner) {
+      const rn = mRectToPx(runner, layout);
+      ctx.fillStyle = PLAN_RUNNER;
+      ctx.strokeStyle = PLAN_WOOD_DARK;
+      ctx.beginPath();
+      ctx.rect(rn.x, rn.y, rn.w, rn.h);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#fbfaf6";
+    ctx.strokeStyle = "#c5bfb4";
+    for (const pillow of pillows || []) {
+      const p = mRectToPx(pillow, layout);
+      drawCanvasRoundRect(ctx, p.x, p.y, p.w, p.h, rad * 0.8);
+      ctx.fill();
+      ctx.stroke();
+    }
+  } else {
+    ctx.lineWidth = 1.1;
+    ctx.fillStyle = "transparent";
+    ctx.strokeStyle = "#111";
+    drawCanvasRoundRect(ctx, b.x, b.y, b.w, b.h, rad);
+    ctx.stroke();
+    for (const pillow of pillows || []) {
+      const p = mRectToPx(pillow, layout);
+      drawCanvasRoundRect(ctx, p.x, p.y, p.w, p.h, rad * 0.8);
+      ctx.stroke();
+    }
+  }
+  const geom = bedroomDoorAndRobe(room, innerMetres);
+  if (geom) drawBedroomDoorRobe(ctx, geom, layout, bw);
+}
+
+function drawPorchFrontDoorOpening(ctx, door, layout, bw) {
+  const opening = porchFrontDoorOpening(door);
+  if (!opening) return;
+  const pts = opening.pts.map((p) => mPointToPx(p, layout));
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  if (!bw) {
+    ctx.save();
+    ctx.clip();
+    drawHybridPlanks(ctx, layout);
+    ctx.restore();
+  }
+  ctx.strokeStyle = bw ? "#111111" : MONUMENT;
+  ctx.lineWidth = PLAN_LINE;
+  ctx.lineCap = "butt";
+  ctx.lineJoin = "miter";
+  for (const jamb of opening.jambs) {
+    const a = mPointToPx(jamb[0], layout);
+    const b = mPointToPx(jamb[1], layout);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawDoorSwingCanvas(ctx, door, layout, color) {
+  if (!door) return;
+  const hinge = mPointToPx(door.hinge, layout);
+  const closed = mPointToPx(door.closed, layout);
+  const open = mPointToPx(door.open, layout);
+  const radius = Math.max(1, door.doorWidth * layout.scale);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(hinge.x, hinge.y);
+  ctx.lineTo(open.x, open.y);
+  ctx.stroke();
+  ctx.beginPath();
+  const start = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
+  const end = Math.atan2(open.y - hinge.y, open.x - hinge.x);
+  ctx.arc(hinge.x, hinge.y, radius, start, end, !door.cw);
+  ctx.stroke();
+  const dl = mPointToPx(door.doorLabel, layout);
+  ctx.font = '700 11px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  drawHaloText(ctx, formatPlanMm(door.doorWidth), dl.x, dl.y, color, "rgba(255,255,255,0.95)");
+  ctx.restore();
+}
+
+function drawPlanDoorSwingCanvas(ctx, door, layout) {
+  if (!door) return;
+  const hinge = mPointToPx(door.hinge, layout);
+  const closed = mPointToPx(door.closed, layout);
+  const open = mPointToPx(door.open, layout);
+  const radius = Math.max(1, door.doorWidth * layout.scale);
+  const leaf = doorLeafQuad(hinge, open, doorLeafThicknessPx(layout), closed);
+  ctx.save();
+  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = WALL_FILL;
+  ctx.lineWidth = 1.15;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  const start = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
+  const end = Math.atan2(open.y - hinge.y, open.x - hinge.x);
+  ctx.arc(hinge.x, hinge.y, radius, start, end, !door.cw);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(leaf[0].x, leaf[0].y);
+  for (let i = 1; i < leaf.length; i += 1) ctx.lineTo(leaf[i].x, leaf[i].y);
+  ctx.closePath();
+  ctx.fillStyle = PLAN_WOOD;
+  ctx.strokeStyle = PLAN_WOOD_EDGE;
+  ctx.lineWidth = 1;
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+const DIM_CLEAR_M = 1;
+const DIM_LINE_GAP_M = 0.55;
+const DIM_STATION_TOL_M = 0.01;
+const AREA_LABEL_GAP_PX = 8;
+
+function drawLinearDim(ctx, ax, ay, bx, by, label, color, tick = 5, outX = 0, outY = -1, name = null) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return;
+  const ol = Math.hypot(outX, outY) || 1;
+  const ox = outX / ol;
+  const oy = outY / ol;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(bx, by);
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(ax - ox * tick, ay - oy * tick);
+  ctx.moveTo(bx, by);
+  ctx.lineTo(bx - ox * tick, by - oy * tick);
+  ctx.stroke();
+  if (label) {
+    let angle = Math.atan2(dy, dx);
+    if (angle > Math.PI / 2) angle -= Math.PI;
+    if (angle < -Math.PI / 2) angle += Math.PI;
+    const compact = len < 22;
+    ctx.font = compact
+      ? '700 8px "Segoe UI", system-ui, sans-serif'
+      : '700 11px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.save();
+    ctx.translate((ax + bx) / 2 + ox * (compact ? 13 : 11), (ay + by) / 2 + oy * (compact ? 13 : 11));
+    ctx.rotate(angle);
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  }
+  if (name) {
+    let angle = Math.atan2(dy, dx);
+    if (angle > Math.PI / 2) angle -= Math.PI;
+    if (angle < -Math.PI / 2) angle += Math.PI;
+    const size = [10, 8].find((px) => {
+      ctx.font = `600 ${px}px "Segoe UI", system-ui, sans-serif`;
+      return ctx.measureText(name).width <= len - 8;
+    });
+    if (size) {
+      ctx.font = `600 ${size}px "Segoe UI", system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.translate((ax + bx) / 2 - ox * 10, (ay + by) / 2 - oy * 10);
+      ctx.rotate(angle);
+      ctx.fillText(name, 0, 0);
+    }
+  }
+  ctx.restore();
+}
+
+function dimEdgeMatchM() {
+  return WALL_THICKNESS_M + 0.06;
+}
+
+function splitsOnHEdge(y, t0, t1, inner, outer) {
+  const pts = [t0, t1];
+  const match = dimEdgeMatchM();
+  const pushIf = (x) => {
+    if (x >= t0 - 0.02 && x <= t1 + 0.02) pts.push(x);
+  };
+  for (const p of outer || []) {
+    if (almostEqualM(p.y, y, match)) pushIf(p.x);
+  }
+  for (const p of inner || []) {
+    if (almostEqualM(p.y, y, match)) pushIf(p.x);
+  }
+  return uniqueSortedMetres(pts, 0.02);
+}
+
+function splitsOnVEdge(x, t0, t1, inner, outer) {
+  const pts = [t0, t1];
+  const match = dimEdgeMatchM();
+  const pushIf = (y) => {
+    if (y >= t0 - 0.02 && y <= t1 + 0.02) pts.push(y);
+  };
+  for (const p of outer || []) {
+    if (almostEqualM(p.x, x, match)) pushIf(p.y);
+  }
+  for (const p of inner || []) {
+    if (almostEqualM(p.x, x, match)) pushIf(p.y);
+  }
+  return uniqueSortedMetres(pts, 0.02);
+}
+
+function inflateWallStations(coords, walls, axis) {
+  const half = WALL_THICKNESS_M / 2;
+  let pts = (coords || []).slice();
+  for (const w of walls || []) {
+    const pos = axis === "x" ? (w.axis === "v" ? w.x : null) : w.axis === "h" ? w.y : null;
+    if (pos == null) continue;
+    if (!pts.some((p) => Math.abs(p - pos) <= 0.08)) continue;
+    pts = pts.filter((p) => Math.abs(p - pos) > 0.03);
+    pts.push(pos - half, pos + half);
+  }
+  return uniqueSortedMetres(pts, 0.015);
+}
+
+function nearerHSide(y0, y1, b) {
+  const lo = Math.min(y0, y1);
+  const hi = Math.max(y0, y1);
+  const distTop = Math.max(0, lo - b.minY);
+  const distBot = Math.max(0, b.maxY - hi);
+  return distTop <= distBot ? "top" : "bottom";
+}
+
+function nearerVSide(x0, x1, b) {
+  const lo = Math.min(x0, x1);
+  const hi = Math.max(x0, x1);
+  const distLeft = Math.max(0, lo - b.minX);
+  const distRight = Math.max(0, b.maxX - hi);
+  return distLeft <= distRight ? "left" : "right";
+}
+
+function spanKey(coords) {
+  const parts = [];
+  for (let i = 0; i < (coords || []).length - 1; i += 1) {
+    const span = coords[i + 1] - coords[i];
+    if (span < DIM_STATION_TOL_M) continue;
+    parts.push(String(Math.round(span * 1000)));
+  }
+  return parts.join("|");
+}
+
+function dimStations(values) {
+  return uniqueSortedMetres(values, DIM_STATION_TOL_M);
+}
+
+function drawDimChain(ctx, coords, horizontal, linePos, toX, toY, outX, outY, color, nameFor = null) {
+  const stations = dimStations(coords);
+  if (!stations || stations.length < 2) return;
+  for (let i = 0; i < stations.length - 1; i += 1) {
+    const a = stations[i];
+    const b = stations[i + 1];
+    const span = b - a;
+    if (span < DIM_STATION_TOL_M) continue;
+    const label = String(Math.round(span * 1000));
+    const name = nameFor ? nameFor(a, b) : null;
+    if (horizontal) {
+      drawLinearDim(ctx, toX(a), linePos, toX(b), linePos, label, color, 5, outX, outY, name);
+    } else {
+      drawLinearDim(ctx, linePos, toY(a), linePos, toY(b), label, color, 5, outX, outY, name);
+    }
+  }
+}
+
+const DIM_NAME_MIN_SPAN_M = 0.3;
+
+/**
+ * Name of the first space met when walking in from `side` at the middle of span [a, b]:
+ * a room's name, "Living" for open floor, or null for walls / outside.
+ */
+function dimSpanNamer(side, foot, inner, rooms) {
+  return (a, b) => {
+    if (b - a < DIM_NAME_MIN_SPAN_M) return null;
+    const mid = (a + b) / 2;
+    const horizontal = side === "top" || side === "bottom";
+    const from = side === "top" ? foot.minY : side === "bottom" ? foot.maxY : side === "left" ? foot.minX : foot.maxX;
+    const to = side === "top" ? foot.maxY : side === "bottom" ? foot.minY : side === "left" ? foot.maxX : foot.minX;
+    const dir = to >= from ? 1 : -1;
+    for (let d = 0.15; d < Math.abs(to - from); d += 0.1) {
+      const across = from + dir * d;
+      const p = horizontal ? { x: mid, y: across } : { x: across, y: mid };
+      const room = (rooms || []).find((r) => pointInRoom(p, r));
+      if (room) return roomKindLabel(roomKind(room));
+      if (inner?.length && pointInPolygon(p, inner)) return "Living";
+    }
+    return null;
+  };
+}
+
+function facingSide(edge) {
+  if (edge.axis === "h") return edge.ny < 0 ? "top" : "bottom";
+  return edge.nx < 0 ? "left" : "right";
+}
+
+function drawExportDimensionRuns(ctx, layout, rooms, innerMetres, walls, color) {
+  const outer = layout.metres || [];
+  if (outer.length < 3) return;
+  const ppm = layout.scale;
+  const toX = (m) => m * ppm + layout.originX;
+  const toY = (m) => m * ppm + layout.originY;
+  const b = buildingBounds(outer);
+  const foot = planFootprintBounds(outer, rooms) || b;
+  const coords = { top: [], bottom: [], left: [], right: [] };
+  const sideWalls = { top: [], bottom: [], left: [], right: [] };
+
+  for (let i = 0; i < outer.length; i += 1) {
+    const a = outer[i];
+    const c = outer[(i + 1) % outer.length];
+    const edge = axisEdgeFromPoints(a, c);
+    if (!edge) continue;
+    const inward = polygonEdgeInwardNormal(outer, a, c);
+    const nx = -inward.nx;
+    const ny = -inward.ny;
+    const side = facingSide({ ...edge, nx, ny });
+    const splits =
+      edge.axis === "h"
+        ? splitsOnHEdge(edge.y, edge.t0, edge.t1, innerMetres, outer)
+        : splitsOnVEdge(edge.x, edge.t0, edge.t1, innerMetres, outer);
+    coords[side].push(...splits);
+  }
+
+  for (const r of rooms || []) {
+    if (roomKind(r) === "kitchen" || isLivingSet(r)) continue;
+    const hSide = nearerHSide(r.y, r.y + r.h, b);
+    coords[hSide].push(r.x, r.x + r.w);
+    const vSide = nearerVSide(r.x, r.x + r.w, b);
+    coords[vSide].push(r.y, r.y + r.h);
+  }
+
+  for (const w of walls || []) {
+    if (w.axis === "v") {
+      const side = nearerHSide(w.t0, w.t1, b);
+      coords[side].push(w.x);
+      sideWalls[side].push(w);
+    } else {
+      const side = nearerVSide(w.t0, w.t1, b);
+      coords[side].push(w.y);
+      sideWalls[side].push(w);
+    }
+  }
+
+  for (const side of Object.keys(coords)) {
+    const axis = side === "top" || side === "bottom" ? "x" : "y";
+    coords[side] = dimStations(
+      inflateWallStations(uniqueSortedMetres(coords[side], 0.02), sideWalls[side], axis)
+    );
+  }
+
+  const topKey = spanKey(coords.top);
+  const botKey = spanKey(coords.bottom);
+  const leftKey = spanKey(coords.left);
+  const rightKey = spanKey(coords.right);
+  const overallX = dimStations([b.minX, b.maxX]);
+  const overallY = dimStations([b.minY, b.maxY]);
+  const overallXKey = spanKey(overallX);
+  const overallYKey = spanKey(overallY);
+  const showTopInner = Boolean(topKey) && topKey !== overallXKey;
+  const showBotInner = Boolean(botKey) && botKey !== topKey && botKey !== overallXKey;
+  const showLeftInner = Boolean(leftKey) && leftKey !== overallYKey;
+  const showRightInner = Boolean(rightKey) && rightKey !== leftKey && rightKey !== overallYKey;
+
+  const innerOffPx = DIM_CLEAR_M * ppm;
+  const overallOffPx = innerOffPx + Math.max(DIM_LINE_GAP_M * ppm, 28);
+  const topLineY = toY(foot.minY) - innerOffPx;
+  const botLineY = toY(foot.maxY) + innerOffPx;
+  const leftLineX = toX(foot.minX) - innerOffPx;
+  const rightLineX = toX(foot.maxX) + innerOffPx;
+  const topOverallY = toY(foot.minY) - (showTopInner ? overallOffPx : innerOffPx);
+  const leftOverallX = toX(foot.minX) - (showLeftInner ? overallOffPx : innerOffPx);
+
+  const namedRooms = (rooms || []).filter((r) => !isLivingSet(r));
+  const namer = (side) => dimSpanNamer(side, foot, innerMetres, namedRooms);
+
+  if (showTopInner) {
+    drawDimChain(ctx, coords.top, true, topLineY, toX, toY, 0, -1, color, namer("top"));
+  }
+  drawDimChain(ctx, overallX, true, topOverallY, toX, toY, 0, -1, color);
+
+  if (showBotInner) {
+    drawDimChain(ctx, coords.bottom, true, botLineY, toX, toY, 0, 1, color, namer("bottom"));
+  }
+
+  if (showLeftInner) {
+    drawDimChain(ctx, coords.left, false, leftLineX, toX, toY, -1, 0, color, namer("left"));
+  }
+  drawDimChain(ctx, overallY, false, leftOverallX, toX, toY, -1, 0, color);
+
+  if (showRightInner) {
+    drawDimChain(ctx, coords.right, false, rightLineX, toX, toY, 1, 0, color, namer("right"));
+  }
+}
+
+function PlanDimensionsOverlay({ layout, rooms, innerMetres, walls, width, height }) {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !layout || !(width > 0) || !(height > 0)) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    drawExportDimensionRuns(ctx, layout, rooms, innerMetres, walls, MONUMENT);
+  }, [layout, rooms, innerMetres, walls, width, height]);
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: `${width}px`,
+        height: `${height}px`,
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
+
+function buildDesignExportCanvas(layout, rooms, options = {}) {
+  const mode = options.mode === "color" ? "color" : "bw";
+  const dimensions = options.dimensions !== false;
+  const bw = mode === "bw";
+  const scale = options.scale > 0 ? options.scale : 2;
+  const showAreaLabel = options.showAreaLabel !== false;
+  const pad = dimensions
+    ? Math.ceil(DIM_CLEAR_M * layout.scale + Math.max(DIM_LINE_GAP_M * layout.scale, 28) + 36)
+    : Math.ceil(Math.max(12, PLAN_LINE * 12 + 14));
+  const box = designExportBoundsPx(layout, rooms, pad) || { x: 0, y: 0, w: 640, h: 480 };
+  if (showAreaLabel) {
+    box.y -= 28;
+    box.h += 28;
+  }
   const width = Math.max(48, box.w);
   const height = Math.max(48, box.h);
   const canvas = document.createElement("canvas");
@@ -397,15 +2825,17 @@ function buildDesignExportCanvas(layout, rooms) {
   if (!ctx) throw new Error("PNG capture failed");
   ctx.scale(scale, scale);
   ctx.translate(-box.x, -box.y);
-  ctx.fillStyle = WHITE;
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(box.x, box.y, width, height);
-  drawMetreGrid(
-    ctx,
-    { x: box.x, y: box.y, w: width, h: height },
-    layout.scale,
-    layout.offsetX || 0,
-    layout.offsetY || 0
-  );
+  if (!bw) {
+    drawMetreGrid(
+      ctx,
+      { x: box.x, y: box.y, w: width, h: height },
+      layout.scale,
+      layout.offsetX || 0,
+      layout.offsetY || 0
+    );
+  }
 
   const innerMetres = insetPolygon(layout.metres, WALL_THICKNESS_M);
   const innerPts = innerMetres
@@ -414,32 +2844,38 @@ function buildDesignExportCanvas(layout, rooms) {
         y: p.y * layout.scale + layout.originY,
       }))
     : null;
+  const exportInner = innerMetres || layout.metres;
+  const exportWalls = bedroomBathroomInternalWalls(rooms, exportInner);
+  const wallPx = Math.max(PLAN_LINE, WALL_THICKNESS_M * layout.scale);
 
   if (innerPts) {
     ctx.beginPath();
     tracePolygonPath(ctx, layout.pts);
     tracePolygonPath(ctx, innerPts);
-    ctx.fillStyle = WALL_FILL;
+    ctx.fillStyle = bw ? "#111111" : WALL_FILL;
     ctx.fill("evenodd");
   }
 
-  ctx.beginPath();
-  tracePolygonPath(ctx, innerPts || layout.pts);
-  for (const room of interiorRooms(rooms)) {
-    const r = roomToPx(room, layout);
-    ctx.rect(r.x, r.y, r.w, r.h);
+  if (!bw) {
+    ctx.save();
+    ctx.beginPath();
+    tracePolygonPath(ctx, innerPts || layout.pts);
+    for (const room of walledRooms(rooms)) {
+      const r = roomToPx(room, layout);
+      ctx.rect(r.x, r.y, r.w, r.h);
+    }
+    ctx.clip("evenodd");
+    drawHybridPlanks(ctx, layout);
+    ctx.restore();
   }
-  ctx.fillStyle = LIVING_FILL;
-  ctx.fill("evenodd");
 
   ctx.lineJoin = "round";
-  ctx.strokeStyle = MONUMENT;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = bw ? "#111111" : WALL_FILL;
+  ctx.lineWidth = PLAN_LINE;
   ctx.beginPath();
   tracePolygonPath(ctx, layout.pts);
   ctx.stroke();
   if (innerPts) {
-    ctx.lineWidth = 1.25;
     ctx.beginPath();
     tracePolygonPath(ctx, innerPts);
     ctx.stroke();
@@ -447,162 +2883,788 @@ function buildDesignExportCanvas(layout, rooms) {
 
   for (const room of rooms || []) {
     const r = roomToPx(room, layout);
-    const colors = roomColors(room);
-    ctx.fillStyle = colors.fill;
-    ctx.strokeStyle = colors.stroke;
-    ctx.lineWidth = 2;
-    ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    if (isLivingSet(room) || hasCustomBench(room)) {
+      drawExportRoomFixtures(ctx, room, layout, bw, innerMetres);
+      continue;
+    }
+    if (bw) {
+      if (!roomNeedsPartitionWalls(room)) {
+        ctx.strokeStyle = "#111111";
+        ctx.lineWidth = PLAN_LINE;
+        ctx.strokeRect(r.x, r.y, r.w, r.h);
+      }
+    } else {
+      const colors = roomColors(room);
+      const kind = roomKind(room);
+      ctx.strokeStyle = colors.stroke;
+      ctx.lineWidth = PLAN_LINE;
+      if (kind === "bathroom") {
+        ctx.fillStyle = colors.fill;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        drawBathroomTiles(ctx, room, layout);
+      } else if (kind === "bedroom") {
+        drawCarpetFloor(ctx, room, layout);
+      } else if (kind === "porch") {
+        ctx.fillStyle = colors.fill;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+      } else {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(r.x, r.y, r.w, r.h);
+        ctx.clip();
+        drawHybridPlanks(ctx, layout);
+        ctx.restore();
+      }
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+    }
+    drawExportRoomFixtures(ctx, room, layout, bw, innerMetres);
+  }
+
+  if (exportWalls.length) {
+    ctx.strokeStyle = bw ? "#111111" : WALL_FILL;
+    ctx.lineWidth = wallPx;
+    ctx.lineCap = "butt";
+    ctx.beginPath();
+    for (const seg of exportWalls) {
+      const px = wallSegToLayoutPx(seg, layout);
+      ctx.moveTo(px.x1, px.y1);
+      ctx.lineTo(px.x2, px.y2);
+    }
+    ctx.stroke();
+    ctx.fillStyle = bw ? "#111111" : WALL_FILL;
+    const half = wallPx / 2;
+    for (const c of partitionWallCorners(exportWalls)) {
+      const p = wallCornerToLayoutPx(c, layout);
+      ctx.fillRect(p.x - half, p.y - half, wallPx, wallPx);
+    }
   }
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = '700 13px "Segoe UI", system-ui, sans-serif';
+  const labelColor = "#111";
+  const halo = bw ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.95)";
   const livingPt = innerMetres
-    ? livingLabelPoint(innerMetres, interiorRooms(rooms))
-    : livingLabelPoint(layout.metres, interiorRooms(rooms));
+    ? livingLabelPoint(innerMetres, walledRooms(rooms))
+    : livingLabelPoint(layout.metres, walledRooms(rooms));
   const livingDims = innerMetres
-    ? livingApproxDims(innerMetres, interiorRooms(rooms))
-    : livingApproxDims(layout.metres, interiorRooms(rooms));
+    ? livingApproxDims(innerMetres, walledRooms(rooms))
+    : livingApproxDims(layout.metres, walledRooms(rooms));
   if (livingPt) {
     const x = livingPt.x * layout.scale + layout.originX;
     const y = livingPt.y * layout.scale + layout.originY;
-    drawHaloText(ctx, "Living", x, y - 8, "#111", "rgba(255,255,255,0.95)");
+    drawHaloText(ctx, "Living", x, y - 8, labelColor, halo);
     if (livingDims) {
       ctx.font = '700 12px "Segoe UI", system-ui, sans-serif';
-      drawHaloText(
-        ctx,
-        formatRoomDims(livingDims.w, livingDims.h),
-        x,
-        y + 8,
-        "#111",
-        "rgba(255,255,255,0.95)"
-      );
+      drawHaloText(ctx, formatRoomDims(livingDims.w, livingDims.h), x, y + 8, labelColor, halo);
     }
   }
 
   ctx.font = '700 12px "Segoe UI", system-ui, sans-serif';
   for (const room of rooms || []) {
+    if (isLivingSet(room)) continue;
     const r = roomToPx(room, layout);
     const x = r.x + r.w / 2;
     const y = r.y + r.h / 2;
-    drawHaloText(ctx, roomKindLabel(roomKind(room)), x, y - 8, "#111", "rgba(255,255,255,0.95)");
-    drawHaloText(ctx, formatRoomDims(room.w, room.h), x, y + 8, "#111", "rgba(255,255,255,0.95)");
+    if (hasCustomBench(room)) {
+      drawHaloText(ctx, roomKindLabel(roomKind(room)), x, y, labelColor, halo);
+      continue;
+    }
+    drawHaloText(ctx, roomKindLabel(roomKind(room)), x, y - 8, labelColor, halo);
+    drawHaloText(ctx, formatRoomDims(room.w, room.h), x, y + 8, labelColor, halo);
   }
 
-  ctx.font = '700 11px "Segoe UI", system-ui, sans-serif';
-  for (const side of sideLengthLabels(layout.pts, true, layout.scale)) {
-    ctx.save();
-    ctx.translate(side.x, side.y);
-    ctx.rotate(((side.angleDeg || 0) * Math.PI) / 180);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    drawHaloText(ctx, side.label, 0, 0, WHITE, "rgba(0,0,0,0.85)");
-    ctx.restore();
+  if (dimensions) {
+    drawExportDimensionRuns(
+      ctx,
+      layout,
+      rooms,
+      innerMetres,
+      exportWalls,
+      bw ? "#111111" : MONUMENT
+    );
+  } else if (!bw) {
+    ctx.font = '700 11px "Segoe UI", system-ui, sans-serif';
+    for (const side of sideLengthLabels(layout.pts, true, layout.scale)) {
+      ctx.save();
+      ctx.translate(side.x, side.y);
+      ctx.rotate(((side.angleDeg || 0) * Math.PI) / 180);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      drawHaloText(ctx, side.label, 0, 0, WHITE, "rgba(0,0,0,0.85)");
+      ctx.restore();
+    }
   }
 
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.font = '700 16px "Segoe UI", system-ui, sans-serif';
-  drawHaloText(ctx, formatSqm(layout.areaM2), 12, 10, MONUMENT, "rgba(255,255,255,0.95)");
+  if (showAreaLabel) {
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.font = '700 16px "Segoe UI", system-ui, sans-serif';
+    drawHaloText(ctx, formatSqm(layout.areaM2), 12, 10, bw ? "#111" : MONUMENT, "rgba(255,255,255,0.95)");
+  }
   return canvas;
 }
 
-function canvasToPngBytes(canvas) {
-  if (!(canvas?.width > 0 && canvas?.height > 0)) {
-    throw new Error("Empty capture");
-  }
-  const dataUrl = canvas.toDataURL("image/png");
-  const comma = dataUrl.indexOf(",");
-  if (comma < 0) throw new Error("PNG encode failed");
-  const binary = atob(dataUrl.slice(comma + 1));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  if (bytes.length < 32 || bytes[0] !== 0x89 || bytes[1] !== 0x50) {
-    throw new Error("PNG encode failed");
-  }
-  return bytes;
-}
-
-function triggerPngDownload(bytes, filename) {
-  const blob = new Blob([bytes], { type: "image/png" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 4000);
-}
-
-async function savePngBytes(bytes, filename) {
-  const payload = bytes.slice();
-  if (typeof window.showSaveFilePicker === "function") {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: [
-          {
-            description: "PNG image",
-            accept: { "image/png": [".png"] },
-          },
-        ],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(payload);
-      await writable.truncate(payload.byteLength);
-      await writable.close();
-      const file = await handle.getFile();
-      if (file.size >= 32) return;
-    } catch (err) {
-      if (err && (err.name === "AbortError" || err.name === "NotAllowedError")) return;
-      console.warn("[QuickConcept] save picker write failed, using Downloads:", err);
+function loadExportImage(src) {
+  return new Promise((resolve, reject) => {
+    if (!src) {
+      resolve(null);
+      return;
     }
-  }
-  triggerPngDownload(payload, filename);
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Image load failed"));
+    img.src = src;
+  });
 }
 
-function designPngFilename(areaM2) {
+function imageToPngDataUrl(img) {
+  if (!img) return "";
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, img.naturalWidth || img.width);
+  canvas.height = Math.max(1, img.naturalHeight || img.height);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("PDF capture failed");
+  ctx.drawImage(img, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function designPdfFilename(areaM2) {
   const n =
     !(areaM2 > 0) ? "0" : areaM2 >= 100 ? areaM2.toFixed(0) : areaM2 >= 10 ? areaM2.toFixed(1) : areaM2.toFixed(2);
-  return `quick-concept-${n}m2.png`;
+  return `quick-concept-${n}m2.pdf`;
+}
+
+const PDF_MARGIN_MM = 10;
+const PDF_BOX_GAP_MM = 15;
+const PDF_BOX_INSET_MM = 15;
+const PDF_LOGO_H_MM = 34;
+const PDF_PAGE_W_MM = 210;
+const PDF_PAGE_H_MM = 297;
+
+function measureDesignPdf(address, sizeLabel) {
+  const probe = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const margin = PDF_MARGIN_MM;
+  const boxGap = PDF_BOX_GAP_MM;
+  const logoH = PDF_LOGO_H_MM;
+  const pageW = PDF_PAGE_W_MM;
+  const pageH = PDF_PAGE_H_MM;
+  const contentW = pageW - margin * 2;
+  const inset = PDF_BOX_INSET_MM;
+  probe.setFont("helvetica", "bold");
+  probe.setFontSize(13);
+  const addressLines = probe.splitTextToSize(String(address || "—"), contentW);
+  const sizeLines = probe.splitTextToSize(String(sizeLabel || "—"), contentW);
+  const lineH = 6;
+  let y = margin + logoH + 8;
+  y += 6;
+  y += addressLines.length * lineH + 4;
+  y += 6;
+  y += sizeLines.length * lineH + 6;
+  const leftover = pageH - y - margin;
+  const boxH = Math.max(36, (leftover - boxGap) / 2);
+  return {
+    margin,
+    boxGap,
+    logoH,
+    pageW,
+    pageH,
+    contentW,
+    addressLines,
+    sizeLines,
+    lineH,
+    boxH,
+    boxY0: y,
+    boxY1: y + boxH + boxGap,
+    inset,
+    innerW: contentW - inset * 2,
+    innerH: boxH - inset * 2,
+  };
+}
+
+function placePngInBox(pdf, dataUrl, boxX, boxY, boxW, boxH, inset = PDF_BOX_INSET_MM) {
+  if (!dataUrl) return;
+  const innerX = boxX + inset;
+  const innerY = boxY + inset;
+  const innerW = Math.max(1, boxW - inset * 2);
+  const innerH = Math.max(1, boxH - inset * 2);
+  let imgW = 0;
+  let imgH = 0;
+  try {
+    const props = pdf.getImageProperties(dataUrl);
+    imgW = props.width;
+    imgH = props.height;
+  } catch {
+    return;
+  }
+  if (!(imgW > 0) || !(imgH > 0)) return;
+  const scale = Math.min(innerW / imgW, innerH / imgH);
+  const w = imgW * scale;
+  const h = imgH * scale;
+  pdf.addImage(dataUrl, "PNG", innerX + (innerW - w) / 2, innerY + (innerH - h) / 2, w, h);
+}
+
+async function buildDesignDownloadPdf({
+  planCanvas,
+  view3dUrl,
+  logoSrc,
+  address,
+  sizeLabel,
+}) {
+  const spec = measureDesignPdf(address, sizeLabel);
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+    compress: true,
+  });
+  const { margin, contentW, logoH, boxH, boxY0, boxY1, addressLines, sizeLines, lineH } = spec;
+  const [logo, view3d] = await Promise.all([
+    loadExportImage(logoSrc).catch(() => null),
+    loadExportImage(view3dUrl).catch(() => null),
+  ]);
+
+  pdf.setFillColor(255, 255, 255);
+  pdf.rect(0, 0, spec.pageW, spec.pageH, "F");
+
+  let y = margin;
+  if (logo) {
+    const logoUrl = imageToPngDataUrl(logo);
+    const ratio = (logo.naturalWidth || logo.width) / Math.max(1, logo.naturalHeight || logo.height);
+    const logoW = Math.min(contentW, logoH * ratio);
+    pdf.addImage(logoUrl, "PNG", margin, y, logoW, logoH);
+  }
+  y += logoH + 8;
+
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(8);
+  pdf.setTextColor(107, 107, 107);
+  pdf.text("PROJECT ADDRESS", margin, y);
+  y += 6;
+  pdf.setFontSize(13);
+  pdf.setTextColor(17, 17, 17);
+  pdf.text(addressLines, margin, y);
+  y += addressLines.length * lineH + 4;
+  pdf.setFontSize(8);
+  pdf.setTextColor(107, 107, 107);
+  pdf.text("UNIT SIZE", margin, y);
+  y += 6;
+  pdf.setFontSize(13);
+  pdf.setTextColor(17, 17, 17);
+  pdf.text(sizeLines, margin, y);
+
+  const viewUrl = view3d ? imageToPngDataUrl(view3d) : "";
+  placePngInBox(pdf, viewUrl, margin, boxY0, contentW, boxH);
+  pdf.setDrawColor(50, 50, 51);
+  pdf.setLineWidth(0.35);
+  pdf.rect(margin, boxY0, contentW, boxH, "S");
+
+  const planUrl = planCanvas?.toDataURL?.("image/png") || "";
+  placePngInBox(pdf, planUrl, margin, boxY1, contentW, boxH);
+  pdf.rect(margin, boxY1, contentW, boxH, "S");
+
+  return pdf;
+}
+
+function waitForDesignCapture(captureRef, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const tick = () => {
+      const fn = captureRef?.current;
+      if (typeof fn === "function") {
+        resolve(fn);
+        return;
+      }
+      if (Date.now() - t0 > timeoutMs) {
+        reject(new Error("3D preview was not ready"));
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+
+async function createDesignPdfBlob({
+  layout,
+  rooms,
+  address,
+  capture3d,
+}) {
+  const planCanvas = buildDesignExportCanvas(layout, rooms, {
+    mode: "bw",
+    dimensions: true,
+    scale: 2,
+    showAreaLabel: false,
+  });
+  const view3dUrl = typeof capture3d === "function" ? capture3d(2200) || "" : "";
+  const pdf = await buildDesignDownloadPdf({
+    planCanvas,
+    view3dUrl,
+    logoSrc: sgfHomesLogo,
+    address: address || "",
+    sizeLabel: formatSqm(layout.areaM2),
+  });
+  return {
+    blob: pdf.output("blob"),
+    filename: designPdfFilename(layout.areaM2),
+  };
+}
+
+
+function DesignEmailModal({ layout, rooms, address, quoteEmail, quoteFirstName, onClose }) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
+  const captureRef = useRef(null);
+  const [to, setTo] = useState(() => String(quoteEmail || "").trim());
+  const [error, setError] = useState("");
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfReady, setPdfReady] = useState(false);
+  const firstName = String(quoteFirstName || "").trim();
+  const subject = `QUOTE - ${String(address || "").trim()}`;
+  const body = firstName ? `Hi ${firstName}` : "Hi";
+  const metres = layout?.metres;
+  const innerMetres = useMemo(
+    () => (metres ? insetPolygon(metres, WALL_THICKNESS_M) : null),
+    [metres]
+  );
+  const exportWalls = useMemo(
+    () => bedroomBathroomInternalWalls(rooms, innerMetres || metres),
+    [rooms, innerMetres, metres]
+  );
+  const planDoors = useMemo(
+    () => collectDesignDoors(rooms, metres, innerMetres || metres),
+    [rooms, metres, innerMetres]
+  );
+
+  useEffect(() => {
+    setTo(String(quoteEmail || "").trim());
+  }, [quoteEmail]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!layout) return undefined;
+    let cancelled = false;
+    setPdfFile(null);
+    setPdfReady(false);
+    (async () => {
+      try {
+        const capture3d = await waitForDesignCapture(captureRef);
+        if (cancelled) return;
+        const { blob, filename } = await createDesignPdfBlob({
+          layout,
+          rooms,
+          address,
+          capture3d,
+        });
+        if (cancelled) return;
+        setPdfFile(new File([blob], filename, { type: "application/pdf" }));
+        setPdfReady(true);
+        setError("");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[QuickConcept] email PDF failed:", err);
+        setError(err.message || "Could not create the PDF attachment.");
+        setPdfReady(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [layout, rooms, address]);
+
+  const fieldStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "8px 10px",
+    fontSize: 13,
+    fontFamily: "inherit",
+    border: `1px solid ${EXPLORER_BORDER}`,
+    borderRadius: 8,
+    background: WHITE,
+    color: MONUMENT,
+  };
+
+  const send = async () => {
+    const recipient = String(to || "").trim();
+    if (!recipient) {
+      setError("Enter a recipient email.");
+      return;
+    }
+    if (!pdfFile) {
+      setError("The PDF is still being created.");
+      return;
+    }
+    setError("");
+    try {
+      await runWithEmailOverlay(async () => {
+        const form = new FormData();
+        form.append("to", recipient);
+        form.append("from", QUOTE_EMAIL_FROM);
+        form.append("subject", subject);
+        form.append("htmlBody", body.replace(/\n/g, "<br>"));
+        form.append("attachment", pdfFile, pdfFile.name);
+        const headers = getApiHeaders();
+        delete headers["Content-Type"];
+        const res = await fetch("/api/emails/send", {
+          method: "POST",
+          credentials: "include",
+          headers,
+          body: form,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      });
+      onClose();
+    } catch (err) {
+      setError(err.message || "Send failed");
+    }
+  };
+
+  return (
+    <ModalBackdrop
+      zIndex={21000}
+      style={{
+        background: "rgba(0,0,0,0.55)",
+        padding: 24,
+        overflow: "auto",
+        alignItems: "flex-start",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(560px, 100%)",
+          margin: "40px auto",
+          background: WHITE,
+          borderRadius: 12,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.28)",
+          padding: 22,
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: MONUMENT, marginBottom: 16 }}>Email</div>
+        <label style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 12 }}>
+          To
+          <input
+            type="email"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              if (error) setError("");
+            }}
+            placeholder="client@email.com"
+            style={{ ...fieldStyle, marginTop: 4 }}
+          />
+        </label>
+        <label style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 12 }}>
+          From
+          <input
+            type="text"
+            value={QUOTE_EMAIL_FROM}
+            readOnly
+            style={{ ...fieldStyle, marginTop: 4, background: "#f4f4f4" }}
+          />
+        </label>
+        <label style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 12 }}>
+          Subject
+          <input
+            type="text"
+            value={subject}
+            readOnly
+            style={{ ...fieldStyle, marginTop: 4, background: "#f4f4f4" }}
+          />
+        </label>
+        <label style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 16 }}>
+          Body
+          <textarea
+            value={body}
+            readOnly
+            rows={4}
+            style={{ ...fieldStyle, marginTop: 4, background: "#f4f4f4", resize: "vertical", minHeight: 88 }}
+          />
+        </label>
+        <div style={{ fontSize: 12, color: "#555", marginBottom: 16 }}>
+          Attachment
+          <div
+            style={{
+              ...fieldStyle,
+              marginTop: 4,
+              background: "#f4f4f4",
+              color: pdfReady ? MONUMENT : "#777",
+            }}
+          >
+            {pdfReady && pdfFile ? pdfFile.name : "Creating PDF…"}
+          </div>
+        </div>
+        {error ? (
+          <div style={{ color: "#c00", fontSize: 13, marginBottom: 12 }}>{error}</div>
+        ) : null}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" onClick={onClose} style={toolbarButtonStyle(true)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void send()}
+            disabled={!pdfReady || !pdfFile}
+            style={toolbarButtonStyle(pdfReady && Boolean(pdfFile))}
+          >
+            Send
+          </button>
+        </div>
+      </div>
+      {layout ? (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            right: 0,
+            bottom: 0,
+            width: 640,
+            height: 640,
+            overflow: "hidden",
+            pointerEvents: "none",
+            opacity: 0.01,
+            zIndex: 0,
+          }}
+        >
+          <QuickConcept3DPreview
+            metres={layout.metres}
+            rooms={rooms}
+            innerMetres={innerMetres}
+            walls={exportWalls}
+            doors={planDoors}
+            captureRef={captureRef}
+          />
+        </div>
+      ) : null}
+    </ModalBackdrop>
+  );
+}
+
+function ConfirmModal({ title, message, confirmLabel = "Delete", onConfirm, onCancel }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCancel();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        onConfirm();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onCancel, onConfirm]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="qc-delete-title"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 10100,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "20px",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          width: "min(380px, calc(100vw - 40px))",
+          background: "#ffffff",
+          borderRadius: "16px",
+          border: `1px solid ${EXPLORER_BORDER}`,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.28)",
+          padding: "20px 22px 16px",
+          boxSizing: "border-box",
+        }}
+      >
+        <h2
+          id="qc-delete-title"
+          style={{ margin: "0 0 10px", fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}
+        >
+          {title}
+        </h2>
+        <p style={{ margin: "0 0 18px", fontSize: "0.95rem", color: "#555", lineHeight: 1.4 }}>
+          {message}
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button type="button" onClick={onCancel} style={toolbarButtonStyle(true)} autoFocus>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            style={{
+              ...toolbarButtonStyle(true),
+              background: "#b3261e",
+              color: WHITE,
+              border: "1px solid #b3261e",
+            }}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Design3DModal({ layout, rooms, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  const metres = layout?.metres;
+  const innerMetres = useMemo(
+    () => (metres ? insetPolygon(metres, WALL_THICKNESS_M) : null),
+    [metres]
+  );
+  const exportWalls = useMemo(
+    () => bedroomBathroomInternalWalls(rooms, innerMetres || metres),
+    [rooms, innerMetres, metres]
+  );
+  const planDoors = useMemo(
+    () => collectDesignDoors(rooms, metres, innerMetres || metres),
+    [rooms, metres, innerMetres]
+  );
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="qc-3d-title"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 10100,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "20px",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          width: "min(1600px, calc(100vw - 48px), calc((100vh - 190px) * 4 / 3))",
+          background: "#ffffff",
+          borderRadius: "16px",
+          border: `1px solid ${EXPLORER_BORDER}`,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.28)",
+          padding: "20px 22px 16px",
+          boxSizing: "border-box",
+        }}
+      >
+        <h2
+          id="qc-3d-title"
+          style={{ margin: "0 0 14px", fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}
+        >
+          3D view
+        </h2>
+        <div
+          style={{
+            background: "#fff",
+            border: `1px solid ${EXPLORER_BORDER}`,
+            borderRadius: "10px",
+            width: "100%",
+            aspectRatio: "4 / 3",
+            overflow: "hidden",
+            position: "relative",
+          }}
+        >
+          <div style={{ position: "absolute", inset: 0 }}>
+            <QuickConcept3DPreview
+              metres={layout.metres}
+              rooms={rooms}
+              innerMetres={innerMetres}
+              walls={exportWalls}
+              doors={planDoors}
+            />
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: 16 }}>
+          <button type="button" onClick={onClose} style={toolbarButtonStyle(true)} autoFocus>
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function formatMetres(m) {
-  if (!(m > 0)) return "0 m";
-  const n = m >= 100 ? m.toFixed(0) : m >= 10 ? m.toFixed(1) : m.toFixed(2);
-  return `${n} m`;
+  const v = Number.isFinite(m) ? Math.max(0, m) : 0;
+  return snapMetresToStep(v, BUILDING_STEP_M).toFixed(1);
 }
 
-function sideLengthLabels(pts, closed, ppm) {
+function formatPlanMm(m) {
+  return String(Math.round(Math.max(0, m) * 1000));
+}
+
+function formatDimMm(m) {
+  const v = snapMetresToStep(Math.max(0, Number(m) || 0), BUILDING_STEP_M);
+  return String(Math.round(v * 1000));
+}
+
+function sideLengthLabels(pts, closed, ppm, options = {}) {
   if (!pts || pts.length < 2 || !(ppm > 0)) return [];
   const n = pts.length;
   const count = closed ? n : n - 1;
-  const center = polygonCentroid(pts);
+  const outsetPx = options.outsetPx > 0 ? options.outsetPx : 14;
+  const clearPx = options.clearPx > 0 ? options.clearPx : outsetPx;
+  const foot = options.footprintPx;
   const out = [];
   for (let i = 0; i < count; i += 1) {
     const a = pts[i];
     const b = pts[(i + 1) % n];
     const lenPx = Math.hypot(b.x - a.x, b.y - a.y);
     if (lenPx < 8) continue;
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
-    let nx = a.y - b.y;
-    let ny = b.x - a.x;
-    const nl = Math.hypot(nx, ny) || 1;
-    nx /= nl;
-    ny /= nl;
-    if (nx * (center.x - mx) + ny * (center.y - my) > 0) {
-      nx = -nx;
-      ny = -ny;
+    const inward = polygonEdgeInwardNormal(pts, a, b);
+    const nx = -inward.nx;
+    const ny = -inward.ny;
+    const mx = inward.mx;
+    const my = inward.my;
+    let x = mx + nx * outsetPx;
+    let y = my + ny * outsetPx;
+    if (foot) {
+      if (nx < -0.5) x = Math.min(x, foot.minX - clearPx);
+      else if (nx > 0.5) x = Math.max(x, foot.maxX + clearPx);
+      if (ny < -0.5) y = Math.min(y, foot.minY - clearPx);
+      else if (ny > 0.5) y = Math.max(y, foot.maxY + clearPx);
     }
     out.push({
       key: `side-${i}`,
-      x: mx + nx * 14,
-      y: my + ny * 14,
+      x,
+      y,
       label: formatMetres(lenPx / ppm),
       angleDeg: (() => {
         let angle = Math.atan2(b.y - a.y, b.x - a.x);
@@ -624,16 +3686,34 @@ function pointsNear(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y) <= CLOSE_PX;
 }
 
-/** Shoelace area in square metres. */
-function polygonAreaM2(pts, ppm = DEFAULT_PPM) {
-  if (!pts || pts.length < 3) return 0;
+function polygonSignedAreaXY(pts) {
   let sum = 0;
-  for (let i = 0; i < pts.length; i += 1) {
+  const n = pts?.length || 0;
+  for (let i = 0; i < n; i += 1) {
     const a = pts[i];
-    const b = pts[(i + 1) % pts.length];
+    const b = pts[(i + 1) % n];
     sum += a.x * b.y - b.x * a.y;
   }
-  return Math.abs(sum) / 2 / (ppm * ppm);
+  return sum;
+}
+
+function polygonAreaM2(pts, ppm = DEFAULT_PPM) {
+  if (!pts || pts.length < 3) return 0;
+  return Math.abs(polygonSignedAreaXY(pts)) / 2 / (ppm * ppm);
+}
+
+/** Inward unit normal for an edge. Uses winding so concave L-corners stay correct. */
+function polygonEdgeInwardNormal(pts, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ccw = polygonSignedAreaXY(pts) >= 0;
+  return {
+    nx: (ccw ? -dy : dy) / len,
+    ny: (ccw ? dx : -dx) / len,
+    mx: (a.x + b.x) / 2,
+    my: (a.y + b.y) / 2,
+  };
 }
 
 function lerpPoint(a, b, t) {
@@ -673,10 +3753,13 @@ function clampPolygonPoint(vertices, cursor, maxM2, ppm = DEFAULT_PPM) {
 function clampEdgeMove(baseVerts, index, cursor, maxM2, ppm = DEFAULT_PPM) {
   const desired = moveEdgeAlongNormal(baseVerts, index, cursor);
   if (!(maxM2 > 0)) return desired;
-  if (polygonAreaM2(desired, ppm) <= maxM2 + 1e-9) return desired;
+  const desiredArea = polygonAreaM2(desired, ppm);
+  if (desiredArea <= maxM2 + 1e-9) return desired;
   const start = baseVerts[index];
   const startArea = polygonAreaM2(baseVerts, ppm);
-  const desiredArea = polygonAreaM2(desired, ppm);
+  // Oversized outline (drawn at Any size, then Max 60 m² turned on): allow
+  // shrinking with the cursor, but never grow. Once the live outline is at or
+  // under the cap, the branch below stops the wall at maxM2.
   if (startArea > maxM2 + 1e-9) {
     return desiredArea <= startArea + 1e-9 ? desired : baseVerts.map((p) => ({ x: p.x, y: p.y }));
   }
@@ -689,6 +3772,119 @@ function clampEdgeMove(baseVerts, index, cursor, maxM2, ppm = DEFAULT_PPM) {
     else hi = mid;
   }
   return moveEdgeAlongNormal(baseVerts, index, lerpPoint(start, cursor, lo));
+}
+
+function keepMovedUnderArea(moved, capped, maxM2, ppm = DEFAULT_PPM) {
+  if (!(maxM2 > 0) || polygonAreaM2(moved, ppm) <= maxM2 + 1e-9) return moved;
+  if (capped && polygonAreaM2(capped, ppm) <= maxM2 + 1e-9) return capped;
+  return moved;
+}
+
+const BUILDING_STEP_M = 0.1;
+
+function snapMetresToStep(m, step = BUILDING_STEP_M) {
+  if (!(step > 0) || !Number.isFinite(m)) return m;
+  const stepMm = Math.round(step * 1000);
+  const mm = Math.round(m * 1000);
+  return (Math.round(mm / stepMm) * stepMm) / 1000;
+}
+
+function snapToBuildingStep(value, ref, step = BUILDING_STEP_M) {
+  if (!(step > 0) || !Number.isFinite(value) || !Number.isFinite(ref)) return value;
+  const dist = value - ref;
+  const sign = dist < 0 ? -1 : 1;
+  const stepMm = step * 1000;
+  const useMm = Math.abs(stepMm - Math.round(stepMm)) < 1e-6 && stepMm >= 1 && stepMm <= 1000;
+  if (useMm) {
+    const sMm = Math.round(stepMm);
+    const dMm = Math.round(Math.abs(dist) * 1000);
+    const magMm = Math.max(sMm, Math.round(dMm / sMm) * sMm);
+    return ref + sign * (magMm / 1000);
+  }
+  const units = Math.round(Math.abs(dist) / step);
+  return ref + sign * Math.max(1, units) * step;
+}
+
+function snapPixelAxis(delta, stepPx, mode = "round") {
+  const mag = Math.abs(delta);
+  if (!(stepPx > 0)) return mag;
+  const units =
+    mode === "floor" ? Math.floor(mag / stepPx + 1e-6) : Math.round(mag / stepPx);
+  if (units < 1) return mode === "floor" ? mag : stepPx;
+  return units * stepPx;
+}
+
+/** Snap a map point so its offset from origin is a 100 mm multiple along the current direction. */
+function snapPixelLengthFrom(origin, point, stepPx, mode = "round") {
+  if (!origin || !point || !(stepPx > 0)) return point;
+  const dx = point.x - origin.x;
+  const dy = point.y - origin.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9) return { x: point.x, y: point.y };
+  const mag = snapPixelAxis(len, stepPx, mode);
+  return { x: origin.x + (dx / len) * mag, y: origin.y + (dy / len) * mag };
+}
+
+/** Snap a map rectangle corner so width and height are 100 mm multiples. */
+function snapPixelRectFrom(origin, point, stepPx, mode = "round") {
+  if (!origin || !point || !(stepPx > 0)) return point;
+  const dx = point.x - origin.x;
+  const dy = point.y - origin.y;
+  const sx = dx < 0 ? -1 : 1;
+  const sy = dy < 0 ? -1 : 1;
+  return {
+    x: origin.x + sx * snapPixelAxis(dx, stepPx, mode),
+    y: origin.y + sy * snapPixelAxis(dy, stepPx, mode),
+  };
+}
+
+function clampRectFromPointsStepped(start, end, maxM2, ppm = DEFAULT_PPM, stepM = BUILDING_STEP_M) {
+  const stepPx = stepM * ppm;
+  const snappedEnd = snapPixelRectFrom(start, end, stepPx);
+  const limited = clampRectFromPoints(start, snappedEnd, maxM2, ppm);
+  const limitedEnd = {
+    x: snappedEnd.x >= start.x ? start.x + limited.w : start.x - limited.w,
+    y: snappedEnd.y >= start.y ? start.y + limited.h : start.y - limited.h,
+  };
+  const sameSize =
+    Math.abs(limited.w - Math.abs(snappedEnd.x - start.x)) < 0.5 &&
+    Math.abs(limited.h - Math.abs(snappedEnd.y - start.y)) < 0.5;
+  if (sameSize) return limited;
+  return rectFromPoints(start, snapPixelRectFrom(start, limitedEnd, stepPx, "floor"));
+}
+
+/** Keep building-edge drags on 100 mm (0.1 m) size steps. */
+function snapBuildingEdgeToStep(baseVerts, moved, index, step = BUILDING_STEP_M) {
+  const n = moved?.length || 0;
+  if (n < 2 || !(step > 0)) return moved;
+  const i1 = (index + 1) % n;
+  const a0 = baseVerts[index];
+  const b0 = baseVerts[i1];
+  const a1 = moved[index];
+  const b1 = moved[i1];
+  if (!a0 || !b0 || !a1 || !b1) return moved;
+  const out = moved.map((p) => ({ x: p.x, y: p.y }));
+  const axis = edgeAxis(a0, b0);
+  const prev = baseVerts[(index - 1 + n) % n];
+  const next = baseVerts[(i1 + 1) % n];
+  if (axis === "h") {
+    const refY =
+      Math.abs((prev?.y ?? a0.y) - a0.y) >= Math.abs((next?.y ?? b0.y) - b0.y)
+        ? prev.y
+        : next.y;
+    const y = snapToBuildingStep(a1.y, refY, step);
+    out[index] = { x: a1.x, y };
+    out[i1] = { x: b1.x, y };
+    return out;
+  }
+  const refX =
+    Math.abs((prev?.x ?? a0.x) - a0.x) >= Math.abs((next?.x ?? b0.x) - b0.x)
+      ? prev.x
+      : next.x;
+  const x = snapToBuildingStep(a1.x, refX, step);
+  out[index] = { x, y: a1.y };
+  out[i1] = { x, y: b1.y };
+  return out;
 }
 
 function polygonCentroid(pts) {
@@ -815,7 +4011,11 @@ function AreaLabel({ x, y, areaM2, compact }) {
 }
 
 function formatRoomDims(w, h) {
-  return `${w.toFixed(1)} × ${h.toFixed(1)}`;
+  return `${formatDimMm(w)} × ${formatDimMm(h)}`;
+}
+
+function formatRoomMetres(w, h) {
+  return `${formatMetres(w)} × ${formatMetres(h)}`;
 }
 
 function RoomDimLabel({ x, y, text, title, subtitle }) {
@@ -1056,8 +4256,8 @@ function metreGridStyle(ppm, offsetX = 0, offsetY = 0) {
   };
 }
 
-function layoutFromMetres(metres, width, height, extraRects = []) {
-  const PAD = 56;
+function layoutFromMetres(metres, width, height, lockedScale = null) {
+  const EDGE = 28;
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -1068,18 +4268,16 @@ function layoutFromMetres(metres, width, height, extraRects = []) {
     maxX = Math.max(maxX, p.x);
     maxY = Math.max(maxY, p.y);
   }
-  for (const r of extraRects) {
-    if (!r) continue;
-    minX = Math.min(minX, r.x);
-    minY = Math.min(minY, r.y);
-    maxX = Math.max(maxX, r.x + r.w);
-    maxY = Math.max(maxY, r.y + r.h);
-  }
   const bw = Math.max(maxX - minX, 0.01);
   const bh = Math.max(maxY - minY, 0.01);
-  const innerW = Math.max(width - PAD * 2, 1);
-  const innerH = Math.max(height - PAD * 2, 1);
-  const scale = Math.min(DEFAULT_PPM, innerW / bw, innerH / bh);
+  const innerW = Math.max(width - EDGE * 2, 1);
+  const innerH = Math.max(height - EDGE * 2, 1);
+  let fitScale = Math.min(innerW / bw, innerH / bh);
+  const dimPad = DIM_CLEAR_M * fitScale + 36;
+  const fitW = Math.max(width - dimPad * 2, 1);
+  const fitH = Math.max(height - dimPad * 2, 1);
+  fitScale = Math.min(fitW / bw, fitH / bh);
+  const scale = lockedScale > 0 ? lockedScale : fitScale;
   const originX = (width - bw * scale) / 2 - minX * scale;
   const originY = (height - bh * scale) / 2 - minY * scale;
   return {
@@ -1094,36 +4292,370 @@ function layoutFromMetres(metres, width, height, extraRects = []) {
   };
 }
 
+const DIM_FIT_TEXT_PX = 30;
+const VIEW_SCALE_MIN = 6;
+const VIEW_SCALE_MAX = 600;
+
+/** Fit the building, porches and both dimension rings (plus their labels) inside the stage. */
+function layoutFitWithDims(metres, rooms, width, height) {
+  const foot = planFootprintBounds(metres, rooms);
+  if (!foot) return layoutFromMetres(metres, width, height);
+  const fw = Math.max(foot.maxX - foot.minX, 0.01);
+  const fh = Math.max(foot.maxY - foot.minY, 0.01);
+  let scale = Math.min(width / (fw + 4), height / (fh + 4));
+  for (let i = 0; i < 4; i += 1) {
+    const fixedPx = Math.max(DIM_LINE_GAP_M * scale, 28) + DIM_FIT_TEXT_PX;
+    scale = Math.max(
+      1,
+      Math.min(
+        (width - 2 * fixedPx) / (fw + 2 * DIM_CLEAR_M),
+        (height - 2 * fixedPx) / (fh + 2 * DIM_CLEAR_M)
+      )
+    );
+  }
+  const b = buildingBounds(metres);
+  const originX = width / 2 - ((foot.minX + foot.maxX) / 2) * scale;
+  const originY = height / 2 - ((foot.minY + foot.maxY) / 2) * scale;
+  return {
+    pts: metres.map((p) => ({ x: p.x * scale + originX, y: p.y * scale + originY })),
+    metres,
+    scale,
+    originX,
+    originY,
+    offsetX: originX + b.minX * scale,
+    offsetY: originY + b.minY * scale,
+    areaM2: polygonAreaM2(metres, 1),
+  };
+}
+
 const BEDROOM_W_M = 3.6;
 const BEDROOM_H_M = 3.0;
 const BATHROOM_W_M = 1.8;
 const BATHROOM_H_M = 3.6;
+const POWDER_W_M = 0.9;
+const POWDER_H_M = 2.4;
+const LAUNDRY_DEPTH_M = 0.75;
+const LAUNDRY_LENGTHS_M = [1.3, 1.4, 1.5];
+const LAUNDRY_TROUGH_D_M = 0.6;
+const LAUNDRY_TROUGH_W_M = 0.45;
 const KITCHEN_W_M = 3.0;
 const KITCHEN_H_M = 3.6;
+const KITCHEN_BENCH_M = 0.6;
+const KITCHEN_OVERHANG_M = 0.3;
+const KITCHEN_BAR_M = 0.9;
+const KITCHEN_CLEAR_M = 0.9;
+const COOKTOP_M = 0.55;
+const PANTRY_M = 0.6;
+const FRIDGE_ALONG_M = 1.0;
+const FRIDGE_ACROSS_M = 0.75;
+const SINK_ALONG_M = 1.155;
+const SINK_ACROSS_M = 0.495;
+const SINK_RIGHT_M = 0.05;
+const NIGHTSTAND_M = 0.4;
+const NIGHTSTAND_GAP_M = 0.06;
+const BENCH_SNAP_IN_M = 0.28;
+const KITCHEN_LAYOUTS = [
+  "galley",
+  "lshape-left",
+  "bar-left",
+  "lshape-right",
+  "bar-right",
+  "cshape",
+  "cbar-left",
+  "cbar-right",
+  "island",
+  "custom",
+];
 const PORCH_W_M = 1.5;
 const PORCH_H_M = 2.0;
 const BED_SHORT_M = 1.8;
 const BED_LONG_M = 2.0;
 const SHOWER_LONG_M = 1.8;
 const SHOWER_SHORT_M = 0.9;
+const DOOR_WIDTH_DEFAULT_M = 0.87;
+const POWDER_DOOR_WIDTH_M = 0.77;
+
+function roomDoorWidthM(room) {
+  return roomKind(room) === "powder" ? POWDER_DOOR_WIDTH_M : DOOR_WIDTH_DEFAULT_M;
+}
+const DOOR_LEAF_T_M = 0.04;
+const ROBE_DEPTH_M = 0.6;
+const ROBE_WIDTH_DEFAULT_M = 1.6;
+const ROBE_MIN_M = 1.2;
+const ROBE_MAX_M = 1.8;
+const ROBE_DOOR_T_M = 0.02;
+const ROBE_NIB_T_M = 0.1;
+const VANITY_WIDTH_M = 0.9;
+const POWDER_VANITY_M = 0.6;
+const VANITY_DEPTH_M = 0.4;
+const POWDER_VANITY_DEPTH_M = 0.25;
+const WM_SIZE_M = 0.6;
+const WM_GAP_M = 0.075;
+const WM_SPACE_M = WM_SIZE_M + WM_GAP_M * 2;
+const VANITY_WM_BUTT_SNAP_M = 0.15;
+const TOILET_TANK_ALONG_M = 0.5;
+const TOILET_TANK_DEPTH_M = 0.18;
+const TOILET_BOWL_WIDTH_M = 0.32;
+const TOILET_BOWL_LENGTH_M = 0.58;
+const TOILET_CLEAR_ALONG_M = 0.9;
+const TOILET_CLEAR_DEPTH_M = 1.2;
 const ROOM_MIN_M = 0.6;
-const ROOM_BLUE = "#2563eb";
-const ROOM_BLUE_FILL = "rgba(37, 99, 235, 0.55)";
-const ROOM_PURPLE = "#7c3aed";
-const ROOM_PURPLE_FILL = "rgba(124, 58, 237, 0.55)";
-const ROOM_KITCHEN = "#ea580c";
-const ROOM_KITCHEN_FILL = "rgba(234, 88, 12, 0.5)";
-const ROOM_PORCH = "#7c4a1e";
-const ROOM_PORCH_FILL = "#3d2314";
-const LIVING_FILL = "rgba(250, 204, 21, 0.38)";
+const PLAN_FLOOR = "#d6d0c6";
+const PLAN_WOOD = "#d2ae76";
+const PLAN_WOOD_DARK = "#c49a5e";
+const PLAN_WOOD_EDGE = "#8a6238";
+const PLAN_LINEN = "#f7f5f0";
+const PLAN_LINEN_EDGE = "#ddd6cc";
+const PLAN_RUNNER = "#c6b59c";
+const PLAN_RUG = "#d4c4a4";
+const PLAN_RUG_EDGE = "#c2b08c";
+const PLAN_LAMP = "#f0c94a";
+const PLAN_CERAMIC = "#f7f4ef";
+const PLAN_CERAMIC_EDGE = "#8a8580";
+const BATH_TILE = "#c5c5c5";
+const BATH_GROUT = "#4a4a4a";
+const TILE_SHORT_M = 0.3;
+const TILE_LONG_M = 0.6;
+const HYBRID_PLANK_M = 0.15;
+const HYBRID_GAP_M = 0.003;
+const HYBRID_GAP = "#8a7354";
+const HYBRID_PLANKS = ["#dcc9a8", "#d3be9c", "#cdb792", "#d7c3a2"];
+const CARPET_BASE = "#c6b8a6";
+const CARPET_SHADOW = "#b3a494";
+const CARPET_HIGHLIGHT = "#d4c8b8";
+const PLAN_GLASS = "rgba(196, 214, 222, 0.62)";
+const PLAN_COOK = "#4a4a4a";
+const PLAN_STEEL_EDGE = "#5c636a";
+const PLAN_STEEL_GROOVE = "#7b838b";
+/** Brushed-silver stops: diagonal sheen with a bright streak through the middle. */
+const SILVER_STOPS = [
+  [0, "#eef1f4"],
+  [0.28, "#b9c0c7"],
+  [0.47, "#ffffff"],
+  [0.53, "#f4f6f8"],
+  [0.75, "#a4acb4"],
+  [1, "#dde2e6"],
+];
+const SILVER_BOWL_STOPS = [
+  [0, "#c9cfd5"],
+  [0.3, "#8e979f"],
+  [0.5, "#e6eaed"],
+  [0.72, "#7f8891"],
+  [1, "#b3bac1"],
+];
+
+function SilverGradients({ id }) {
+  return (
+    <defs>
+      {[
+        [`${id}-plate`, SILVER_STOPS],
+        [`${id}-bowl`, SILVER_BOWL_STOPS],
+      ].map(([gid, stops]) => (
+        <linearGradient key={gid} id={gid} x1="0" y1="0" x2="1" y2="1">
+          {stops.map(([o, c]) => (
+            <stop key={o} offset={o} stopColor={c} />
+          ))}
+        </linearGradient>
+      ))}
+    </defs>
+  );
+}
+
+function useSilverId() {
+  return `silver${React.useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+}
+
+function canvasSilver(ctx, x, y, w, h, bowl = false) {
+  const g = ctx.createLinearGradient(x, y, x + w, y + h);
+  for (const [o, c] of bowl ? SILVER_BOWL_STOPS : SILVER_STOPS) g.addColorStop(o, c);
+  return g;
+}
+const ROOM_BLUE = "#8a6238";
+const ROOM_BLUE_FILL = PLAN_FLOOR;
+const ROOM_PURPLE = "#6b7280";
+const ROOM_PURPLE_FILL = PLAN_FLOOR;
+const ROOM_KITCHEN = "#8a6238";
+const ROOM_KITCHEN_FILL = PLAN_FLOOR;
+const ROOM_PORCH = "#8a6238";
+const ROOM_PORCH_FILL = "#c4a574";
+const LIVING_FILL = HYBRID_PLANKS[1];
+const ROOM_LIVING = "#6f7f55";
+const COUCH_CUSHION_M = 0.8;
+const COUCH_ARM_M = 0.1;
+const COUCH_BACK_M = 0.15;
+const COUCH_W_M = COUCH_CUSHION_M * 3 + COUCH_ARM_M * 2;
+const COUCH_D_M = COUCH_CUSHION_M + COUCH_BACK_M;
+const TV_UNIT_W_M = 1.8;
+const TV_UNIT_D_M = 0.4;
+const TV_W_M = 1.4;
+const TV_D_M = 0.06;
+const COFFEE_W_M = 1.2;
+const COFFEE_D_M = 0.6;
+const LIVING_SET_GAP_M = 0.3;
+const LIVING_SET_ALONG_M = 3.0;
+const LIVING_SET_ACROSS_M = 3.4;
+const LIVING_SET_MIN_ACROSS_M = TV_UNIT_D_M + COFFEE_D_M + COUCH_D_M + LIVING_SET_GAP_M * 2;
+const COUCH_FILL = "#f2efe9";
+const COUCH_EDGE = "#8c857b";
+const TV_FILL = "#1f1f1f";
 const WALL_THICKNESS_M = 0.1;
-const WALL_FILL = "rgba(90, 90, 90, 0.72)";
+/** A room wall merges into the external wall only when its side is closer than this. */
+const PARTITION_MERGE_M = 0.1;
+const PARTITION_MERGE_PROBE_M = PARTITION_MERGE_M - 0.005;
+const WALL_FILL = "#2f2f2f";
+const PLAN_LINE = 0.75;
+const PLAN_LINE_ACTIVE = 1;
+const PLAN_LINE_HOVER = 2;
 
 function roomKind(room) {
   if (room?.kind === "bathroom") return "bathroom";
+  if (room?.kind === "powder") return "powder";
+  if (room?.kind === "laundry") return "laundry";
   if (room?.kind === "kitchen") return "kitchen";
   if (room?.kind === "porch") return "porch";
+  if (room?.kind === "living") return "living";
   return "bedroom";
+}
+
+function isLaundry(room) {
+  return roomKind(room) === "laundry";
+}
+
+/** Euro laundry: 750 deep, length (1200–1500) runs along x when unrotated / rotated 180. */
+function laundryLengthIsX(room) {
+  const rot = roomRotation(room);
+  return rot === 0 || rot === 180;
+}
+
+/** Back wall (fixtures against it); the opposite side is the open cupboard front. */
+function laundryBackSide(room) {
+  const rot = roomRotation(room);
+  return rot === 90 ? "right" : rot === 180 ? "bottom" : rot === 270 ? "left" : "top";
+}
+
+function laundryOpenSide(room) {
+  const back = laundryBackSide(room);
+  return back === "top" ? "bottom" : back === "bottom" ? "top" : back === "left" ? "right" : "left";
+}
+
+/** Length snaps to 1200/1300/1400/1500 with the opposite end fixed; depth never changes. */
+function resizeLaundry(start, side, next, inner) {
+  if (!laundrySideResizable(start, side)) return { ...start };
+  const out = { ...start };
+  if (side === "left") {
+    const right = start.x + start.w;
+    out.w = snapLaundryLength(right - next.x);
+    out.x = right - out.w;
+  } else if (side === "right") {
+    out.w = snapLaundryLength(next.w);
+  } else if (side === "top") {
+    const bottom = start.y + start.h;
+    out.h = snapLaundryLength(bottom - next.y);
+    out.y = bottom - out.h;
+  } else {
+    out.h = snapLaundryLength(next.h);
+  }
+  return inner?.length && !rectInsidePolygon(out, inner) ? { ...start } : out;
+}
+
+function laundrySideResizable(room, side) {
+  return laundryLengthIsX(room) ? side === "left" || side === "right" : side === "top" || side === "bottom";
+}
+
+function snapLaundryLength(len) {
+  return LAUNDRY_LENGTHS_M.reduce((best, v) => (Math.abs(v - len) < Math.abs(best - len) ? v : best));
+}
+
+/**
+ * Fixed fittings: WM space (600 + 75 each side) at one end, trough cabinet along the rest.
+ * Measured from the visible wall faces, so partition half-walls are allowed for.
+ */
+function laundryFixtures(room) {
+  const back = laundryBackSide(room);
+  const frame = roomWallFrame(room, back);
+  const box = (t0, t1, d0, d1) => wallBoxRect(frame.origin, frame.along, frame.inward, t0, t1, d0, d1);
+  const end = frame.wallLen;
+  const troughStart = end - LAUNDRY_TROUGH_W_M;
+  const inset = 0.06;
+  return {
+    wm: box(WM_GAP_M, WM_GAP_M + WM_SIZE_M, 0, WM_SIZE_M),
+    trough: box(troughStart, end, 0, LAUNDRY_TROUGH_D_M),
+    basin: box(troughStart + inset, end - inset, inset + 0.03, LAUNDRY_TROUGH_D_M - inset),
+  };
+}
+
+/** Living room furniture group: sits on the open living floor, not a walled room. */
+function isLivingSet(room) {
+  return roomKind(room) === "living";
+}
+
+/** Rooms that carve space out of the open living floor (excludes porches and living sets). */
+function walledRooms(rooms) {
+  return (rooms || []).filter((r) => !isPorch(r) && !isLivingSet(r));
+}
+
+function isBathLike(room) {
+  const kind = roomKind(room);
+  return kind === "bathroom" || kind === "powder";
+}
+
+function bathroomHasShower(room) {
+  return roomKind(room) === "bathroom";
+}
+
+function vanityLengthM(room) {
+  return roomKind(room) === "powder" ? POWDER_VANITY_M : VANITY_WIDTH_M;
+}
+
+function defaultBathroomLayout(w, h) {
+  const doorW = Math.min(DOOR_WIDTH_DEFAULT_M, Math.max(0.2, Math.min(w, h) - 0.05));
+  if (h >= w) {
+    const showerW = Math.min(SHOWER_SHORT_M, w);
+    const showerH = Math.min(SHOWER_LONG_M, h);
+    return {
+      doorSide: "top",
+      doorAlong: snapPlanMm(Math.max(0, w - doorW)),
+      doorFlip: true,
+      vanitySide: "top",
+      vanityAlong: 0,
+      toiletSide: "bottom",
+      showerLongIsX: false,
+      showerX: 0,
+      showerY: snapPlanMm(Math.max(0, h - showerH)),
+    };
+  }
+  const showerW = Math.min(SHOWER_LONG_M, w);
+  const showerH = Math.min(SHOWER_SHORT_M, h);
+  return {
+    doorSide: "right",
+    doorAlong: snapPlanMm(Math.max(0, h - doorW)),
+    doorFlip: true,
+    vanitySide: "right",
+    vanityAlong: 0,
+    toiletSide: "left",
+    showerLongIsX: true,
+    showerX: 0,
+    showerY: 0,
+  };
+}
+
+function defaultPowderLayout(w, h) {
+  if (h >= w) {
+    return {
+      toiletSide: "bottom",
+      doorSide: "top",
+      vanitySide: "left",
+      vanityAlong: snapPlanMm(Math.max(0, (h - POWDER_VANITY_M) / 2)),
+      doorAlong: 0,
+    };
+  }
+  return {
+    toiletSide: "right",
+    doorSide: "left",
+    vanitySide: "top",
+    vanityAlong: snapPlanMm(Math.max(0, (w - POWDER_VANITY_M) / 2)),
+    doorAlong: 0,
+  };
 }
 
 function isPorch(room) {
@@ -1140,17 +4672,161 @@ function porchRooms(rooms) {
 
 function roomKindLabel(kind) {
   if (kind === "bathroom") return "Bathroom";
+  if (kind === "powder") return "Powder Room";
+  if (kind === "laundry") return "Euro Laundry";
   if (kind === "kitchen") return "Kitchen";
   if (kind === "porch") return "Porch";
+  if (kind === "living") return "Living Room";
   return "Bedroom";
 }
 
 function roomColors(room) {
   const kind = roomKind(room);
-  if (kind === "bathroom") return { stroke: ROOM_PURPLE, fill: ROOM_PURPLE_FILL };
-  if (kind === "kitchen") return { stroke: ROOM_KITCHEN, fill: ROOM_KITCHEN_FILL };
+  if (kind === "living") return { stroke: ROOM_LIVING, fill: "none" };
+  if (kind === "bathroom") return { stroke: ROOM_PURPLE, fill: BATH_TILE };
+  if (kind === "powder" || kind === "laundry") return { stroke: ROOM_PURPLE, fill: HYBRID_PLANKS[1] };
+  if (kind === "kitchen") return { stroke: ROOM_KITCHEN, fill: HYBRID_PLANKS[1] };
   if (kind === "porch") return { stroke: ROOM_PORCH, fill: ROOM_PORCH_FILL };
-  return { stroke: ROOM_BLUE, fill: ROOM_BLUE_FILL };
+  return { stroke: ROOM_BLUE, fill: CARPET_BASE };
+}
+
+function intersectAxisRect(a, b) {
+  if (!a || !b) return null;
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const w = Math.min(a.x + a.w, b.x + b.w) - x;
+  const h = Math.min(a.y + a.h, b.y + b.h) - y;
+  if (!(w > 0.12) || !(h > 0.12)) return null;
+  return { x, y, w, h };
+}
+
+function footStripRect(bed, bedSide, thickness, inset) {
+  const t = Math.min(thickness, Math.max(0.08, (bedSide === "left" || bedSide === "right" ? bed.w : bed.h) * 0.16));
+  const pad = inset;
+  if (bedSide === "top") {
+    return { x: bed.x + pad, y: bed.y + bed.h - pad - t, w: Math.max(0.1, bed.w - pad * 2), h: t };
+  }
+  if (bedSide === "bottom") {
+    return { x: bed.x + pad, y: bed.y + pad, w: Math.max(0.1, bed.w - pad * 2), h: t };
+  }
+  if (bedSide === "left") {
+    return { x: bed.x + bed.w - pad - t, y: bed.y + pad, w: t, h: Math.max(0.1, bed.h - pad * 2) };
+  }
+  return { x: bed.x + pad, y: bed.y + pad, w: t, h: Math.max(0.1, bed.h - pad * 2) };
+}
+
+function robeNibFlags(geom) {
+  const alongM = Number(geom?.robeAlongM);
+  const wallLen = Number(geom?.robeWallLen);
+  const width = Number(geom?.robeWidth);
+  if (!Number.isFinite(alongM) || !Number.isFinite(wallLen) || !Number.isFinite(width)) {
+    return { start: false, end: false };
+  }
+  const againstTol = WALL_THICKNESS_M + 0.02;
+  return {
+    start: alongM > againstTol,
+    end: alongM + width < wallLen - againstTol,
+  };
+}
+
+function robeNibRects(geom) {
+  if (!geom?.robeAnchor || !geom.robeAlong || !geom.robeInward) return [];
+  const flags = robeNibFlags(geom);
+  const t = ROBE_NIB_T_M;
+  const d = ROBE_DEPTH_M;
+  const width = Number(geom.robeWidth);
+  const rects = [];
+  if (flags.start) {
+    rects.push(wallBoxRect(geom.robeAnchor, geom.robeAlong, geom.robeInward, -t, 0, 0, d));
+  }
+  if (flags.end) {
+    rects.push(wallBoxRect(geom.robeAnchor, geom.robeAlong, geom.robeInward, width, width + t, 0, d));
+  }
+  return rects;
+}
+
+function robeResizeAxis(geom) {
+  return Math.abs(geom?.robeAlong?.x || 0) > 0.5 ? "ew" : "ns";
+}
+
+function robeResizeHandles(geom) {
+  if (!geom?.robeAnchor || !geom.robeAlong || !geom.robeInward) return [];
+  const flags = robeNibFlags(geom);
+  const t = ROBE_NIB_T_M;
+  const d = ROBE_DEPTH_M;
+  const width = Number(geom.robeWidth);
+  const handles = [];
+  if (flags.start) {
+    handles.push({
+      which: "start",
+      point: {
+        x: geom.robeAnchor.x + geom.robeAlong.x * (-t / 2) + geom.robeInward.x * (d / 2),
+        y: geom.robeAnchor.y + geom.robeAlong.y * (-t / 2) + geom.robeInward.y * (d / 2),
+      },
+    });
+  }
+  if (flags.end) {
+    handles.push({
+      which: "end",
+      point: {
+        x: geom.robeAnchor.x + geom.robeAlong.x * (width + t / 2) + geom.robeInward.x * (d / 2),
+        y: geom.robeAnchor.y + geom.robeAlong.y * (width + t / 2) + geom.robeInward.y * (d / 2),
+      },
+    });
+  }
+  return handles;
+}
+
+function robeSlidingDoorRects(geom) {
+  if (!geom?.robeAnchor || !geom.robeAlong || !geom.robeInward) return [];
+  const span = Number(geom.robeWidth);
+  if (!(span > 0.05)) return [];
+  const t = ROBE_DOOR_T_M;
+  const leaf = Math.max(0.2, span * 0.55);
+  const front = ROBE_DEPTH_M;
+  return [
+    wallBoxRect(geom.robeAnchor, geom.robeAlong, geom.robeInward, 0, leaf, front - t * 2, front - t),
+    wallBoxRect(geom.robeAnchor, geom.robeAlong, geom.robeInward, span - leaf, span, front - t, front),
+  ];
+}
+
+function doorLeafThicknessPx(layout) {
+  return Math.max(2, (layout?.scale || 40) * DOOR_LEAF_T_M);
+}
+
+function robeDoorPx(door, geom, layout) {
+  const p = mRectToPx(door, layout);
+  const minT = 4;
+  const alongX = Math.abs(geom?.robeAlong?.x || 0) > 0.5;
+  if (alongX) {
+    if (p.h < minT) {
+      const grow = minT - p.h;
+      if ((geom?.robeInward?.y || 0) > 0) p.y -= grow;
+      p.h = minT;
+    }
+  } else if (p.w < minT) {
+    const grow = minT - p.w;
+    if ((geom?.robeInward?.x || 0) > 0) p.x -= grow;
+    p.w = minT;
+  }
+  return p;
+}
+
+/** Open door leaf; its thickness always goes into the room (towards the swing), whichever way the door hangs. */
+function doorLeafQuad(hinge, tip, thicknessPx, closed) {
+  const dx = tip.x - hinge.x;
+  const dy = tip.y - hinge.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const toSwing = closed ? (-dy / len) * (closed.x - hinge.x) + (dx / len) * (closed.y - hinge.y) : 1;
+  const sign = toSwing < 0 ? -1 : 1;
+  const nx = (-dy / len) * thicknessPx * sign;
+  const ny = (dx / len) * thicknessPx * sign;
+  return [
+    { x: hinge.x, y: hinge.y },
+    { x: tip.x, y: tip.y },
+    { x: tip.x + nx, y: tip.y + ny },
+    { x: hinge.x + nx, y: hinge.y + ny },
+  ];
 }
 
 function nextRoomPlacement(rooms, metres, w, h) {
@@ -1185,51 +4861,7 @@ function pxToMetres(p, layout) {
 }
 
 function handlePx(layout) {
-  return Math.max(9, Math.min(13, layout.scale * 0.3));
-}
-
-function buildingSnapAxes(metres) {
-  const xs = [];
-  const ys = [];
-  if (!metres?.length) return { xs, ys };
-  const n = metres.length;
-  for (let i = 0; i < n; i += 1) {
-    const a = metres[i];
-    const b = metres[(i + 1) % n];
-    xs.push(a.x);
-    ys.push(a.y);
-    const dx = Math.abs(b.x - a.x);
-    const dy = Math.abs(b.y - a.y);
-    if (dx <= dy * 0.2) {
-      xs.push(a.x, b.x, (a.x + b.x) / 2);
-    }
-    if (dy <= dx * 0.2) {
-      ys.push(a.y, b.y, (a.y + b.y) / 2);
-    }
-  }
-  return { xs, ys };
-}
-
-function roomEdgeAxes(rooms, excludeId) {
-  const xs = [];
-  const ys = [];
-  for (const r of rooms || []) {
-    if (excludeId && r.id === excludeId) continue;
-    xs.push(r.x, r.x + r.w);
-    ys.push(r.y, r.y + r.h);
-  }
-  return { xs, ys };
-}
-
-function mergeSnapAxes(...lists) {
-  const xs = [];
-  const ys = [];
-  for (const a of lists) {
-    if (!a) continue;
-    if (a.xs?.length) xs.push(...a.xs);
-    if (a.ys?.length) ys.push(...a.ys);
-  }
-  return { xs, ys };
+  return Math.max(10, Math.min(16, layout.scale * 0.22));
 }
 
 function roomInnerSnapAxes(rooms) {
@@ -1243,21 +4875,9 @@ function roomInnerSnapAxes(rooms) {
 }
 
 function edgeInwardNormal(metres, index) {
-  const n = metres.length;
   const a = metres[index];
-  const b = metres[(index + 1) % n];
-  const c = polygonCentroid(metres);
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  let nx = -dy / len;
-  let ny = dx / len;
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2;
-  if (nx * (c.x - mx) + ny * (c.y - my) < 0) {
-    nx = -nx;
-    ny = -ny;
-  }
+  const b = metres[(index + 1) % metres.length];
+  const { nx, ny } = polygonEdgeInwardNormal(metres, a, b);
   return { nx, ny };
 }
 
@@ -1364,7 +4984,7 @@ function clampBuildingEdgeToRooms(base, moved, index, rooms, wallM = WALL_THICKN
 function insetPolygon(pts, dist) {
   if (!pts || pts.length < 3 || !(dist > 0)) return null;
   const n = pts.length;
-  const c = polygonCentroid(pts);
+  const ccw = polygonSignedAreaXY(pts) >= 0;
   const shifted = [];
   for (let i = 0; i < n; i += 1) {
     const a = pts[i];
@@ -1376,14 +4996,8 @@ function insetPolygon(pts, dist) {
       shifted.push(null);
       continue;
     }
-    let nx = -dy / len;
-    let ny = dx / len;
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
-    if (nx * (c.x - mx) + ny * (c.y - my) < 0) {
-      nx = -nx;
-      ny = -ny;
-    }
+    const nx = (ccw ? -dy : dy) / len;
+    const ny = (ccw ? dx : -dx) / len;
     shifted.push({
       a: { x: a.x + nx * dist, y: a.y + ny * dist },
       ux: dx / len,
@@ -1407,6 +5021,1682 @@ function insetPolygon(pts, dist) {
   if (!pointInPolygon(polygonCentroid(out), pts)) return null;
   if (polygonAreaM2(out, 1) < 0.25) return null;
   return out;
+}
+
+const WALL_COLINEAR_M = 0.08;
+const WALL_MIN_LEN_M = 0.05;
+
+function roomNeedsPartitionWalls(room) {
+  const kind = roomKind(room);
+  return kind === "bedroom" || kind === "bathroom" || kind === "powder" || kind === "laundry";
+}
+
+function almostEqualM(a, b, tol = WALL_COLINEAR_M) {
+  return Math.abs(a - b) <= tol;
+}
+
+function axisEdgeFromPoints(a, b) {
+  const dx = Math.abs(b.x - a.x);
+  const dy = Math.abs(b.y - a.y);
+  if (dy <= WALL_COLINEAR_M && dx > WALL_COLINEAR_M) {
+    return { axis: "h", y: (a.y + b.y) / 2, t0: Math.min(a.x, b.x), t1: Math.max(a.x, b.x) };
+  }
+  if (dx <= WALL_COLINEAR_M && dy > WALL_COLINEAR_M) {
+    return { axis: "v", x: (a.x + b.x) / 2, t0: Math.min(a.y, b.y), t1: Math.max(a.y, b.y) };
+  }
+  return null;
+}
+
+/** Default spot for the m² label: under the middle of the lowest, longest bottom-facing outer wall. */
+function areaLabelAnchorM(outer, rooms) {
+  let best = null;
+  for (let i = 0; i < (outer || []).length; i += 1) {
+    const a = outer[i];
+    const c = outer[(i + 1) % outer.length];
+    const edge = axisEdgeFromPoints(a, c);
+    if (!edge || edge.axis !== "h") continue;
+    if (polygonEdgeInwardNormal(outer, a, c).ny >= 0) continue;
+    const len = edge.t1 - edge.t0;
+    if (
+      !best ||
+      edge.y > best.y + WALL_COLINEAR_M ||
+      (Math.abs(edge.y - best.y) <= WALL_COLINEAR_M && len > best.len)
+    ) {
+      best = { x: (edge.t0 + edge.t1) / 2, y: edge.y, len };
+    }
+  }
+  if (!best) return null;
+  let y = best.y;
+  for (const r of rooms || []) {
+    if (best.x > r.x && best.x < r.x + r.w && y + 0.05 > r.y && y + 0.05 < r.y + r.h) {
+      y = r.y + r.h;
+    }
+  }
+  return { x: best.x, y };
+}
+
+function outlineAxisEdges(poly) {
+  const edges = [];
+  if (!poly || poly.length < 2) return edges;
+  for (let i = 0; i < poly.length; i += 1) {
+    const edge = axisEdgeFromPoints(poly[i], poly[(i + 1) % poly.length]);
+    if (edge) edges.push(edge);
+  }
+  return edges;
+}
+
+function subtractIntervals(start, end, cuts) {
+  let segs = [[Math.min(start, end), Math.max(start, end)]];
+  const sorted = (cuts || [])
+    .map(([a, b]) => [Math.min(a, b), Math.max(a, b)])
+    .sort((p, q) => p[0] - q[0]);
+  for (const [c0, c1] of sorted) {
+    const next = [];
+    for (const [s0, s1] of segs) {
+      if (c1 <= s0 + 1e-9 || c0 >= s1 - 1e-9) {
+        next.push([s0, s1]);
+        continue;
+      }
+      if (c0 > s0 + WALL_MIN_LEN_M) next.push([s0, Math.min(s1, c0)]);
+      if (c1 < s1 - WALL_MIN_LEN_M) next.push([Math.max(s0, c1), s1]);
+    }
+    segs = next.filter(([a, b]) => b - a > WALL_MIN_LEN_M);
+  }
+  return segs;
+}
+
+function mergePartitionWalls(segs) {
+  const groups = new Map();
+  for (const s of segs || []) {
+    const key = s.axis === "h" ? `h:${Math.round(s.y * 100)}` : `v:${Math.round(s.x * 100)}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        axis: s.axis,
+        x: s.x,
+        y: s.y,
+        intervals: [],
+      });
+    }
+    groups.get(key).intervals.push([s.t0, s.t1]);
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const iv = g.intervals
+      .map(([a, b]) => [Math.min(a, b), Math.max(a, b)])
+      .sort((p, q) => p[0] - q[0]);
+    if (!iv.length) continue;
+    let cur = iv[0];
+    for (let i = 1; i < iv.length; i += 1) {
+      if (iv[i][0] <= cur[1] + WALL_MIN_LEN_M) {
+        cur[1] = Math.max(cur[1], iv[i][1]);
+      } else {
+        out.push(
+          g.axis === "h"
+            ? { axis: "h", y: g.y, t0: cur[0], t1: cur[1] }
+            : { axis: "v", x: g.x, t0: cur[0], t1: cur[1] }
+        );
+        cur = iv[i];
+      }
+    }
+    out.push(
+      g.axis === "h"
+        ? { axis: "h", y: g.y, t0: cur[0], t1: cur[1] }
+        : { axis: "v", x: g.x, t0: cur[0], t1: cur[1] }
+    );
+  }
+  return out;
+}
+
+function externalCutsOnSide(side, innerPoly, probeM) {
+  if (!innerPoly?.length || !(side.t1 - side.t0 > WALL_MIN_LEN_M)) return [];
+  const n = Math.max(12, Math.ceil((side.t1 - side.t0) / 0.12));
+  const outside = [];
+  for (let i = 0; i <= n; i += 1) {
+    const t = side.t0 + ((side.t1 - side.t0) * i) / n;
+    const p =
+      side.axis === "h"
+        ? { x: t, y: side.y + side.oy * probeM }
+        : { x: side.x + side.ox * probeM, y: t };
+    outside.push(!pointInPolygon(p, innerPoly));
+  }
+  const cuts = [];
+  let run = null;
+  const at = (i) => side.t0 + ((side.t1 - side.t0) * i) / n;
+  const isOut = (t) =>
+    !pointInPolygon(side.axis === "h" ? { x: t, y: side.y + side.oy * probeM } : { x: side.x + side.ox * probeM, y: t }, innerPoly);
+  /** Exact crossing between two samples, so the cut ends on the external wall face. */
+  const crossing = (lo, hi, loOut) => {
+    let a = lo;
+    let b = hi;
+    for (let k = 0; k < 20; k += 1) {
+      const m = (a + b) / 2;
+      if (isOut(m) === loOut) a = m;
+      else b = m;
+    }
+    return roundMm((a + b) / 2);
+  };
+  for (let i = 0; i <= n; i += 1) {
+    if (outside[i]) {
+      if (run == null) run = i === 0 ? side.t0 : crossing(at(i - 1), at(i), false);
+    } else if (run != null) {
+      cuts.push([run, crossing(at(i - 1), at(i), true)]);
+      run = null;
+    }
+  }
+  if (run != null) cuts.push([run, side.t1]);
+  return cuts;
+}
+
+function roomDoorSide(room, innerMetres) {
+  const s = room?.doorSide;
+  if (s === "top" || s === "right" || s === "bottom" || s === "left") return s;
+  return bedroomEntrySide(room, innerMetres);
+}
+
+function rotateDoorSide(side) {
+  if (side === "top") return "right";
+  if (side === "right") return "bottom";
+  if (side === "bottom") return "left";
+  if (side === "left") return "top";
+  return side;
+}
+
+function nearestRoomSide(room, p) {
+  const x0 = room.x;
+  const y0 = room.y;
+  const x1 = room.x + room.w;
+  const y1 = room.y + room.h;
+  const hits = [
+    { side: "top", d: Math.abs(p.y - y0), t: p.x - x0, wallLen: room.w },
+    { side: "bottom", d: Math.abs(p.y - y1), t: p.x - x0, wallLen: room.w },
+    { side: "left", d: Math.abs(p.x - x0), t: p.y - y0, wallLen: room.h },
+    { side: "right", d: Math.abs(p.x - x1), t: p.y - y0, wallLen: room.h },
+  ];
+  hits.sort((a, b) => a.d - b.d);
+  return hits[0];
+}
+
+function roomRobeWidthM(room) {
+  const w = Number(room?.robeWidth);
+  const raw = w > 0 ? w : ROBE_WIDTH_DEFAULT_M;
+  return snapPlanMm(Math.max(ROBE_MIN_M, Math.min(ROBE_MAX_M, raw)));
+}
+
+function snapPlanMm(m) {
+  return snapMetresToStep(m, BUILDING_STEP_M);
+}
+
+function roomWallFrame(room, side) {
+  const x0 = room.x;
+  const y0 = room.y;
+  const x1 = room.x + room.w;
+  const y1 = room.y + room.h;
+  if (side === "top") {
+    return { along: { x: 1, y: 0 }, inward: { x: 0, y: 1 }, wallLen: room.w, origin: { x: x0, y: y0 } };
+  }
+  if (side === "right") {
+    return { along: { x: 0, y: 1 }, inward: { x: -1, y: 0 }, wallLen: room.h, origin: { x: x1, y: y0 } };
+  }
+  if (side === "bottom") {
+    return { along: { x: 1, y: 0 }, inward: { x: 0, y: -1 }, wallLen: room.w, origin: { x: x0, y: y1 } };
+  }
+  return { along: { x: 0, y: 1 }, inward: { x: 1, y: 0 }, wallLen: room.h, origin: { x: x0, y: y0 } };
+}
+
+function toiletBowlFront(side) {
+  if (side === "top") return "bottom";
+  if (side === "bottom") return "top";
+  if (side === "left") return "right";
+  return "left";
+}
+
+function roundedFrontPathD(r, front) {
+  const x = r.x;
+  const y = r.y;
+  const w = r.w;
+  const h = r.h;
+  const rx = Math.max(0.5, Math.min(w, h) / 2);
+  if (front === "bottom") {
+    const y2 = y + h - rx;
+    return `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y2} A ${rx} ${rx} 0 0 1 ${x} ${y2} Z`;
+  }
+  if (front === "top") {
+    const y2 = y + rx;
+    return `M ${x} ${y + h} L ${x + w} ${y + h} L ${x + w} ${y2} A ${rx} ${rx} 0 0 0 ${x} ${y2} Z`;
+  }
+  if (front === "right") {
+    const x2 = x + w - rx;
+    return `M ${x} ${y} L ${x} ${y + h} L ${x2} ${y + h} A ${rx} ${rx} 0 0 0 ${x2} ${y} Z`;
+  }
+  const x2 = x + rx;
+  return `M ${x + w} ${y} L ${x + w} ${y + h} L ${x2} ${y + h} A ${rx} ${rx} 0 0 1 ${x2} ${y} Z`;
+}
+
+function drawRoundedFrontRect(ctx, r, front) {
+  const path = new Path2D(roundedFrontPathD(r, front));
+  ctx.fill(path);
+  ctx.stroke(path);
+}
+
+function defaultRobePlacement(room, doorSide) {
+  const robeWidth = roomRobeWidthM(room);
+  if (doorSide === "top") {
+    return { side: "left", along: Math.max(0, room.h - Math.min(robeWidth, Math.max(0.2, room.h - 0.05))) };
+  }
+  if (doorSide === "right") return { side: "top", along: 0 };
+  if (doorSide === "bottom") return { side: "left", along: 0 };
+  return { side: "bottom", along: Math.max(0, room.w - Math.min(robeWidth, Math.max(0.2, room.w - 0.05))) };
+}
+
+function rectCenter(rect) {
+  return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 };
+}
+
+function unionRect(a, b) {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return {
+    x,
+    y,
+    w: Math.max(a.x + a.w, b.x + b.w) - x,
+    h: Math.max(a.y + a.h, b.y + b.h) - y,
+  };
+}
+
+function unionRects(rects) {
+  return (rects || []).filter((r) => r && r.w > 0 && r.h > 0).reduce((acc, r) => (acc ? unionRect(acc, r) : r), null);
+}
+
+function bedGroupSidePad() {
+  return NIGHTSTAND_M + NIGHTSTAND_GAP_M;
+}
+
+/** Keep 1800 bed + 400 nightstands as a rigid group; never shrink the tables. */
+function clampBedAlong(wallLen, along) {
+  const alongLen = BED_SHORT_M;
+  const sidePad = bedGroupSidePad();
+  const maxAlong = Math.max(0, wallLen - alongLen);
+  const paddedMin = sidePad;
+  const paddedMax = wallLen - alongLen - sidePad;
+  if (paddedMax >= paddedMin) {
+    const raw = Number.isFinite(along) ? along : (paddedMin + paddedMax) / 2;
+    return Math.max(paddedMin, Math.min(paddedMax, raw));
+  }
+  return maxAlong / 2;
+}
+
+function clampRectInRoom(room, rect) {
+  const w = Math.min(rect.w, Math.max(0.05, room.w));
+  const h = Math.min(rect.h, Math.max(0.05, room.h));
+  return {
+    x: Math.max(room.x, Math.min(room.x + room.w - w, rect.x)),
+    y: Math.max(room.y, Math.min(room.y + room.h - h, rect.y)),
+    w,
+    h,
+  };
+}
+
+function applyStoredRoomRect(room, keyX, keyY, defaultRect) {
+  const lx = Number(room?.[keyX]);
+  const ly = Number(room?.[keyY]);
+  if (!Number.isFinite(lx) || !Number.isFinite(ly)) return defaultRect;
+  return clampRectInRoom(room, {
+    x: room.x + lx,
+    y: room.y + ly,
+    w: defaultRect.w,
+    h: defaultRect.h,
+  });
+}
+
+function rotateLocalRect90(rect, roomW, roomH) {
+  const cx = roomW / 2;
+  const cy = roomH / 2;
+  const corners = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y + rect.h },
+    { x: rect.x, y: rect.y + rect.h },
+  ].map((p) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    return { x: -dy, y: dx };
+  });
+  const xs = corners.map((p) => p.x);
+  const ys = corners.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  return {
+    x: roomH / 2 + minX,
+    y: roomW / 2 + minY,
+    w: Math.max(...xs) - minX,
+    h: Math.max(...ys) - minY,
+  };
+}
+
+function fixtureGrabPx(layout) {
+  return Math.max(8, handlePx(layout) * 0.85);
+}
+
+function controlHint(hover) {
+  if (!hover) return "";
+  const type = hover.type;
+  if (type === "bed") return "Drag bed";
+  if (type === "robe") return "Drag robe";
+  if (type === "robe-resize") return "Resize robe";
+  if (type === "room-delete") return "Delete";
+  if (type === "couch-options") return "Couch options";
+  if (type === "vanity-options") return "Vanity options";
+  if (type === "vanity-options-full") return "No room for WM";
+  if (type === "design-move") return "Move design";
+  if (type === "design-rotate") return "Rotate design";
+  if (type === "door") return "Drag door";
+  if (type === "door-flip") return "Flip door";
+  if (type === "shower") return "Drag shower";
+  if (type === "shower-rotate") return "Rotate shower";
+  if (type === "toilet") return "Drag toilet";
+  if (type === "vanity") return "Drag vanity";
+  if (type === "kitchen-layout") return "Kitchen layout";
+  if (type === "kitchen-custom") return "Click a wall, then drag along it to draw the bench";
+  if (type === "kitchen-run") return "Resize length";
+  if (type === "cook") return "Drag cooktop";
+  if (type === "sink") return "Drag sink";
+  if (type === "sink-mirror") return "Mirror sink";
+  if (type === "pantry") return "Drag pantry";
+  if (type === "fridge") return "Drag fridge";
+  if (type === "room-move") return "Drag room";
+  if (type === "room-rotate") return "Rotate room";
+  if (type === "porch-move") return "Drag porch";
+  if (type === "resize-building") return "Resize building";
+  if (type === "resize") return "Resize";
+  if (hover.kind === "rotate") return "Rotate";
+  if (hover.kind === "move") return "Drag";
+  if (hover.kind === "ns" || hover.kind === "ew") return "Resize";
+  return "";
+}
+
+function hintAt(hover, raw) {
+  if (!hover) return null;
+  return {
+    ...hover,
+    x: raw?.x,
+    y: raw?.y,
+    hint: controlHint(hover),
+  };
+}
+
+function GrabSquare({ cx, cy, size, color }) {
+  if (cx == null || cy == null) return null;
+  return (
+    <rect
+      x={cx - size / 2}
+      y={cy - size / 2}
+      width={size}
+      height={size}
+      fill={WHITE}
+      stroke={color}
+      strokeWidth="1.2"
+    />
+  );
+}
+
+function AxisHandle({ cx, cy, size, color, axis }) {
+  if (cx == null || cy == null) return null;
+  const s = size / 2;
+  const arm = size * 0.95;
+  const head = Math.max(3, size * 0.28);
+  const ew = axis === "ew";
+  const a = ew
+    ? [
+        [cx - arm, cy, cx + arm, cy],
+        [
+          `${cx - arm},${cy} ${cx - arm + head},${cy - head * 0.7} ${cx - arm + head},${cy + head * 0.7}`,
+          `${cx + arm},${cy} ${cx + arm - head},${cy - head * 0.7} ${cx + arm - head},${cy + head * 0.7}`,
+        ],
+      ]
+    : [
+        [cx, cy - arm, cx, cy + arm],
+        [
+          `${cx},${cy - arm} ${cx - head * 0.7},${cy - arm + head} ${cx + head * 0.7},${cy - arm + head}`,
+          `${cx},${cy + arm} ${cx - head * 0.7},${cy + arm - head} ${cx + head * 0.7},${cy + arm - head}`,
+        ],
+      ];
+  const [x1, y1, x2, y2] = a[0];
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={s} fill={WHITE} stroke={color} strokeWidth="1.2" />
+      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <polygon points={a[1][0]} fill={color} />
+      <polygon points={a[1][1]} fill={color} />
+    </g>
+  );
+}
+
+function OptionsHandle({ cx, cy, size, color }) {
+  if (cx == null || cy == null) return null;
+  const s = size;
+  return (
+    <g transform={`translate(${cx}, ${cy})`}>
+      <circle r={s / 2 + 1} fill={WHITE} stroke={color} strokeWidth="1.5" />
+      <rect
+        x={-s * 0.28}
+        y={s * 0.04}
+        width={s * 0.56}
+        height={s * 0.16}
+        rx={0.6}
+        fill={color}
+      />
+      <rect
+        x={-s * 0.28}
+        y={-s * 0.26}
+        width={s * 0.18}
+        height={s * 0.24}
+        rx={0.6}
+        fill={color}
+      />
+    </g>
+  );
+}
+
+function RotateHandle({ cx, cy, size, color }) {
+  if (cx == null || cy == null) return null;
+  const hs = size;
+  return (
+    <g transform={`translate(${cx}, ${cy})`}>
+      <circle r={hs / 2 + 1} fill={WHITE} stroke={color} strokeWidth="1.5" />
+      <path
+        d={`M ${-hs * 0.22} ${-hs * 0.08} A ${hs * 0.28} ${hs * 0.28} 0 1 1 ${hs * 0.08} ${-hs * 0.22}`}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <path
+        d={`M ${hs * 0.08} ${-hs * 0.38} L ${hs * 0.08} ${-hs * 0.08} L ${-hs * 0.16} ${-hs * 0.22}`}
+        fill={color}
+      />
+    </g>
+  );
+}
+
+function MirrorHandle({ cx, cy, size, color }) {
+  if (cx == null || cy == null) return null;
+  const s = size;
+  return (
+    <g transform={`translate(${cx}, ${cy})`}>
+      <circle r={s / 2 + 1} fill={WHITE} stroke={color} strokeWidth="1.5" />
+      <line
+        x1={0}
+        y1={-s * 0.34}
+        x2={0}
+        y2={s * 0.34}
+        stroke={color}
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <path
+        d={`M ${-s * 0.3} 0 L ${-s * 0.08} ${-s * 0.22} L ${-s * 0.08} ${s * 0.22} Z`}
+        fill={color}
+      />
+      <path
+        d={`M ${s * 0.3} 0 L ${s * 0.08} ${-s * 0.22} L ${s * 0.08} ${s * 0.22} Z`}
+        fill={color}
+      />
+    </g>
+  );
+}
+
+function doorFlipHandlePx(door, layout) {
+  const p = mPointToPx(door.open, layout);
+  return { cx: p.x, cy: p.y, size: fixtureGrabPx(layout) };
+}
+
+function hitDoorFlipHandle(door, layout, raw) {
+  if (!door?.open) return null;
+  const { cx, cy, size } = doorFlipHandlePx(door, layout);
+  const half = size / 2 + 5;
+  if (Math.abs(raw.x - cx) <= half && Math.abs(raw.y - cy) <= half) {
+    return { type: "door-flip", kind: "rotate" };
+  }
+  return null;
+}
+
+function flipRoomDoor(room) {
+  return { ...room, doorFlip: !room.doorFlip };
+}
+
+function fixtureRotateHandlePx(rect, layout) {
+  const s = mRectToPx(rect, layout);
+  const hs = fixtureGrabPx(layout);
+  const pad = 2;
+  return { cx: s.x + s.w - pad - hs / 2, cy: s.y + pad + hs / 2, size: hs };
+}
+
+function hitShowerRotateHandle(shower, layout, raw) {
+  if (!shower) return null;
+  const { cx, cy, size } = fixtureRotateHandlePx(shower, layout);
+  const half = size / 2 + 4;
+  if (raw.x >= cx - half && raw.x <= cx + half && raw.y >= cy - half && raw.y <= cy + half) {
+    return { type: "shower-rotate", kind: "rotate" };
+  }
+  return null;
+}
+
+function rotateShower90(room) {
+  const { shower } = bathroomFixtures(room);
+  if (!shower) return room;
+  const nextRect = clampRectInRoom(room, {
+    x: shower.x + shower.w / 2 - shower.h / 2,
+    y: shower.y + shower.h / 2 - shower.w / 2,
+    w: shower.h,
+    h: shower.w,
+  });
+  return {
+    ...room,
+    showerLongIsX: nextRect.w >= nextRect.h - 1e-9,
+    showerX: snapPlanMm(nextRect.x - room.x),
+    showerY: snapPlanMm(nextRect.y - room.y),
+  };
+}
+
+/** Uncut partition walls (before bedroom door openings). */
+function partitionWallsUncut(rooms, innerMetres) {
+  const innerEdges = outlineAxisEdges(innerMetres);
+  const raw = [];
+  const probeM = PARTITION_MERGE_PROBE_M;
+  const matchM = PARTITION_MERGE_PROBE_M;
+  for (const room of rooms || []) {
+    if (!roomNeedsPartitionWalls(room)) continue;
+    const half = WALL_THICKNESS_M / 2;
+    const x0 = room.x;
+    const y0 = room.y;
+    const x1 = room.x + room.w;
+    const y1 = room.y + room.h;
+    const sides = [
+      { name: "top", axis: "h", y: y0, t0: x0 - half, t1: x1 + half, ox: 0, oy: -1 },
+      { name: "bottom", axis: "h", y: y1, t0: x0 - half, t1: x1 + half, ox: 0, oy: 1 },
+      { name: "left", axis: "v", x: x0, t0: y0 - half, t1: y1 + half, ox: -1, oy: 0 },
+      { name: "right", axis: "v", x: x1, t0: y0 - half, t1: y1 + half, ox: 1, oy: 0 },
+    ];
+    const openSide = isLaundry(room) ? laundryOpenSide(room) : null;
+    for (const side of sides) {
+      if (side.name === openSide) continue;
+      const cuts = externalCutsOnSide(side, innerMetres, probeM);
+      for (const ie of innerEdges) {
+        if (side.axis === "h" && ie.axis === "h" && almostEqualM(side.y, ie.y, matchM)) {
+          const lo = Math.max(side.t0, ie.t0);
+          const hi = Math.min(side.t1, ie.t1);
+          if (hi - lo > WALL_MIN_LEN_M) cuts.push([lo, hi]);
+        } else if (side.axis === "v" && ie.axis === "v" && almostEqualM(side.x, ie.x, matchM)) {
+          const lo = Math.max(side.t0, ie.t0);
+          const hi = Math.min(side.t1, ie.t1);
+          if (hi - lo > WALL_MIN_LEN_M) cuts.push([lo, hi]);
+        }
+      }
+      for (const [t0, t1] of subtractIntervals(side.t0, side.t1, cuts)) {
+        if (side.axis === "h") raw.push({ axis: "h", y: roundMm(side.y + side.oy * half), t0, t1 });
+        else raw.push({ axis: "v", x: roundMm(side.x + side.ox * half), t0, t1 });
+      }
+    }
+  }
+  return mergePartitionWalls(raw);
+}
+
+function roomPartitionSides(room, innerMetres) {
+  const sides = { top: false, bottom: false, left: false, right: false };
+  if (!room) return sides;
+  const walls = partitionWallsUncut([room], innerMetres);
+  const matchM = WALL_THICKNESS_M + 0.08;
+  for (const w of walls) {
+    if (w.axis === "h") {
+      if (almostEqualM(w.y, room.y, matchM)) sides.top = true;
+      if (almostEqualM(w.y, room.y + room.h, matchM)) sides.bottom = true;
+    } else {
+      if (almostEqualM(w.x, room.x, matchM)) sides.left = true;
+      if (almostEqualM(w.x, room.x + room.w, matchM)) sides.right = true;
+    }
+  }
+  return sides;
+}
+
+function bedroomEntrySide(room, innerMetres) {
+  const sides = roomPartitionSides(room, innerMetres);
+  for (const side of ["top", "right", "bottom", "left"]) {
+    if (sides[side]) return side;
+  }
+  return room.w >= room.h ? "top" : "left";
+}
+
+function roomDoorSideIsExternal(room, side, innerMetres) {
+  if (!room || !innerMetres?.length) return false;
+  const frame = roomWallFrame(room, side);
+  const mid = {
+    x: frame.origin.x + frame.along.x * (frame.wallLen / 2),
+    y: frame.origin.y + frame.along.y * (frame.wallLen / 2),
+  };
+  const outward = {
+    x: mid.x - frame.inward.x * PARTITION_MERGE_PROBE_M,
+    y: mid.y - frame.inward.y * PARTITION_MERGE_PROBE_M,
+  };
+  if (!pointInPolygon(outward, innerMetres)) return true;
+  return distPointToPolygon(mid, innerMetres) <= PARTITION_MERGE_PROBE_M;
+}
+
+function roomDoorSwing(room, innerMetres) {
+  const kind = roomKind(room);
+  if (!room || (kind !== "bedroom" && kind !== "bathroom" && kind !== "powder")) return null;
+  const doorSide = roomDoorSide(room, innerMetres);
+  const frame = roomWallFrame(room, doorSide);
+  return doorSwingOnFrame(room, frame, doorSide);
+}
+
+function distPointToSeg(p, a, b) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const len2 = abx * abx + aby * aby;
+  if (len2 < 1e-18) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + abx * t), p.y - (a.y + aby * t));
+}
+
+function distPointToPolygon(p, pts) {
+  if (!pts?.length) return Infinity;
+  let best = Infinity;
+  for (let i = 0; i < pts.length; i += 1) {
+    best = Math.min(best, distPointToSeg(p, pts[i], pts[(i + 1) % pts.length]));
+  }
+  return best;
+}
+
+function porchAttachSide(porch, metres) {
+  if (!porch || !metres?.length) return null;
+  const probes = [
+    { side: "top", p: { x: porch.x + porch.w / 2, y: porch.y - 0.08 } },
+    { side: "right", p: { x: porch.x + porch.w + 0.08, y: porch.y + porch.h / 2 } },
+    { side: "bottom", p: { x: porch.x + porch.w / 2, y: porch.y + porch.h + 0.08 } },
+    { side: "left", p: { x: porch.x - 0.08, y: porch.y + porch.h / 2 } },
+  ];
+  for (const { side, p } of probes) {
+    if (pointInOrOnPolygon(p, metres)) return side;
+  }
+  let best = probes[0];
+  let bestD = Infinity;
+  for (const item of probes) {
+    const d = distPointToPolygon(item.p, metres);
+    if (d < bestD) {
+      bestD = d;
+      best = item;
+    }
+  }
+  return best.side;
+}
+
+function doorSwingOnFrame(room, frame, doorSide, { center = false } = {}) {
+  const doorWidth = Math.min(roomDoorWidthM(room), Math.max(0.2, frame.wallLen - 0.05));
+  const maxAlong = Math.max(0, frame.wallLen - doorWidth);
+  const storedAlong = Number(room?.doorAlong);
+  const doorAlong = Number.isFinite(storedAlong)
+    ? Math.max(0, Math.min(maxAlong, storedAlong))
+    : center
+      ? Math.max(0, maxAlong / 2)
+      : 0;
+  const flipped = Boolean(room?.doorFlip);
+  const openingStart = {
+    x: frame.origin.x + frame.along.x * doorAlong,
+    y: frame.origin.y + frame.along.y * doorAlong,
+  };
+  const openingEnd = {
+    x: openingStart.x + frame.along.x * doorWidth,
+    y: openingStart.y + frame.along.y * doorWidth,
+  };
+  const hinge = flipped ? openingEnd : openingStart;
+  const closed = flipped ? openingStart : openingEnd;
+  const open = {
+    x: hinge.x + frame.inward.x * doorWidth,
+    y: hinge.y + frame.inward.y * doorWidth,
+  };
+  const cut = {
+    axis: doorSide === "top" || doorSide === "bottom" ? "h" : "v",
+    pos: doorSide === "top" || doorSide === "bottom" ? frame.origin.y : frame.origin.x,
+    t0: doorSide === "top" || doorSide === "bottom" ? openingStart.x : openingStart.y,
+  };
+  cut.t1 = cut.t0 + doorWidth;
+  const leafAlong = flipped
+    ? { x: -frame.along.x, y: -frame.along.y }
+    : frame.along;
+  const cross = leafAlong.x * frame.inward.y - leafAlong.y * frame.inward.x;
+  return {
+    doorSide,
+    doorWidth,
+    hinge,
+    closed,
+    open,
+    along: frame.along,
+    inward: frame.inward,
+    openingStart,
+    flipped,
+    cw: cross > 0,
+    cut,
+    doorGrab: {
+      x: (Math.min(hinge.x, closed.x, open.x) + Math.max(hinge.x, closed.x, open.x)) / 2,
+      y: (Math.min(hinge.y, closed.y, open.y) + Math.max(hinge.y, closed.y, open.y)) / 2,
+    },
+    doorLabel: {
+      x: openingStart.x + frame.along.x * (doorWidth / 2) + frame.inward.x * 0.22,
+      y: openingStart.y + frame.along.y * (doorWidth / 2) + frame.inward.y * 0.22,
+    },
+  };
+}
+
+function porchFrontDoor(porch, metres) {
+  if (!porch || roomKind(porch) !== "porch") return null;
+  const doorSide = porchAttachSide(porch, metres);
+  if (!doorSide) return null;
+  const porchFrame = roomWallFrame(porch, doorSide);
+  const frame = {
+    ...porchFrame,
+    inward: { x: -porchFrame.inward.x, y: -porchFrame.inward.y },
+  };
+  return doorSwingOnFrame(porch, frame, doorSide, { center: true });
+}
+
+function collectDesignDoors(rooms, metres, innerMetres) {
+  const doors = [];
+  for (const room of rooms || []) {
+    if (isPorch(room)) {
+      const geom = porchFrontDoor(room, metres);
+      if (geom) doors.push({ ...geom, external: true });
+    } else {
+      const geom = roomDoorSwing(room, innerMetres);
+      if (geom) doors.push({ ...geom, external: false });
+    }
+  }
+  return doors;
+}
+
+function porchFrontDoorOpening(door) {
+  if (!door?.hinge || !door?.closed || !door?.inward) return null;
+  const pad = 0.02;
+  const back = pad;
+  const through = WALL_THICKNESS_M + pad;
+  const { hinge, closed, inward } = door;
+  const pts = [
+    { x: hinge.x - inward.x * back, y: hinge.y - inward.y * back },
+    { x: closed.x - inward.x * back, y: closed.y - inward.y * back },
+    { x: closed.x + inward.x * through, y: closed.y + inward.y * through },
+    { x: hinge.x + inward.x * through, y: hinge.y + inward.y * through },
+  ];
+  return {
+    pts,
+    jambs: [
+      [pts[0], pts[3]],
+      [pts[1], pts[2]],
+    ],
+  };
+}
+
+function defaultVanityPlacement(room, doorSide) {
+  const longSides = room.h >= room.w ? ["left", "right"] : ["top", "bottom"];
+  const side = longSides.find((s) => s !== doorSide) || longSides[0] || "left";
+  const frame = roomWallFrame(room, side);
+  const len = Math.min(vanityLengthM(room), Math.max(0.2, frame.wallLen - 0.05));
+  return { side, along: Math.max(0, (frame.wallLen - len) / 2) };
+}
+
+function vanityWmSide(room) {
+  return room?.vanityWm === "left" || room?.vanityWm === "right" ? room.vanityWm : null;
+}
+
+/** Step to the next vanity option, skipping washing machine sides that don't fit. */
+function cycleVanityWm(room, innerMetres) {
+  const order = [null, "left", "right"];
+  const i = order.indexOf(vanityWmSide(room));
+  for (let k = 1; k < order.length; k += 1) {
+    const opt = order[(i + k) % order.length];
+    if (opt === null) return { ...room, vanityWm: null };
+    const placed = placeVanityWm({ ...room, vanityWm: opt }, innerMetres, "butt");
+    if (placed) return placed;
+  }
+  return { ...room, vanityWm: null };
+}
+
+/**
+ * Along-wall limits for the vanity start, leaving room for the washing machine space.
+ * Left/right are as seen standing in the room facing the vanity.
+ */
+function vanityAlongRange(room, frame, length) {
+  const wm = vanityWmSide(room);
+  let atStart = false;
+  let atEnd = false;
+  if (wm) {
+    const alongIsRight = frame.along.x * frame.inward.y - frame.along.y * frame.inward.x > 0;
+    atEnd = (wm === "right") === alongIsRight;
+    atStart = !atEnd;
+  }
+  const startFace = 0;
+  const endFace = frame.wallLen;
+  const min = atStart ? startFace + WM_SPACE_M : 0;
+  const max = Math.max(min, (atEnd ? endFace - WM_SPACE_M : frame.wallLen) - length);
+  return { min, max, atStart, atEnd, butt: atEnd ? max : atStart ? min : null };
+}
+
+function bathroomVanity(room, innerMetres) {
+  if (!room || !isBathLike(room)) return null;
+  const def = defaultVanityPlacement(room, roomDoorSide(room, innerMetres));
+  const stored = room?.vanitySide;
+  const vanitySide =
+    stored === "top" || stored === "right" || stored === "bottom" || stored === "left"
+      ? stored
+      : def.side;
+  const frame = roomWallFrame(room, vanitySide);
+  const length = Math.min(vanityLengthM(room), Math.max(0.2, frame.wallLen - 0.05));
+  const roomDepth = vanitySide === "left" || vanitySide === "right" ? room.w : room.h;
+  const fullDepth = roomKind(room) === "powder" ? POWDER_VANITY_DEPTH_M : VANITY_DEPTH_M;
+  const depth = Math.min(fullDepth, Math.max(0.15, roomDepth - 0.05));
+  const range = vanityAlongRange(room, frame, length, innerMetres);
+  const storedAlong = Number(room?.vanityAlong);
+  const alongM = Math.max(
+    range.min,
+    Math.min(range.max, Number.isFinite(storedAlong) ? storedAlong : def.along)
+  );
+  let wm = null;
+  if (range.atStart || range.atEnd) {
+    const t0 = range.atEnd ? alongM + length + WM_GAP_M : alongM - WM_GAP_M - WM_SIZE_M;
+    const wmDepth = Math.min(WM_SIZE_M, Math.max(0.15, roomDepth - 0.05));
+    wm = {
+      rect: wallBoxRect(frame.origin, frame.along, frame.inward, t0, t0 + WM_SIZE_M, 0, wmDepth),
+      zone: wallBoxRect(
+        frame.origin,
+        frame.along,
+        frame.inward,
+        t0 - WM_GAP_M,
+        t0 + WM_SIZE_M + WM_GAP_M,
+        0,
+        wmDepth
+      ),
+    };
+  }
+  const anchor = {
+    x: frame.origin.x + frame.along.x * alongM,
+    y: frame.origin.y + frame.along.y * alongM,
+  };
+  const end = {
+    x: anchor.x + frame.along.x * length,
+    y: anchor.y + frame.along.y * length,
+  };
+  const innerA = {
+    x: anchor.x + frame.inward.x * depth,
+    y: anchor.y + frame.inward.y * depth,
+  };
+  const innerB = {
+    x: end.x + frame.inward.x * depth,
+    y: end.y + frame.inward.y * depth,
+  };
+  const xs = [anchor.x, end.x, innerA.x, innerB.x];
+  const ys = [anchor.y, end.y, innerA.y, innerB.y];
+  const rect = {
+    x: Math.min(...xs),
+    y: Math.min(...ys),
+    w: Math.max(...xs) - Math.min(...xs),
+    h: Math.max(...ys) - Math.min(...ys),
+  };
+  const basinAlong0 = length * 0.22;
+  const basinAlong1 = length * 0.78;
+  const basinD0 = depth * 0.1;
+  const basinD1 = depth * 0.9;
+  const basin = wallBoxRect(anchor, frame.along, frame.inward, basinAlong0, basinAlong1, basinD0, basinD1);
+  return {
+    vanitySide,
+    length,
+    depth,
+    along: frame.along,
+    inward: frame.inward,
+    alongM,
+    anchor,
+    end,
+    innerA,
+    innerB,
+    rect,
+    basin,
+    wm,
+    grab: rectCenter(rect),
+    label: {
+      x: rect.x + rect.w / 2 - frame.inward.x * 0.02,
+      y: rect.y + rect.h / 2 - frame.inward.y * 0.02,
+      vertical: vanitySide === "left" || vanitySide === "right",
+    },
+    sizeLabel: {
+      x: (innerA.x + innerB.x) / 2 + frame.inward.x * 0.16,
+      y: (innerA.y + innerB.y) / 2 + frame.inward.y * 0.16,
+    },
+  };
+}
+
+function wallBoxRect(origin, along, inward, t0, t1, d0, d1) {
+  const pts = [
+    { x: origin.x + along.x * t0 + inward.x * d0, y: origin.y + along.y * t0 + inward.y * d0 },
+    { x: origin.x + along.x * t1 + inward.x * d0, y: origin.y + along.y * t1 + inward.y * d0 },
+    { x: origin.x + along.x * t1 + inward.x * d1, y: origin.y + along.y * t1 + inward.y * d1 },
+    { x: origin.x + along.x * t0 + inward.x * d1, y: origin.y + along.y * t0 + inward.y * d1 },
+  ];
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  return {
+    x: Math.min(...xs),
+    y: Math.min(...ys),
+    w: Math.max(...xs) - Math.min(...xs),
+    h: Math.max(...ys) - Math.min(...ys),
+  };
+}
+
+function toiletAlongRange(wallLen, tankAlong) {
+  const extra = Math.max(0, (TOILET_CLEAR_ALONG_M - tankAlong) / 2);
+  const minAlong = extra;
+  const maxAlong = Math.max(minAlong, wallLen - tankAlong - extra);
+  return { minAlong, maxAlong };
+}
+
+function defaultToiletPlacement(room) {
+  const side = room.h >= room.w ? "bottom" : "right";
+  const wallLen = side === "left" || side === "right" ? room.h : room.w;
+  const tankAlong = Math.min(TOILET_TANK_ALONG_M, Math.max(0.2, wallLen - 0.05));
+  const { minAlong, maxAlong } = toiletAlongRange(wallLen, tankAlong);
+  return {
+    side,
+    along: Math.max(minAlong, Math.min(maxAlong, wallLen - tankAlong - 0.04)),
+  };
+}
+
+function bathroomToilet(room) {
+  if (!room || !isBathLike(room)) return null;
+  const def = defaultToiletPlacement(room);
+  const stored = room?.toiletSide;
+  const toiletSide =
+    stored === "top" || stored === "right" || stored === "bottom" || stored === "left"
+      ? stored
+      : def.side;
+  const frame = roomWallFrame(room, toiletSide);
+  const tankAlong = Math.min(TOILET_TANK_ALONG_M, Math.max(0.2, frame.wallLen - 0.05));
+  const roomDepth = toiletSide === "left" || toiletSide === "right" ? room.w : room.h;
+  const tankDepth = Math.min(TOILET_TANK_DEPTH_M, Math.max(0.1, roomDepth * 0.35));
+  const bowlWidth = Math.min(TOILET_BOWL_WIDTH_M, tankAlong);
+  const bowlLength = Math.min(TOILET_BOWL_LENGTH_M, Math.max(0.25, roomDepth - tankDepth - 0.05));
+  const { minAlong, maxAlong } = toiletAlongRange(frame.wallLen, tankAlong);
+  const storedAlong = Number(room?.toiletAlong);
+  const alongM = Number.isFinite(storedAlong)
+    ? Math.max(minAlong, Math.min(maxAlong, storedAlong))
+    : Math.max(minAlong, Math.min(maxAlong, def.along));
+  const origin = frame.origin;
+  const along = frame.along;
+  const inward = frame.inward;
+  const tank = wallBoxRect(origin, along, inward, alongM, alongM + tankAlong, 0, tankDepth);
+  const mid = alongM + tankAlong / 2;
+  const overlap = Math.min(0.05, tankDepth * 0.3);
+  const bowlFront = tankDepth - overlap + bowlLength;
+  const bowl = wallBoxRect(
+    origin,
+    along,
+    inward,
+    mid - bowlWidth / 2,
+    mid + bowlWidth / 2,
+    tankDepth - overlap,
+    bowlFront
+  );
+  const clearAlong = TOILET_CLEAR_ALONG_M;
+  const clearDepth = Math.min(TOILET_CLEAR_DEPTH_M, Math.max(0, roomDepth - bowlFront));
+  const clear = wallBoxRect(
+    origin,
+    along,
+    inward,
+    mid - clearAlong / 2,
+    mid + clearAlong / 2,
+    bowlFront,
+    bowlFront + clearDepth
+  );
+  const rect = unionRect(tank, bowl);
+  return {
+    toiletSide,
+    along,
+    inward,
+    alongM,
+    tankAlong,
+    tank,
+    bowl,
+    clear,
+    rect,
+    grab: rectCenter(rect),
+    anchor: {
+      x: origin.x + along.x * alongM,
+      y: origin.y + along.y * alongM,
+    },
+  };
+}
+
+/** Door swing + 600mm robe for a bedroom, in world metres. */
+function bedroomDoorAndRobe(room, innerMetres) {
+  if (!room || roomKind(room) !== "bedroom") return null;
+  const door = roomDoorSwing(room, innerMetres);
+  if (!door) return null;
+  const robeDef = defaultRobePlacement(room, door.doorSide);
+  const storedRobeSide = room?.robeSide;
+  const robeSide =
+    storedRobeSide === "top" ||
+    storedRobeSide === "right" ||
+    storedRobeSide === "bottom" ||
+    storedRobeSide === "left"
+      ? storedRobeSide
+      : robeDef.side;
+  const robeFrame = roomWallFrame(room, robeSide);
+  const robeAlongDir = robeFrame.along;
+  const robeInward = robeFrame.inward;
+  const robeWallLen = robeFrame.wallLen;
+  const robeWidth = Math.min(
+    Math.max(0.2, robeWallLen),
+    roomRobeWidthM(room)
+  );
+  const robeMaxAlong = Math.max(0, robeWallLen - robeWidth);
+  const storedRobeAlong = Number(room?.robeAlong);
+  const robeAlongM = Number.isFinite(storedRobeAlong)
+    ? Math.max(0, Math.min(robeMaxAlong, storedRobeAlong))
+    : robeSide === robeDef.side
+      ? Math.max(0, Math.min(robeMaxAlong, robeDef.along))
+      : 0;
+  const robeAnchor = {
+    x: robeFrame.origin.x + robeAlongDir.x * robeAlongM,
+    y: robeFrame.origin.y + robeAlongDir.y * robeAlongM,
+  };
+  const robeEnd = {
+    x: robeAnchor.x + robeAlongDir.x * robeWidth,
+    y: robeAnchor.y + robeAlongDir.y * robeWidth,
+  };
+  const robeInnerA = {
+    x: robeAnchor.x + robeInward.x * ROBE_DEPTH_M,
+    y: robeAnchor.y + robeInward.y * ROBE_DEPTH_M,
+  };
+  const robeInnerB = {
+    x: robeEnd.x + robeInward.x * ROBE_DEPTH_M,
+    y: robeEnd.y + robeInward.y * ROBE_DEPTH_M,
+  };
+  const robeXs = [robeAnchor.x, robeEnd.x, robeInnerA.x, robeInnerB.x];
+  const robeYs = [robeAnchor.y, robeEnd.y, robeInnerA.y, robeInnerB.y];
+  const robeRect = {
+    x: Math.min(...robeXs),
+    y: Math.min(...robeYs),
+    w: Math.max(...robeXs) - Math.min(...robeXs),
+    h: Math.max(...robeYs) - Math.min(...robeYs),
+  };
+  return {
+    ...door,
+    robeSide,
+    robeWidth,
+    robeRect,
+    robeAnchor,
+    robeEnd,
+    robeInnerA,
+    robeInnerB,
+    robeAlong: robeAlongDir,
+    robeInward,
+    robeAlongM,
+    robeWallLen,
+    robeGrab: rectCenter(robeRect),
+    ...robeTextSpots(robeRect, robeSide === "left" || robeSide === "right", robeInward),
+  };
+}
+
+/**
+ * "ROBE" sits above the grab square (on side walls the text reads bottom-to-top, so "above" is
+ * screen left); the width sits just outside the robe front, turned the same way as "ROBE".
+ */
+function robeTextSpots(robeRect, vertical, inward) {
+  const c = rectCenter(robeRect);
+  const gap = 0.14;
+  const down = vertical ? { x: 1, y: 0 } : { x: 0, y: 1 };
+  const out = ROBE_DEPTH_M / 2 + 0.12;
+  return {
+    robeTitle: { x: c.x - down.x * gap, y: c.y - down.y * gap, vertical },
+    robeLabel: { x: c.x + inward.x * out, y: c.y + inward.y * out, vertical },
+  };
+}
+
+function cutBedroomDoorsFromWalls(walls, rooms, innerMetres) {
+  let segs = (walls || []).slice();
+  for (const room of rooms || []) {
+    const geom = roomDoorSwing(room, innerMetres);
+    if (!geom?.cut) continue;
+    if (roomDoorSideIsExternal(room, geom.doorSide, innerMetres)) continue;
+    if (!roomPartitionSides(room, innerMetres)[geom.doorSide]) continue;
+    const next = [];
+    for (const s of segs) {
+      if (s.axis !== geom.cut.axis) {
+        next.push(s);
+        continue;
+      }
+      const same =
+        s.axis === "h"
+          ? almostEqualM(s.y, geom.cut.pos)
+          : almostEqualM(s.x, geom.cut.pos);
+      if (!same) {
+        next.push(s);
+        continue;
+      }
+      const lo = Math.min(geom.cut.t0, geom.cut.t1);
+      const hi = Math.max(geom.cut.t0, geom.cut.t1);
+      for (const [t0, t1] of subtractIntervals(s.t0, s.t1, [[lo, hi]])) {
+        if (s.axis === "h") next.push({ axis: "h", y: s.y, t0, t1 });
+        else next.push({ axis: "v", x: s.x, t0, t1 });
+      }
+    }
+    segs = next;
+  }
+  return mergePartitionWalls(segs);
+}
+
+function mPointToPx(p, layout) {
+  return {
+    x: p.x * layout.scale + layout.originX,
+    y: p.y * layout.scale + layout.originY,
+  };
+}
+
+function pickClosestGrab(raw, size, candidates) {
+  const hitR = size / 2 + 5;
+  let best = null;
+  for (const c of candidates) {
+    if (!c?.px) continue;
+    const d = Math.hypot(raw.x - c.px.x, raw.y - c.px.y);
+    if (d <= hitR && (!best || d < best.d)) best = { ...c, d };
+  }
+  return best ? { type: best.type, kind: "move" } : null;
+}
+
+function hitLayoutRect(rectM, layout, raw, pad = 4) {
+  if (!rectM || !(rectM.w > 0) || !(rectM.h > 0) || !layout) return false;
+  const r = mRectToPx(rectM, layout);
+  return (
+    raw.x >= r.x - pad &&
+    raw.x <= r.x + r.w + pad &&
+    raw.y >= r.y - pad &&
+    raw.y <= r.y + r.h + pad
+  );
+}
+
+function hitBedroomFixtureHandle(room, layout, raw, innerMetres) {
+  const geom = bedroomDoorAndRobe(room, innerMetres);
+  const flip = hitDoorFlipHandle(geom, layout, raw);
+  if (flip) return flip;
+  const resize = hitBedroomRobeResizeHandle(geom, layout, raw);
+  if (resize) return resize;
+  const { bed, rug, nightstands, group } = bedLayout(room, innerMetres);
+  if (geom?.robeRect && hitLayoutRect(geom.robeRect, layout, raw, 2)) {
+    return { type: "robe", kind: "move" };
+  }
+  if (hitLayoutRect(bed, layout, raw, 4)) return { type: "bed", kind: "move" };
+  if ((nightstands || []).some((ns) => hitLayoutRect(ns, layout, raw, 2))) {
+    return { type: "bed", kind: "move" };
+  }
+  if (rug && hitLayoutRect(rug, layout, raw, 2)) return { type: "bed", kind: "move" };
+  const hs = fixtureGrabPx(layout);
+  const grabTarget = group || bed;
+  return pickClosestGrab(raw, hs, [
+    geom ? { type: "door", px: mPointToPx(geom.doorGrab, layout) } : null,
+    geom ? { type: "robe", px: mPointToPx(geom.robeGrab, layout) } : null,
+    { type: "bed", px: mPointToPx(rectCenter(grabTarget), layout) },
+  ]);
+}
+
+function wmLabelPx(wmPx) {
+  return Math.max(9, Math.min(wmPx.w, wmPx.h) * 0.22);
+}
+
+function rectsOverlapM(a, b, eps = 0.001) {
+  if (!a || !b) return false;
+  return a.x < b.x + b.w - eps && b.x < a.x + a.w - eps && a.y < b.y + b.h - eps && b.y < a.y + a.h - eps;
+}
+
+function doorSwingBox(door) {
+  if (!door) return null;
+  const pts = [door.hinge, door.closed, door.open].filter(Boolean);
+  if (pts.length < 2) return null;
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+/** True when the washing machine space (with its 75 mm gaps) leaves the room or hits another fixture. */
+function vanityWmConflicts(room, innerMetres) {
+  const zone = bathroomVanity(room, innerMetres)?.wm?.zone;
+  if (!zone) return false;
+  const eps = 0.001;
+  if (
+    zone.x < room.x - eps ||
+    zone.y < room.y - eps ||
+    zone.x + zone.w > room.x + room.w + eps ||
+    zone.y + zone.h > room.y + room.h + eps
+  ) {
+    return true;
+  }
+  const { shower, toilet, clear, tank, bowl } = bathroomFixtures(room);
+  const door = doorSwingBox(roomDoorSwing(room, innerMetres));
+  return [shower, toilet, clear, tank, bowl, door].some((r) => rectsOverlapM(zone, r));
+}
+
+/** Nearest vanity position on its current wall where the washing machine space fits, or null. */
+function placeVanityWm(room, innerMetres, preferAlong = null) {
+  const v = bathroomVanity(room, innerMetres);
+  if (!v?.wm) return room;
+  const frame = roomWallFrame(room, v.vanitySide);
+  const { min, max, butt } = vanityAlongRange(room, frame, v.length, innerMetres);
+  const target =
+    preferAlong === "butt" && butt !== null
+      ? butt
+      : Number.isFinite(preferAlong)
+        ? preferAlong
+        : v.alongM;
+  const candidates = [min, max];
+  for (let t = Math.ceil(min / BUILDING_STEP_M) * BUILDING_STEP_M; t < max; t += BUILDING_STEP_M) {
+    candidates.push(roundMm(t));
+  }
+  candidates.sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+  for (const along of candidates) {
+    const next = { ...room, vanitySide: v.vanitySide, vanityAlong: along };
+    if (!vanityWmConflicts(next, innerMetres)) return next;
+  }
+  return null;
+}
+
+/** Options icon sits just in front of the vanity, centred on it. */
+function vanityOptionsHandlePx(vanity, layout) {
+  if (!vanity) return null;
+  const size = fixtureGrabPx(layout);
+  const front = mPointToPx(
+    { x: (vanity.innerA.x + vanity.innerB.x) / 2, y: (vanity.innerA.y + vanity.innerB.y) / 2 },
+    layout
+  );
+  const off = size / 2 + 4;
+  return { cx: front.x + vanity.inward.x * off, cy: front.y + vanity.inward.y * off, size };
+}
+
+function hitBathroomFixtureHandle(room, layout, raw, innerMetres) {
+  const door = roomDoorSwing(room, innerMetres);
+  const vanity = bathroomVanity(room, innerMetres);
+  const { shower, tank, bowl, toilet, toiletGeom } = bathroomFixtures(room);
+  const rotate = shower ? hitShowerRotateHandle(shower, layout, raw) : null;
+  if (rotate) return rotate;
+  const flip = hitDoorFlipHandle(door, layout, raw);
+  if (flip) return flip;
+  const options = vanityOptionsHandlePx(vanity, layout);
+  if (options && Math.hypot(raw.x - options.cx, raw.y - options.cy) <= options.size / 2 + 3) {
+    return { type: "vanity-options", kind: "rotate" };
+  }
+  const hs = fixtureGrabPx(layout);
+  const grab = pickClosestGrab(raw, hs, [
+    door ? { type: "door", px: mPointToPx(door.doorGrab, layout) } : null,
+    vanity ? { type: "vanity", px: mPointToPx(vanity.grab, layout) } : null,
+    shower ? { type: "shower", px: mPointToPx(rectCenter(shower), layout) } : null,
+    toilet ? { type: "toilet", px: mPointToPx(rectCenter(toilet), layout) } : null,
+  ]);
+  if (grab) return grab;
+  if (
+    hitLayoutRect(tank, layout, raw, 6) ||
+    hitLayoutRect(bowl, layout, raw, 6) ||
+    hitLayoutRect(toilet, layout, raw, 6) ||
+    hitLayoutRect(toiletGeom?.clear, layout, raw, 4)
+  ) {
+    return { type: "toilet", kind: "move" };
+  }
+  if (vanity && hitLayoutRect(vanity.rect, layout, raw, 4)) {
+    return { type: "vanity", kind: "move" };
+  }
+  if (shower && hitLayoutRect(shower, layout, raw, 0)) {
+    return { type: "shower", kind: "move" };
+  }
+  return null;
+}
+
+function hasBedroomSide(side) {
+  return side === "top" || side === "right" || side === "bottom" || side === "left";
+}
+
+/** Save the current robe and bed so dragging another fixture cannot recompute them. */
+function pinBedroomFixtures(room, innerMetres) {
+  if (!room || roomKind(room) !== "bedroom") return room;
+  let next = room;
+  if (!hasBedroomSide(room.robeSide) || !Number.isFinite(Number(room.robeAlong))) {
+    const geom = bedroomDoorAndRobe(room, innerMetres);
+    if (geom) next = { ...next, robeSide: geom.robeSide, robeAlong: snapPlanMm(geom.robeAlongM) };
+  }
+  if (!hasBedroomSide(room.bedSide) || !Number.isFinite(Number(room.bedAlong))) {
+    const bed = bedroomBed(room);
+    next = { ...next, bedSide: bed.bedSide, bedAlong: snapPlanMm(bed.alongM) };
+  }
+  return next;
+}
+
+function moveBedroomDoor(room, cursorM, grabAlong, innerMetres) {
+  const pinned = pinBedroomFixtures(room, innerMetres);
+  const hit = nearestRoomSide(pinned, cursorM);
+  if (!hit) return room;
+  const current = pinned?.doorSide;
+  let use = hit;
+  if (current === "top" || current === "right" || current === "bottom" || current === "left") {
+    const x0 = room.x;
+    const y0 = room.y;
+    const x1 = room.x + room.w;
+    const y1 = room.y + room.h;
+    const cur =
+      current === "top"
+        ? { side: "top", d: Math.abs(cursorM.y - y0), t: cursorM.x - x0, wallLen: room.w }
+        : current === "bottom"
+          ? { side: "bottom", d: Math.abs(cursorM.y - y1), t: cursorM.x - x0, wallLen: room.w }
+          : current === "left"
+            ? { side: "left", d: Math.abs(cursorM.x - x0), t: cursorM.y - y0, wallLen: room.h }
+            : { side: "right", d: Math.abs(cursorM.x - x1), t: cursorM.y - y0, wallLen: room.h };
+    if (cur.d <= hit.d + 0.18) use = cur;
+  }
+  const doorWidth = Math.min(roomDoorWidthM(pinned), Math.max(0.2, use.wallLen - 0.05));
+  const offset = Number.isFinite(grabAlong) ? grabAlong : doorWidth / 2;
+  const doorAlong = snapPlanMm(
+    Math.max(0, Math.min(Math.max(0, use.wallLen - doorWidth), use.t - offset))
+  );
+  return {
+    ...pinned,
+    doorSide: use.side,
+    doorAlong,
+  };
+}
+
+function movePorchFrontDoor(room, cursorM, grabAlong, metres) {
+  const door = porchFrontDoor(room, metres);
+  if (!door) return room;
+  const frame = roomWallFrame(room, door.doorSide);
+  const t =
+    (cursorM.x - frame.origin.x) * frame.along.x +
+    (cursorM.y - frame.origin.y) * frame.along.y;
+  const doorWidth = Math.min(DOOR_WIDTH_DEFAULT_M, Math.max(0.2, frame.wallLen - 0.05));
+  const offset = Number.isFinite(grabAlong) ? grabAlong : doorWidth / 2;
+  return {
+    ...room,
+    doorAlong: snapPlanMm(
+      Math.max(0, Math.min(Math.max(0, frame.wallLen - doorWidth), t - offset))
+    ),
+  };
+}
+
+function hitPorchFixtureHandle(room, layout, raw, metres) {
+  const door = porchFrontDoor(room, metres);
+  if (!door) return null;
+  const flip = hitDoorFlipHandle(door, layout, raw);
+  if (flip) return flip;
+  return pickClosestGrab(raw, fixtureGrabPx(layout), [
+    { type: "door", px: mPointToPx(door.doorGrab, layout) },
+  ]);
+}
+
+function hitBedroomRobeResizeHandle(geom, layout, raw) {
+  if (!geom) return null;
+  const hs = fixtureGrabPx(layout);
+  const hitR = hs / 2 + 5;
+  let best = null;
+  for (const h of robeResizeHandles(geom)) {
+    const px = mPointToPx(h.point, layout);
+    const d = Math.hypot(raw.x - px.x, raw.y - px.y);
+    if (d <= hitR && (!best || d < best.d)) best = { which: h.which, d };
+  }
+  if (!best) return null;
+  return {
+    type: "robe-resize",
+    kind: robeResizeAxis(geom),
+    which: best.which,
+  };
+}
+
+function robeAlongFromCursor(room, geom, cursorM) {
+  const frame = roomWallFrame(room, geom.robeSide);
+  return (cursorM.x - frame.origin.x) * frame.along.x + (cursorM.y - frame.origin.y) * frame.along.y;
+}
+
+function robeHandleAlong(geom, which) {
+  const t = ROBE_NIB_T_M;
+  if (which === "start") return geom.robeAlongM - t / 2;
+  return geom.robeAlongM + geom.robeWidth + t / 2;
+}
+
+function startRobeResizeDrag(room, which, cursorM, innerMetres) {
+  const geom = bedroomDoorAndRobe(room, innerMetres);
+  if (!geom) return { mode: "robe-resize", which };
+  return {
+    mode: "robe-resize",
+    which,
+    grabAlong: robeAlongFromCursor(room, geom, cursorM) - robeHandleAlong(geom, which),
+  };
+}
+
+function moveBedroomRobeSize(room, which, cursorM, grabAlong, innerMetres) {
+  const geom = bedroomDoorAndRobe(room, innerMetres);
+  if (!geom) return room;
+  const frame = roomWallFrame(room, geom.robeSide);
+  const handleT = snapPlanMm(
+    robeAlongFromCursor(room, geom, cursorM) - (Number.isFinite(grabAlong) ? grabAlong : 0)
+  );
+  const start = geom.robeAlongM;
+  const end = start + geom.robeWidth;
+  const minW = ROBE_MIN_M;
+  const maxW = Math.min(ROBE_MAX_M, snapPlanMm(frame.wallLen));
+  let nextStart = start;
+  let nextEnd = end;
+  if (which === "start") {
+    const edge = snapPlanMm(handleT + ROBE_NIB_T_M / 2);
+    nextStart = Math.max(snapPlanMm(Math.max(0, end - maxW)), Math.min(snapPlanMm(end - minW), edge));
+    nextEnd = end;
+  } else {
+    const edge = snapPlanMm(handleT - ROBE_NIB_T_M / 2);
+    nextEnd = Math.min(
+      snapPlanMm(Math.min(frame.wallLen, start + maxW)),
+      Math.max(snapPlanMm(start + minW), edge)
+    );
+    nextStart = start;
+  }
+  return {
+    ...room,
+    robeSide: geom.robeSide,
+    robeAlong: snapPlanMm(nextStart),
+    robeWidth: snapPlanMm(Math.max(minW, Math.min(maxW, nextEnd - nextStart))),
+  };
+}
+
+function moveBedroomRobe(room, cursorM, grabAlong, innerMetres) {
+  const pinned = pinBedroomFixtures(room, innerMetres);
+  const hit = nearestRoomSide(pinned, cursorM);
+  if (!hit) return pinned;
+  const robeWidth = Math.min(Math.max(0.2, hit.wallLen), roomRobeWidthM(pinned));
+  const offset = Number.isFinite(grabAlong) ? grabAlong : robeWidth / 2;
+  return {
+    ...pinned,
+    robeSide: hit.side,
+    robeAlong: snapPlanMm(
+      Math.max(0, Math.min(Math.max(0, hit.wallLen - robeWidth), hit.t - offset))
+    ),
+  };
+}
+
+function moveBathroomVanity(room, cursorM, grabAlong, innerMetres) {
+  const hit = nearestRoomSide(room, cursorM);
+  if (!hit) return room;
+  const length = Math.min(vanityLengthM(room), Math.max(0.2, hit.wallLen - 0.05));
+  const offset = Number.isFinite(grabAlong) ? grabAlong : length / 2;
+  const { min, max, butt } = vanityAlongRange(room, roomWallFrame(room, hit.side), length, innerMetres);
+  const want = Math.max(min, Math.min(max, hit.t - offset));
+  const next = {
+    ...room,
+    vanitySide: hit.side,
+    vanityAlong:
+      butt !== null && Math.abs(want - butt) <= VANITY_WM_BUTT_SNAP_M ? butt : snapPlanMm(want),
+  };
+  if (!vanityWmSide(next) || !vanityWmConflicts(next, innerMetres)) return next;
+  return placeVanityWm(next, innerMetres, next.vanityAlong) || room;
+}
+
+function moveBathroomToilet(room, cursorM, grabAlong) {
+  const hit = nearestRoomSide(room, cursorM);
+  if (!hit) return room;
+  const tankAlong = Math.min(TOILET_TANK_ALONG_M, Math.max(0.2, hit.wallLen - 0.05));
+  const { minAlong, maxAlong } = toiletAlongRange(hit.wallLen, tankAlong);
+  const offset = Number.isFinite(grabAlong) ? grabAlong : tankAlong / 2;
+  return {
+    ...room,
+    toiletSide: hit.side,
+    toiletAlong: snapPlanMm(Math.max(minAlong, Math.min(maxAlong, hit.t - offset))),
+  };
+}
+
+function moveBedroomBed(room, cursorM, grabAlong, innerMetres) {
+  const pinned = pinBedroomFixtures(room, innerMetres);
+  const hit = nearestRoomSide(pinned, cursorM);
+  if (!hit) return pinned;
+  const alongLen = BED_SHORT_M;
+  const offset = Number.isFinite(grabAlong) ? grabAlong : alongLen / 2;
+  return {
+    ...pinned,
+    bedSide: hit.side,
+    bedAlong: snapPlanMm(clampBedAlong(hit.wallLen, hit.t - offset)),
+  };
+}
+
+function moveRoomItemRect(room, startRect, cursorM, grab, keyX, keyY) {
+  const next = clampRectInRoom(room, {
+    x: cursorM.x - (grab?.dx || 0),
+    y: cursorM.y - (grab?.dy || 0),
+    w: startRect.w,
+    h: startRect.h,
+  });
+  return {
+    ...room,
+    [keyX]: snapPlanMm(next.x - room.x),
+    [keyY]: snapPlanMm(next.y - room.y),
+  };
+}
+
+function startFixtureDrag(type, room, cursorM, innerMetres, metres) {
+  if (type === "door") {
+    const geom = isPorch(room)
+      ? porchFrontDoor(room, metres)
+      : roomDoorSwing(room, innerMetres);
+    const start = geom.openingStart || geom.hinge;
+    return {
+      mode: type,
+      grabAlong:
+        (cursorM.x - start.x) * geom.along.x +
+        (cursorM.y - start.y) * geom.along.y,
+    };
+  }
+  if (type === "robe") {
+    const geom = bedroomDoorAndRobe(room, innerMetres);
+    return {
+      mode: type,
+      grabAlong:
+        (cursorM.x - geom.robeAnchor.x) * geom.robeAlong.x +
+        (cursorM.y - geom.robeAnchor.y) * geom.robeAlong.y,
+    };
+  }
+  if (type === "vanity") {
+    const vanity = bathroomVanity(room, innerMetres);
+    return {
+      mode: type,
+      grabAlong:
+        (cursorM.x - vanity.anchor.x) * vanity.along.x +
+        (cursorM.y - vanity.anchor.y) * vanity.along.y,
+    };
+  }
+  if (type === "toilet") {
+    const geom = bathroomToilet(room);
+    return {
+      mode: type,
+      grabAlong:
+        (cursorM.x - geom.anchor.x) * geom.along.x +
+        (cursorM.y - geom.anchor.y) * geom.along.y,
+    };
+  }
+  if (type === "bed") {
+    const geom = bedroomBed(room, innerMetres);
+    return {
+      mode: type,
+      grabAlong:
+        (cursorM.x - geom.anchor.x) * geom.along.x +
+        (cursorM.y - geom.anchor.y) * geom.along.y,
+    };
+  }
+  const rect = bathroomFixtures(room).shower;
+  if (!rect) return { mode: type, grab: { dx: 0, dy: 0 } };
+  return {
+    mode: type,
+    grab: { dx: cursorM.x - rect.x, dy: cursorM.y - rect.y },
+  };
+}
+
+/** Bedroom/bathroom edges that are not already on the external wall. Kitchen/porch add none. */
+function bedroomBathroomInternalWalls(rooms, innerMetres) {
+  return cutBedroomDoorsFromWalls(partitionWallsUncut(rooms, innerMetres), rooms, innerMetres);
+}
+
+function wallSegMetres(seg) {
+  if (seg.axis === "h") {
+    return [
+      { x: seg.t0, y: seg.y },
+      { x: seg.t1, y: seg.y },
+    ];
+  }
+  return [
+    { x: seg.x, y: seg.t0 },
+    { x: seg.x, y: seg.t1 },
+  ];
+}
+
+function wallSegToLayoutPx(seg, layout) {
+  const [a, b] = wallSegMetres(seg);
+  return {
+    x1: a.x * layout.scale + layout.originX,
+    y1: a.y * layout.scale + layout.originY,
+    x2: b.x * layout.scale + layout.originX,
+    y2: b.y * layout.scale + layout.originY,
+  };
+}
+
+/** Outer corner squares where a horizontal and vertical partition meet (butt caps leave a hole). */
+function partitionWallCorners(walls, eps = 0.03) {
+  const hs = [];
+  const vs = [];
+  for (const w of walls || []) {
+    if (w.axis === "h") hs.push(w);
+    else vs.push(w);
+  }
+  const out = [];
+  const seen = new Set();
+  for (const h of hs) {
+    const y = h.y;
+    const lo = Math.min(h.t0, h.t1) - eps;
+    const hi = Math.max(h.t0, h.t1) + eps;
+    for (const v of vs) {
+      const x = v.x;
+      if (x < lo || x > hi) continue;
+      const vlo = Math.min(v.t0, v.t1) - eps;
+      const vhi = Math.max(v.t0, v.t1) + eps;
+      if (y < vlo || y > vhi) continue;
+      const key = `${x.toFixed(3)}:${y.toFixed(3)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ x, y });
+    }
+  }
+  return out;
+}
+
+function wallCornerToLayoutPx(c, layout) {
+  return {
+    x: c.x * layout.scale + layout.originX,
+    y: c.y * layout.scale + layout.originY,
+  };
 }
 
 function polygonPathD(pts) {
@@ -1490,13 +6780,283 @@ function rectInsidePolygon(room, poly) {
   return pts.every((p) => pointInOrOnPolygon(p, poly));
 }
 
+function livingSetTvSide(room) {
+  const rot = roomRotation(room);
+  return rot === 90 ? "right" : rot === 180 ? "bottom" : rot === 270 ? "left" : "top";
+}
+
+/**
+ * Furniture rects (world metres) for a living set. The TV unit sits against the TV edge,
+ * the couch back against the opposite edge, the coffee table midway; all centred along.
+ * Pieces keep their size — resizing the group only changes the spacing.
+ */
+const COUCH_TYPES = ["2", "3", "L-right", "L-left"];
+
+function livingCouchType(room) {
+  return COUCH_TYPES.includes(room?.couchType) ? room.couchType : "3";
+}
+
+function couchIsL(type) {
+  return type === "L-right" || type === "L-left";
+}
+
+function couchWidthM(type) {
+  if (type === "2") return COUCH_ARM_M * 2 + COUCH_CUSHION_M * 2;
+  if (couchIsL(type)) return COUCH_ARM_M + COUCH_CUSHION_M * 3 + COUCH_BACK_M;
+  return COUCH_W_M;
+}
+
+/** How far the couch reaches in from its back edge (the L return pokes further forward). */
+function couchReachM(type) {
+  return couchIsL(type) ? COUCH_D_M + COUCH_CUSHION_M + COUCH_ARM_M : COUCH_D_M;
+}
+
+/**
+ * Furniture rects (world metres) for a living set. The TV unit sits against the TV edge,
+ * the couch back against the opposite edge, the coffee table midway; all centred along.
+ * Pieces keep their size — resizing the group only changes the spacing.
+ * L couches put the extra seat on the sitter's left/right (facing the TV).
+ */
+function livingSetGeom(room) {
+  const tvSide = livingSetTvSide(room);
+  const frame = roomWallFrame(room, tvSide);
+  const depth = tvSide === "left" || tvSide === "right" ? room.w : room.h;
+  const c = frame.wallLen / 2;
+  const box = (t0, t1, d0, d1) => wallBoxRect(frame.origin, frame.along, frame.inward, t0, t1, d0, d1);
+  const type = livingCouchType(room);
+  const A = COUCH_ARM_M;
+  const C = COUCH_CUSHION_M;
+  const W = couchWidthM(type);
+  const s0 = c - W / 2;
+  const s1 = c + W / 2;
+  const seatD0 = depth - COUCH_D_M;
+  const seatD1 = depth - COUCH_BACK_M;
+  const alongIsRight = frame.along.x * frame.inward.y - frame.along.y * frame.inward.x > 0;
+  // u runs from the plain (armed) end of the couch towards the L end.
+  const lAtEnd = type === "L-right" ? alongIsRight : !alongIsRight;
+  const tOf = (u) => (lAtEnd ? s0 + u : s1 - u);
+  const ubox = (u0, u1, d0, d1) => box(tOf(u0), tOf(u1), d0, d1);
+
+  let bodies;
+  let backs;
+  let arms;
+  let cushions;
+  let tableU;
+  let optionsU;
+  if (couchIsL(type)) {
+    const retD0 = depth - couchReachM(type);
+    const cornerU = A + C * 2;
+    bodies = [ubox(0, W, seatD0, depth), ubox(cornerU, W, retD0, seatD0)];
+    backs = [ubox(0, W, seatD1, depth), ubox(W - COUCH_BACK_M, W, retD0, seatD1)];
+    arms = [ubox(0, A, seatD0, depth), ubox(cornerU, cornerU + C, retD0, retD0 + A)];
+    cushions = [
+      ...[0, 1, 2].map((i) => ubox(A + i * C, A + (i + 1) * C, seatD0, seatD1)),
+      ubox(cornerU, cornerU + C, retD0 + A, seatD0),
+    ];
+    tableU = cornerU / 2;
+    optionsU = A + C * 1.5;
+  } else {
+    const n = type === "2" ? 2 : 3;
+    bodies = [ubox(0, W, seatD0, depth)];
+    backs = [ubox(0, W, seatD1, depth)];
+    arms = [ubox(0, A, seatD0, depth), ubox(W - A, W, seatD0, depth)];
+    cushions = Array.from({ length: n }, (_, i) => ubox(A + i * C, A + (i + 1) * C, seatD0, seatD1));
+    tableU = W / 2;
+    optionsU = W / 2;
+  }
+  const tableMid = (TV_UNIT_D_M + seatD0) / 2;
+  const tableT = tOf(tableU);
+  const optionsT = tOf(optionsU);
+  const optionsD = (seatD0 + seatD1) / 2;
+  return {
+    tvUnit: box(c - TV_UNIT_W_M / 2, c + TV_UNIT_W_M / 2, 0, TV_UNIT_D_M),
+    tv: box(c - TV_W_M / 2, c + TV_W_M / 2, 0.1, 0.1 + TV_D_M),
+    table: box(
+      tableT - COFFEE_W_M / 2,
+      tableT + COFFEE_W_M / 2,
+      tableMid - COFFEE_D_M / 2,
+      tableMid + COFFEE_D_M / 2
+    ),
+    bodies,
+    backs,
+    arms,
+    cushions,
+    options: {
+      x: frame.origin.x + frame.along.x * optionsT + frame.inward.x * optionsD,
+      y: frame.origin.y + frame.along.y * optionsT + frame.inward.y * optionsD,
+    },
+  };
+}
+
+/** Plan draw order: living sets sit above every room and partition wall. */
+function roomsStackOrder(rooms) {
+  const list = rooms || [];
+  return [...list.filter((r) => !isLivingSet(r)), ...list.filter(isLivingSet)];
+}
+
+function couchOptionsHandlePx(room, layout) {
+  const p = mPointToPx(livingSetGeom(room).options, layout);
+  return { cx: p.x, cy: p.y, size: fixtureGrabPx(layout) };
+}
+
+function hitCouchOptions(room, layout, raw) {
+  if (!isLivingSet(room)) return false;
+  const h = couchOptionsHandlePx(room, layout);
+  return Math.hypot(raw.x - h.cx, raw.y - h.cy) <= h.size / 2 + 3;
+}
+
+/** Next couch style; grows the group if the new couch needs more room. */
+function cycleCouchType(room, innerMetres) {
+  const i = COUCH_TYPES.indexOf(livingCouchType(room));
+  let next = { ...room, couchType: COUCH_TYPES[(i + 1) % COUCH_TYPES.length] };
+  const { minW, minH } = roomMinSize(next);
+  const grow = (size, min) => (size >= min - 1e-9 ? size : Math.ceil(min / BUILDING_STEP_M - 1e-9) * BUILDING_STEP_M);
+  const w = grow(next.w, minW);
+  const h = grow(next.h, minH);
+  if (w !== next.w || h !== next.h) {
+    next = { ...next, x: roundMm(next.x - (w - next.w) / 2), y: roundMm(next.y - (h - next.h) / 2), w, h };
+    next = keepRoomInside(room, next, innerMetres);
+  }
+  return next;
+}
+
+function livingSetPieces(room, bw = false) {
+  const g = livingSetGeom(room);
+  const wood = bw ? "#ffffff" : PLAN_WOOD;
+  const woodEdge = bw ? "#111111" : PLAN_WOOD_EDGE;
+  const soft = bw ? "#ffffff" : COUCH_FILL;
+  const softDark = bw ? "#ffffff" : "#e4ded3";
+  const softEdge = bw ? "#111111" : COUCH_EDGE;
+  return [
+    { rect: g.tvUnit, fill: wood, stroke: woodEdge },
+    { rect: g.tv, fill: bw ? "#111111" : TV_FILL, stroke: bw ? "#111111" : TV_FILL },
+    { rect: g.table, fill: wood, stroke: woodEdge },
+    ...g.bodies.map((rect) => ({ rect, fill: softDark, stroke: softEdge })),
+    ...g.backs.map((rect) => ({ rect, fill: softDark, stroke: softEdge })),
+    ...g.arms.map((rect) => ({ rect, fill: softDark, stroke: softEdge })),
+    ...g.cushions.map((rect) => ({ rect, fill: soft, stroke: softEdge, round: true })),
+  ];
+}
+
+function LivingSetFixtures({ room, layout, showHandles = false }) {
+  const options = couchOptionsHandlePx(room, layout);
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {livingSetPieces(room).map((p, i) => {
+        const r = mRectToPx(p.rect, layout);
+        const rad = p.round ? Math.min(r.w, r.h) * 0.12 : 1;
+        return (
+          <rect
+            key={`lv-${i}`}
+            x={r.x}
+            y={r.y}
+            width={r.w}
+            height={r.h}
+            rx={rad}
+            fill={p.fill}
+            stroke={p.stroke}
+            strokeWidth="1"
+          />
+        );
+      })}
+      {showHandles ? (
+        <OptionsHandle cx={options.cx} cy={options.cy} size={options.size} color={ROOM_LIVING} />
+      ) : null}
+    </g>
+  );
+}
+
+function drawLivingSetCanvas(ctx, room, layout, bw) {
+  ctx.save();
+  ctx.lineWidth = 1;
+  for (const p of livingSetPieces(room, bw)) {
+    const r = mRectToPx(p.rect, layout);
+    const rad = p.round ? Math.min(r.w, r.h) * 0.12 : 1;
+    drawCanvasRoundRect(ctx, r.x, r.y, r.w, r.h, rad);
+    if (!bw || p.fill !== "#ffffff") {
+      ctx.fillStyle = p.fill;
+      ctx.fill();
+    }
+    ctx.strokeStyle = p.stroke;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function roomMinSize(room) {
+  if (isLivingSet(room)) {
+    const type = livingCouchType(room);
+    const along = Math.max(couchWidthM(type), TV_UNIT_W_M);
+    const across = Math.max(
+      LIVING_SET_MIN_ACROSS_M,
+      couchReachM(type) + TV_UNIT_D_M + LIVING_SET_GAP_M
+    );
+    const sideways = livingSetTvSide(room) === "left" || livingSetTvSide(room) === "right";
+    return sideways ? { minW: across, minH: along } : { minW: along, minH: across };
+  }
+  if (isLaundry(room)) {
+    const len = LAUNDRY_LENGTHS_M[0];
+    return laundryLengthIsX(room)
+      ? { minW: len, minH: LAUNDRY_DEPTH_M }
+      : { minW: LAUNDRY_DEPTH_M, minH: len };
+  }
+  if (roomKind(room) !== "kitchen") return { minW: ROOM_MIN_M, minH: ROOM_MIN_M };
+  const kind = kitchenLayoutKind(room);
+  const d = KITCHEN_BENCH_M;
+  const lMin = d * 2;
+  const aisleMin = d + KITCHEN_CLEAR_M + KITCHEN_BAR_M;
+  const longIsX = roomLayoutLongIsX(room);
+  let minLocalW = d;
+  let minLocalH = d;
+  if (kind === "lshape-left" || kind === "lshape-right") {
+    minLocalW = lMin;
+    minLocalH = lMin;
+  } else if (kind === "cshape") {
+    const cAcross = d * 2 + KITCHEN_CLEAR_M;
+    if (longIsX) {
+      minLocalW = cAcross;
+      minLocalH = lMin;
+    } else {
+      minLocalW = lMin;
+      minLocalH = cAcross;
+    }
+  } else if (kitchenHasWrap(kind) || kind === "island") {
+    if (longIsX) {
+      minLocalW = lMin;
+      minLocalH = aisleMin;
+    } else {
+      minLocalW = aisleMin;
+      minLocalH = lMin;
+    }
+    if (kind === "cbar-left" || kind === "cbar-right") {
+      const cAcross = d * 2 + KITCHEN_CLEAR_M;
+      if (longIsX) minLocalW = Math.max(minLocalW, cAcross);
+      else minLocalH = Math.max(minLocalH, cAcross);
+    }
+  }
+  const rot = roomRotation(room);
+  const benches = kitchenWorkBenches(room);
+  let packX = 0;
+  let packY = 0;
+  for (const b of benches) {
+    const packed = kitchenPackedLenOnBench(room, b);
+    if (b.alongX) packX = Math.max(packX, packed);
+    else packY = Math.max(packY, packed);
+  }
+  minLocalW = Math.max(minLocalW, packX);
+  minLocalH = Math.max(minLocalH, packY);
+  if (rot === 90 || rot === 270) return { minW: minLocalH, minH: minLocalW };
+  return { minW: minLocalW, minH: minLocalH };
+}
+
 function clampRoomInInner(room, inner) {
   if (!inner?.length) return room;
+  const { minW, minH } = roomMinSize(room);
   const b = buildingBounds(inner);
-  const maxW = Math.max(ROOM_MIN_M, b.maxX - b.minX);
-  const maxH = Math.max(ROOM_MIN_M, b.maxY - b.minY);
-  const w = Math.min(Math.max(ROOM_MIN_M, room.w), maxW);
-  const h = Math.min(Math.max(ROOM_MIN_M, room.h), maxH);
+  const maxW = Math.max(minW, b.maxX - b.minX);
+  const maxH = Math.max(minH, b.maxY - b.minY);
+  const w = Math.min(Math.max(minW, room.w), maxW);
+  const h = Math.min(Math.max(minH, room.h), maxH);
   const x = Math.min(Math.max(room.x, b.minX), b.maxX - w);
   const y = Math.min(Math.max(room.y, b.minY), b.maxY - h);
   return { ...room, x, y, w, h };
@@ -1512,22 +7072,62 @@ function keepRoomInside(prev, next, inner) {
 
 function clampRoomEdgeInInner(start, next, side, inner) {
   if (!inner?.length) return next;
+  const { minW, minH } = roomMinSize(start);
   const b = buildingBounds(inner);
   const out = { ...next };
   if (side === "left") {
     const right = start.x + start.w;
     out.x = Math.max(out.x, b.minX);
-    out.w = Math.max(ROOM_MIN_M, right - out.x);
+    out.w = Math.max(minW, right - out.x);
   } else if (side === "right") {
-    out.w = Math.min(Math.max(ROOM_MIN_M, out.w), Math.max(ROOM_MIN_M, b.maxX - out.x));
+    out.w = Math.min(Math.max(minW, out.w), Math.max(minW, b.maxX - out.x));
   } else if (side === "top") {
     const bottom = start.y + start.h;
     out.y = Math.max(out.y, b.minY);
-    out.h = Math.max(ROOM_MIN_M, bottom - out.y);
+    out.h = Math.max(minH, bottom - out.y);
   } else if (side === "bottom") {
-    out.h = Math.min(Math.max(ROOM_MIN_M, out.h), Math.max(ROOM_MIN_M, b.maxY - out.y));
+    out.h = Math.min(Math.max(minH, out.h), Math.max(minH, b.maxY - out.y));
   }
+  if (rectInsidePolygon(out, inner)) return out;
   return keepRoomInside(start, out, inner);
+}
+
+function innerBoundForSide(side, inner) {
+  if (!inner?.length) return null;
+  const b = buildingBounds(inner);
+  if (side === "left") return b.minX;
+  if (side === "right") return b.maxX;
+  if (side === "top") return b.minY;
+  if (side === "bottom") return b.maxY;
+  return null;
+}
+
+function cursorAtOrPastInnerEdge(side, cursorM, inner, slop = 0) {
+  const bound = innerBoundForSide(side, inner);
+  if (bound == null || !cursorM) return false;
+  if (side === "left") return cursorM.x <= bound + slop;
+  if (side === "right") return cursorM.x >= bound - slop;
+  if (side === "top") return cursorM.y <= bound + slop;
+  return cursorM.y >= bound - slop;
+}
+
+function pinRoomEdgeToInner(start, side, inner) {
+  const bound = innerBoundForSide(side, inner);
+  if (bound == null) return { ...start };
+  const { minW, minH } = roomMinSize(start);
+  const out = { ...start };
+  if (side === "left") {
+    out.x = bound;
+    out.w = Math.max(minW, start.x + start.w - out.x);
+  } else if (side === "right") {
+    out.w = Math.max(minW, bound - start.x);
+  } else if (side === "top") {
+    out.y = bound;
+    out.h = Math.max(minH, start.y + start.h - out.y);
+  } else {
+    out.h = Math.max(minH, bound - start.y);
+  }
+  return out;
 }
 
 function segmentsProperCross(a1, a2, b1, b2) {
@@ -1606,15 +7206,13 @@ function clampPorchOutside(next, outer) {
   return best;
 }
 
-function keepPorchOutside(prev, next, outer, { slide = false } = {}) {
+function keepPorchOutside(prev, next, outer, { slide: _slide = false } = {}) {
   if (!outer?.length) return next;
   if (!rectOverlapsPolygonInterior(next, outer)) return next;
-  if (slide) {
-    const clamped = clampPorchOutside(next, outer);
-    if (clamped) return clamped;
-  }
+  const clamped = clampPorchOutside(next, outer);
+  if (clamped) return clamped;
   if (prev && !rectOverlapsPolygonInterior(prev, outer)) return prev;
-  return clampPorchOutside(next, outer) || next;
+  return next;
 }
 
 function nextPorchPlacement(rooms, metres, w, h) {
@@ -1728,7 +7326,7 @@ function livingPathD(outlinePts, layout, rooms) {
   const pts = outlinePts || layout.pts;
   if (!pts?.length) return "";
   const parts = [polygonPathD(pts)];
-  for (const room of interiorRooms(rooms)) {
+  for (const room of walledRooms(rooms)) {
     const r = roomToPx(room, layout);
     parts.push(
       `M ${r.x} ${r.y} L ${r.x + r.w} ${r.y} L ${r.x + r.w} ${r.y + r.h} L ${r.x} ${r.y + r.h} Z`
@@ -1750,52 +7348,120 @@ function nearestSnap(v, list) {
   return { value: best, dist: bestD };
 }
 
-function snapRoomMove(x, y, w, h, xs, ys, thresh) {
-  const l = nearestSnap(x, xs);
-  const r = nearestSnap(x + w, xs);
-  const t = nearestSnap(y, ys);
-  const b = nearestSnap(y + h, ys);
-  let nx = x;
-  let ny = y;
-  if (l.dist <= r.dist) {
-    if (l.dist <= thresh) nx = l.value;
-  } else if (r.dist <= thresh) {
-    nx = r.value - w;
-  }
-  if (t.dist <= b.dist) {
-    if (t.dist <= thresh) ny = t.value;
-  } else if (b.dist <= thresh) {
-    ny = b.value - h;
-  }
-  return { x: nx, y: ny };
+function ceilToStep(m, step = BUILDING_STEP_M) {
+  return (Math.ceil(Math.round(m * 1000) / Math.round(step * 1000) - 1e-9) * Math.round(step * 1000)) / 1000;
 }
 
-function snapRoomEdge(room, side, next, xs, ys, thresh) {
-  const out = { ...room, ...next };
-  if (out.w < ROOM_MIN_M) out.w = ROOM_MIN_M;
-  if (out.h < ROOM_MIN_M) out.h = ROOM_MIN_M;
+/**
+ * Every room box sits on the 100mm grid. The box is the clear room: partition walls are drawn just
+ * outside it, so every wall face is on the grid too. Laundry keeps its fixed 750 depth (back wall on
+ * the grid); drawn custom benches keep their wall-traced extent.
+ */
+function snapRoomToGrid(room) {
+  if (!room || hasCustomBench(room)) return room;
+  const snap = snapMetresToStep;
+  const out = { ...room, x: snap(room.x), y: snap(room.y) };
+  if (isLaundry(room)) {
+    if (laundryLengthIsX(room)) out.w = snapLaundryLength(room.w);
+    else out.h = snapLaundryLength(room.h);
+    const back = laundryBackSide(room);
+    if (back === "bottom") out.y = roundMm(snap(room.y + room.h) - out.h);
+    if (back === "right") out.x = roundMm(snap(room.x + room.w) - out.w);
+    return out;
+  }
+  const { minW, minH } = roomMinSize(room);
+  out.w = Math.max(ceilToStep(minW), snapMetresToStep(room.w));
+  out.h = Math.max(ceilToStep(minH), snapMetresToStep(room.h));
+  return out;
+}
+
+/**
+ * One-off tidy of a saved room onto the grid. Walled rooms saved on the half-step lines (walls centred
+ * on their edges) shrink 50mm per side, so their walls stay exactly where they were drawn.
+ */
+function normaliseRoomToGrid(room) {
+  const half = WALL_THICKNESS_M / 2;
+  const offGrid = (v) => Math.abs(snapMetresToStep(v) - v) > 1e-6;
+  if (!room || hasCustomBench(room) || !roomNeedsPartitionWalls(room) || !(offGrid(room.x) || offGrid(room.y))) {
+    return snapRoomToGrid(room);
+  }
+  const x = offGrid(room.x) ? roundMm(room.x + half) : room.x;
+  const y = offGrid(room.y) ? roundMm(room.y + half) : room.y;
+  const w = offGrid(room.x) && !isLaundry(room) ? roundMm(room.w - half * 2) : room.w;
+  const h = offGrid(room.y) && !isLaundry(room) ? roundMm(room.h - half * 2) : room.h;
+  return snapRoomToGrid({ ...room, x, y, w, h });
+}
+
+/** Centrelines of every wall a walled room can meet: the external walls and other rooms' partition walls. */
+function wallCentreLines(metres, rooms, excludeId, innerMetres) {
+  const centre = metres?.length ? insetPolygon(metres, WALL_THICKNESS_M / 2) : null;
+  const others = (rooms || []).filter((r) => r.id !== excludeId);
+  return [...outlineAxisEdges(centre), ...partitionWallsUncut(others, innerMetres)];
+}
+
+/**
+ * A walled-room side one grid step off another wall would put two walls side by side; returns the
+ * one-step shift (outward) that lands its wall on top of the other so they become one wall.
+ */
+function mergeWallStep(room, side, lines) {
+  const hz = side === "top" || side === "bottom";
+  const edge =
+    side === "left" ? room.x : side === "right" ? room.x + room.w : side === "top" ? room.y : room.y + room.h;
+  const out = side === "left" || side === "top" ? -1 : 1;
+  const target = edge + out * (WALL_THICKNESS_M * 1.5);
+  const t0 = hz ? room.x : room.y;
+  const t1 = hz ? room.x + room.w : room.y + room.h;
+  const hit = lines.some(
+    (l) =>
+      l.axis === (hz ? "h" : "v") &&
+      Math.abs((hz ? l.y : l.x) - target) < 0.01 &&
+      Math.min(t1, l.t1) - Math.max(t0, l.t0) > WALL_MIN_LEN_M
+  );
+  return hit ? out * WALL_THICKNESS_M : 0;
+}
+
+function mergeRoomWalls(room, lines) {
+  if (!roomNeedsPartitionWalls(room) || hasCustomBench(room)) return room;
+  const open = isLaundry(room) ? laundryOpenSide(room) : null;
+  const step = (side) => (side === open ? 0 : mergeWallStep(room, side, lines));
+  const dx = step("left") || step("right");
+  const dy = step("top") || step("bottom");
+  return dx || dy ? { ...room, x: roundMm(room.x + dx), y: roundMm(room.y + dy) } : room;
+}
+
+function mergeRoomSideWall(room, side, lines) {
+  if (!roomNeedsPartitionWalls(room) || isLaundry(room)) return room;
+  const d = mergeWallStep(room, side, lines);
+  if (!d) return room;
+  if (side === "left") return { ...room, x: roundMm(room.x + d), w: roundMm(room.w - d) };
+  if (side === "right") return { ...room, w: roundMm(room.w + d) };
+  if (side === "top") return { ...room, y: roundMm(room.y + d), h: roundMm(room.h - d) };
+  return { ...room, h: roundMm(room.h + d) };
+}
+
+/** Dragged side lands on a 100mm grid line; the opposite side stays put. */
+function snapRoomEdgeToGrid(start, side, next) {
+  const snap = snapMetresToStep;
+  const { minW, minH } = roomMinSize(start);
+  const out = { ...start, ...next };
   if (side === "left") {
-    const s = nearestSnap(out.x, xs);
-    if (s.dist <= thresh) {
-      const right = room.x + room.w;
-      out.x = s.value;
-      out.w = Math.max(ROOM_MIN_M, right - out.x);
-    }
+    const right = start.x + start.w;
+    out.x = Math.min(snap(out.x), snap(right - ceilToStep(minW)));
+    out.w = roundMm(right - out.x);
   } else if (side === "right") {
-    const s = nearestSnap(out.x + out.w, xs);
-    if (s.dist <= thresh) out.w = Math.max(ROOM_MIN_M, s.value - out.x);
+    out.w = Math.max(ceilToStep(minW), roundMm(snap(start.x + out.w) - start.x));
   } else if (side === "top") {
-    const s = nearestSnap(out.y, ys);
-    if (s.dist <= thresh) {
-      const bottom = room.y + room.h;
-      out.y = s.value;
-      out.h = Math.max(ROOM_MIN_M, bottom - out.y);
-    }
+    const bottom = start.y + start.h;
+    out.y = Math.min(snap(out.y), snap(bottom - ceilToStep(minH)));
+    out.h = roundMm(bottom - out.y);
   } else if (side === "bottom") {
-    const s = nearestSnap(out.y + out.h, ys);
-    if (s.dist <= thresh) out.h = Math.max(ROOM_MIN_M, s.value - out.y);
+    out.h = Math.max(ceilToStep(minH), roundMm(snap(start.y + out.h) - start.y));
   }
   return out;
+}
+
+function snapPointToGrid(p) {
+  return { ...p, x: snapMetresToStep(p.x), y: snapMetresToStep(p.y) };
 }
 
 function roomRotation(room) {
@@ -1850,13 +7516,249 @@ function rotatedLocalRect(room, rect) {
   };
 }
 
-function rotateRoom90(room) {
+function rotatedLocalPoint(room, p) {
+  const rot = roomRotation(room);
+  const { w: uw, h: uh } = unrotatedSize(room);
+  const dx = p.x - uw / 2;
+  const dy = p.y - uh / 2;
+  let rdx = dx;
+  let rdy = dy;
+  if (rot === 90) {
+    rdx = -dy;
+    rdy = dx;
+  } else if (rot === 180) {
+    rdx = -dx;
+    rdy = -dy;
+  } else if (rot === 270) {
+    rdx = dy;
+    rdy = -dx;
+  }
+  return { x: room.x + room.w / 2 + rdx, y: room.y + room.h / 2 + rdy };
+}
+
+function worldToUnrotatedLocal(room, world) {
+  const rot = roomRotation(room);
+  const { w: uw, h: uh } = unrotatedSize(room);
+  const rdx = world.x - (room.x + room.w / 2);
+  const rdy = world.y - (room.y + room.h / 2);
+  let dx = rdx;
+  let dy = rdy;
+  if (rot === 90) {
+    dx = rdy;
+    dy = -rdx;
+  } else if (rot === 180) {
+    dx = -rdx;
+    dy = -rdy;
+  } else if (rot === 270) {
+    dx = -rdy;
+    dy = rdx;
+  }
+  return { x: dx + uw / 2, y: dy + uh / 2 };
+}
+
+function kitchenRunAlongFromWorld(room, cursorM) {
+  const local = worldToUnrotatedLocal(room, cursorM);
+  return roomLayoutLongIsX(room) ? local.x : local.y;
+}
+
+function startKitchenRunDrag(room, which, cursorM) {
+  const { w, h } = unrotatedSize(room);
+  const longIsX = roomLayoutLongIsX(room);
+  const kind = kitchenLayoutKind(room);
+  const side = kitchenWrapSide(kind);
+  const run = kitchenRunRange(room, w, h, longIsX, kind, side);
+  const t = which === "t0" ? run.t0 : run.t1;
+  return {
+    mode: "kitchen-run",
+    which,
+    grabAlong: kitchenRunAlongFromWorld(room, cursorM) - t,
+  };
+}
+
+function moveKitchenRun(room, which, cursorM, grabAlong) {
+  const { w, h } = unrotatedSize(room);
+  const longIsX = roomLayoutLongIsX(room);
+  const kind = kitchenLayoutKind(room);
+  const side = kitchenWrapSide(kind);
+  const run = kitchenRunRange(room, w, h, longIsX, kind, side);
+  const benchId = kind === "island" ? "island" : "bar";
+  const benches = kitchenWorkBenches(room);
+  const bench = benches.find((b) => b.id === benchId);
+  let min = 0.9;
+  if (bench) min = Math.max(min, kitchenPackedLenOnBench(room, bench));
+  const t = snapPlanMm(
+    kitchenRunAlongFromWorld(room, cursorM) - (Number.isFinite(grabAlong) ? grabAlong : 0)
+  );
+  let t0 = run.t0;
+  let t1 = run.t1;
+  const wrap = kitchenHasWrap(kind);
+  const wrapStart = wrap && wrapRunFromStart(kind, longIsX);
+  if (wrap && ((wrapStart && which === "t0") || (!wrapStart && which === "t1"))) {
+    return room;
+  }
+  if (which === "t0") {
+    t0 = Math.max(0, Math.min(t, t1 - min));
+    t0 = Math.max(0, Math.min(t0, t1 - min));
+  } else {
+    t1 = Math.max(t0 + min, Math.min(run.along, t));
+    t1 = Math.max(t0 + min, Math.min(run.along, t1));
+  }
+  if (wrapStart) t0 = 0;
+  else if (wrap) t1 = run.along;
+  return compactKitchenAppliances({ ...room, kitchenRun0: t0, kitchenRun1: t1 });
+}
+
+function rotateRoom90(room, innerMetres) {
   const rot = (roomRotation(room) + 90) % 360;
   const cx = room.x + room.w / 2;
   const cy = room.y + room.h / 2;
   const w = room.h;
   const h = room.w;
-  return { ...room, rot, x: cx - w / 2, y: cy - h / 2, w, h };
+  const kind = roomKind(room);
+  const next = { ...room, rot, x: cx - w / 2, y: cy - h / 2, w, h };
+  if (kind === "porch") next.layoutLongIsX = next.w >= next.h;
+  else next.layoutLongIsX = roomLayoutLongIsX(room);
+  if (kind === "bedroom") {
+    next.doorSide = rotateDoorSide(roomDoorSide(room, innerMetres));
+    if (
+      room.robeSide === "top" ||
+      room.robeSide === "right" ||
+      room.robeSide === "bottom" ||
+      room.robeSide === "left"
+    ) {
+      next.robeSide = rotateDoorSide(room.robeSide);
+    }
+    if (
+      room.bedSide === "top" ||
+      room.bedSide === "right" ||
+      room.bedSide === "bottom" ||
+      room.bedSide === "left"
+    ) {
+      next.bedSide = rotateDoorSide(room.bedSide);
+    }
+  } else if (kind === "bathroom" || kind === "powder") {
+    next.doorSide = rotateDoorSide(roomDoorSide(room, innerMetres));
+    if (
+      room.vanitySide === "top" ||
+      room.vanitySide === "right" ||
+      room.vanitySide === "bottom" ||
+      room.vanitySide === "left"
+    ) {
+      next.vanitySide = rotateDoorSide(room.vanitySide);
+    }
+    if (
+      room.toiletSide === "top" ||
+      room.toiletSide === "right" ||
+      room.toiletSide === "bottom" ||
+      room.toiletSide === "left"
+    ) {
+      next.toiletSide = rotateDoorSide(room.toiletSide);
+    }
+    if (kind === "bathroom") {
+      const { shower } = bathroomFixtures(room);
+      if (Number.isFinite(Number(room.showerX)) && Number.isFinite(Number(room.showerY))) {
+        const rotated = rotateLocalRect90(
+          { x: shower.x - room.x, y: shower.y - room.y, w: shower.w, h: shower.h },
+          room.w,
+          room.h
+        );
+        next.showerX = snapPlanMm(rotated.x);
+        next.showerY = snapPlanMm(rotated.y);
+        if (room.showerLongIsX === true || room.showerLongIsX === false) {
+          next.showerLongIsX = rotated.w >= rotated.h - 1e-9;
+        }
+      } else if (room.showerLongIsX === true || room.showerLongIsX === false) {
+        next.showerLongIsX = !room.showerLongIsX;
+      }
+    }
+  }
+  return next;
+}
+
+function roundMm(v) {
+  return Math.round(v * 1000) / 1000;
+}
+
+function translateDesign(metres, rooms, dx, dy) {
+  return {
+    metres: metres.map((p) => ({ x: roundMm(p.x + dx), y: roundMm(p.y + dy) })),
+    rooms: rooms.map((r) => ({ ...r, x: roundMm(r.x + dx), y: roundMm(r.y + dy) })),
+  };
+}
+
+/** Rotate the building and every room clockwise by `turns` quarter turns about the plan centre. */
+function rotateDesign90(metres, rooms, turns) {
+  const n = ((Math.round(turns) % 4) + 4) % 4;
+  if (!n || !metres?.length) return { metres, rooms };
+  const b = planFootprintBounds(metres, rooms);
+  const cx = snapMetresToStep((b.minX + b.maxX) / 2);
+  const cy = snapMetresToStep((b.minY + b.maxY) / 2);
+  const rot = (x, y) => ({ x: roundMm(cx - (y - cy)), y: roundMm(cy + (x - cx)) });
+  let m = metres;
+  let rs = rooms;
+  for (let k = 0; k < n; k += 1) {
+    const inner = insetPolygon(m, WALL_THICKNESS_M) || m;
+    rs = rs.map((r) => {
+      const next = rotateRoom90(r, inner);
+      const c = rot(r.x + r.w / 2, r.y + r.h / 2);
+      return { ...next, x: roundMm(c.x - next.w / 2), y: roundMm(c.y - next.h / 2) };
+    });
+    m = m.map((p) => rot(p.x, p.y));
+  }
+  return { metres: m, rooms: rs };
+}
+
+function designHandlesPx(layout, rooms) {
+  const foot = planFootprintBounds(layout.metres, rooms);
+  if (!foot) return null;
+  const size = handlePx(layout) + 4;
+  const off = size / 2 + 10;
+  const top = foot.minY * layout.scale + layout.originY - off;
+  return {
+    size,
+    move: { cx: foot.minX * layout.scale + layout.originX - off, cy: top },
+    rotate: { cx: foot.maxX * layout.scale + layout.originX + off, cy: top },
+    centre: {
+      x: ((foot.minX + foot.maxX) / 2) * layout.scale + layout.originX,
+      y: ((foot.minY + foot.maxY) / 2) * layout.scale + layout.originY,
+    },
+  };
+}
+
+function hitDesignHandle(layout, rooms, raw) {
+  const h = designHandlesPx(layout, rooms);
+  if (!h) return null;
+  const half = h.size / 2 + 4;
+  const near = (p) => Math.abs(raw.x - p.cx) <= half && Math.abs(raw.y - p.cy) <= half;
+  if (near(h.move)) return "design-move";
+  if (near(h.rotate)) return "design-rotate";
+  return null;
+}
+
+function DesignMoveHandle({ cx, cy, size, color }) {
+  if (cx == null || cy == null) return null;
+  const arm = size * 0.32;
+  const head = Math.max(2, size * 0.12);
+  return (
+    <g>
+      <rect
+        x={cx - size / 2}
+        y={cy - size / 2}
+        width={size}
+        height={size}
+        rx={2}
+        fill={WHITE}
+        stroke={color}
+        strokeWidth="1.5"
+      />
+      <line x1={cx - arm} y1={cy} x2={cx + arm} y2={cy} stroke={color} strokeWidth="1.3" />
+      <line x1={cx} y1={cy - arm} x2={cx} y2={cy + arm} stroke={color} strokeWidth="1.3" />
+      <polygon points={`${cx - arm},${cy} ${cx - arm + head},${cy - head} ${cx - arm + head},${cy + head}`} fill={color} />
+      <polygon points={`${cx + arm},${cy} ${cx + arm - head},${cy - head} ${cx + arm - head},${cy + head}`} fill={color} />
+      <polygon points={`${cx},${cy - arm} ${cx - head},${cy - arm + head} ${cx + head},${cy - arm + head}`} fill={color} />
+      <polygon points={`${cx},${cy + arm} ${cx - head},${cy + arm - head} ${cx + head},${cy + arm - head}`} fill={color} />
+    </g>
+  );
 }
 
 function buildingBounds(metres) {
@@ -1870,69 +7772,510 @@ function buildingBounds(metres) {
   };
 }
 
-/** Bed 1.8m centered on the 3m side; 2.0m starts at one end of the 3.6m side. */
-function bedLayout(room) {
-  const { w, h } = unrotatedSize(room);
-  const longIsX = w >= h;
-  const bed = longIsX
-    ? {
-        x: 0,
-        y: Math.max(0, (h - Math.min(BED_SHORT_M, h)) / 2),
-        w: Math.min(BED_LONG_M, w),
-        h: Math.min(BED_SHORT_M, h),
-      }
-    : {
-        x: Math.max(0, (w - Math.min(BED_SHORT_M, w)) / 2),
-        y: 0,
-        w: Math.min(BED_SHORT_M, w),
-        h: Math.min(BED_LONG_M, h),
-      };
-  const pillow = longIsX
-    ? {
-        x: bed.x + bed.w * 0.06,
-        y: bed.y + bed.h * 0.1,
-        w: bed.w * 0.2,
-        h: bed.h * 0.8,
-      }
-    : {
-        x: bed.x + bed.w * 0.1,
-        y: bed.y + bed.h * 0.06,
-        w: bed.w * 0.8,
-        h: bed.h * 0.2,
-      };
+/** Axis-aligned envelope of the building polygon plus every room, including porches. */
+function planFootprintBounds(metres, rooms) {
+  const b = metres?.length ? buildingBounds(metres) : null;
+  let minX = b ? b.minX : Infinity;
+  let minY = b ? b.minY : Infinity;
+  let maxX = b ? b.maxX : -Infinity;
+  let maxY = b ? b.maxY : -Infinity;
+  for (const r of rooms || []) {
+    if (!(r?.w > 0) || !(r?.h > 0)) continue;
+    minX = Math.min(minX, r.x);
+    minY = Math.min(minY, r.y);
+    maxX = Math.max(maxX, r.x + r.w);
+    maxY = Math.max(maxY, r.y + r.h);
+  }
+  if (!Number.isFinite(minX)) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function drawBedroomDoorRobe(ctx, geom, layout, bw) {
+  if (!geom) return;
+  const to = (p) => mPointToPx(p, layout);
+  const color = bw ? "#111111" : PLAN_WOOD_EDGE;
+  ctx.save();
+  if (bw) {
+    const hinge = to(geom.hinge);
+    const closed = to(geom.closed);
+    const open = to(geom.open);
+    const radius = Math.max(1, geom.doorWidth * layout.scale);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(hinge.x, hinge.y);
+    ctx.lineTo(open.x, open.y);
+    ctx.stroke();
+    ctx.beginPath();
+    const start = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
+    const end = Math.atan2(open.y - hinge.y, open.x - hinge.x);
+    ctx.arc(hinge.x, hinge.y, radius, start, end, !geom.cw);
+    ctx.stroke();
+    const rr = mRectToPx(geom.robeRect, layout);
+    ctx.fillStyle = "transparent";
+    ctx.beginPath();
+    ctx.rect(rr.x, rr.y, rr.w, rr.h);
+    ctx.stroke();
+    for (const nib of robeNibRects(geom)) {
+      const n = mRectToPx(nib, layout);
+      ctx.strokeRect(n.x, n.y, n.w, n.h);
+    }
+    for (const door of robeSlidingDoorRects(geom)) {
+      const d = mRectToPx(door, layout);
+      ctx.strokeRect(d.x, d.y, d.w, d.h);
+    }
+  } else {
+    for (const nib of robeNibRects(geom)) {
+      const n = mRectToPx(nib, layout);
+      ctx.fillStyle = WALL_FILL;
+      ctx.fillRect(n.x, n.y, n.w, n.h);
+    }
+    const rr = mRectToPx(geom.robeRect, layout);
+    ctx.fillStyle = PLAN_LINEN;
+    ctx.strokeStyle = "#2f2f2f";
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.rect(rr.x, rr.y, rr.w, rr.h);
+    ctx.fill();
+    ctx.stroke();
+    for (const door of robeSlidingDoorRects(geom)) {
+      const d = robeDoorPx(door, geom, layout);
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#2f2f2f";
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.rect(d.x, d.y, d.w, d.h);
+      ctx.fill();
+      ctx.stroke();
+    }
+    drawPlanDoorSwingCanvas(ctx, geom, layout);
+  }
+  const dl = to(geom.doorLabel);
+  const rl = to(geom.robeLabel);
+  const rt = to(geom.robeTitle);
+  ctx.font = '700 11px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  drawHaloText(ctx, formatPlanMm(geom.doorWidth), dl.x, dl.y, color, "rgba(255,255,255,0.95)");
+  for (const [spot, text] of [
+    [rt, "ROBE"],
+    [rl, formatPlanMm(geom.robeWidth)],
+  ]) {
+    ctx.save();
+    ctx.translate(spot.x, spot.y);
+    if (geom.robeTitle.vertical) ctx.rotate(-Math.PI / 2);
+    drawHaloText(ctx, text, 0, 0, color, "rgba(255,255,255,0.95)");
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function defaultBedPlacement(room) {
+  const side = room.w >= room.h ? "top" : "left";
+  const frame = roomWallFrame(room, side);
+  return { side, along: clampBedAlong(frame.wallLen, (frame.wallLen - BED_SHORT_M) / 2) };
+}
+
+/** Bed 1800 along the wall, 2000 into the room; pillow end against the wall. */
+function bedroomBed(room) {
+  const def = defaultBedPlacement(room);
+  const stored = room?.bedSide;
+  const bedSide =
+    stored === "top" || stored === "right" || stored === "bottom" || stored === "left"
+      ? stored
+      : def.side;
+  const frame = roomWallFrame(room, bedSide);
+  const alongLen = BED_SHORT_M;
+  const depth = BED_LONG_M;
+  const storedAlong = Number(room?.bedAlong);
+  const alongM = clampBedAlong(
+    frame.wallLen,
+    Number.isFinite(storedAlong)
+      ? storedAlong
+      : def.side === bedSide
+        ? def.along
+        : (frame.wallLen - alongLen) / 2
+  );
+  const origin = frame.origin;
+  const along = frame.along;
+  const inward = frame.inward;
+  const bed = wallBoxRect(origin, along, inward, alongM, alongM + alongLen, 0, depth);
+  const gap = Math.min(0.08, alongLen * 0.12);
+  const pillowAlong = Math.min(0.58, Math.max(0.18, (alongLen - gap) * 0.42));
+  const used = pillowAlong * 2 + gap;
+  const start = alongM + Math.max(0, (alongLen - used) / 2);
+  const pillowDepth = Math.min(0.36, Math.max(0.22, depth * 0.18));
+  const pillowInset = 0.05;
+  const pillows = [
+    wallBoxRect(
+      origin,
+      along,
+      inward,
+      start,
+      start + pillowAlong,
+      pillowInset,
+      pillowInset + pillowDepth
+    ),
+    wallBoxRect(
+      origin,
+      along,
+      inward,
+      start + pillowAlong + gap,
+      start + pillowAlong + gap + pillowAlong,
+      pillowInset,
+      pillowInset + pillowDepth
+    ),
+  ];
+  const rugAlong = 0.24;
+  const rugFoot = 0.28;
+  const rugHead = 0;
+  const rug = wallBoxRect(
+    origin,
+    along,
+    inward,
+    alongM - rugAlong,
+    alongM + alongLen + rugAlong,
+    -rugHead,
+    depth + rugFoot
+  );
+  const nsGap = NIGHTSTAND_GAP_M;
+  const nsSize = NIGHTSTAND_M;
+  const nightstands = [];
+  const sideSpaces = [
+    { start: alongM - nsGap, dir: -1 },
+    { start: alongM + alongLen + nsGap, dir: 1 },
+  ];
+  for (const slot of sideSpaces) {
+    const t0 = slot.dir < 0 ? slot.start - nsSize : slot.start;
+    const t1 = t0 + nsSize;
+    nightstands.push(wallBoxRect(origin, along, inward, t0, t1, 0.02, 0.02 + nsSize));
+  }
+  const duvetInset = 0.055;
+  const duvet = {
+    x: bed.x + duvetInset,
+    y: bed.y + duvetInset,
+    w: Math.max(0.2, bed.w - duvetInset * 2),
+    h: Math.max(0.2, bed.h - duvetInset * 2),
+  };
+  const runner = footStripRect(bed, bedSide, 0.28, duvetInset + 0.01);
+  const foldThick = 0.02;
+  const fold = footStripRect(bed, bedSide, foldThick, duvetInset + 0.02);
+  if (fold) {
+    if (bedSide === "top") fold.y = bed.y + depth * 0.4;
+    else if (bedSide === "bottom") fold.y = bed.y + bed.h - depth * 0.4 - foldThick;
+    else if (bedSide === "left") fold.x = bed.x + depth * 0.4;
+    else fold.x = bed.x + bed.w - depth * 0.4 - foldThick;
+  }
+  const group = unionRects([rug, bed, ...nightstands]);
   return {
-    bed: rotatedLocalRect(room, bed),
-    pillow: rotatedLocalRect(room, pillow),
+    bedSide,
+    along,
+    inward,
+    alongM,
+    alongLen,
+    depth,
+    bed,
+    pillows,
+    rug,
+    duvet,
+    runner,
+    fold,
+    nightstands,
+    group,
+    grab: rectCenter(group || bed),
+    anchor: {
+      x: origin.x + along.x * alongM,
+      y: origin.y + along.y * alongM,
+    },
   };
 }
 
-function BedroomBed({ room, layout }) {
-  const { bed, pillow } = bedLayout(room);
-  const b = mRectToPx(bed, layout);
-  const p = mRectToPx(pillow, layout);
-  const rad = Math.max(2, layout.scale * 0.06);
+function bedLayout(room, innerMetres) {
+  const geom = bedroomBed(room, innerMetres);
+  return {
+    bed: geom.bed,
+    pillow: geom.pillows[0],
+    pillows: geom.pillows,
+    rug: geom.rug,
+    duvet: geom.duvet,
+    runner: geom.runner,
+    fold: geom.fold,
+    nightstands: geom.nightstands,
+    group: geom.group,
+    bedSide: geom.bedSide,
+  };
+}
+
+function PlanNightstand({ rect, layout }) {
+  if (!rect) return null;
+  const p = mRectToPx(rect, layout);
+  const cx = p.x + p.w / 2;
+  const cy = p.y + p.h / 2;
+  const r = Math.min(p.w, p.h) * 0.28;
   return (
     <g>
-      <rect
-        x={b.x}
-        y={b.y}
-        width={b.w}
-        height={b.h}
-        rx={rad}
-        fill="#dbe7f8"
-        stroke="#1d4ed8"
-        strokeWidth="1.25"
-      />
       <rect
         x={p.x}
         y={p.y}
         width={p.w}
         height={p.h}
-        rx={rad * 0.8}
-        fill="#f8fafc"
-        stroke="#3b82f6"
+        rx={Math.max(1.5, layout.scale * 0.03)}
+        fill={PLAN_WOOD}
+        stroke={PLAN_WOOD_EDGE}
         strokeWidth="1"
       />
+      <circle cx={cx} cy={cy} r={r} fill={PLAN_LAMP} stroke={PLAN_WOOD_DARK} strokeWidth="0.7" />
+    </g>
+  );
+}
+
+function PlanDoorSwing({ hinge, closed, open, radius, cw, layout }) {
+  if (!hinge || !closed || !open) return null;
+  const sweep = cw ? 1 : 0;
+  const leaf = doorLeafQuad(hinge, open, doorLeafThicknessPx(layout), closed);
+  return (
+    <g>
+      <path
+        d={`M ${closed.x} ${closed.y} A ${radius} ${radius} 0 0 ${sweep} ${open.x} ${open.y}`}
+        fill="none"
+        stroke={WALL_FILL}
+        strokeWidth="1.15"
+        strokeDasharray="5 4"
+        strokeLinecap="round"
+      />
+      <polygon
+        points={leaf.map((p) => `${p.x},${p.y}`).join(" ")}
+        fill={PLAN_WOOD}
+        stroke={PLAN_WOOD_EDGE}
+        strokeWidth="1"
+      />
+    </g>
+  );
+}
+
+function PlanWoodRobe({ geom, layout }) {
+  if (!geom?.robeRect) return null;
+  const r = mRectToPx(geom.robeRect, layout);
+  return (
+    <g>
+      {robeNibRects(geom).map((nib, i) => {
+        const p = mRectToPx(nib, layout);
+        return (
+          <rect
+            key={`robe-nib-${i}`}
+            x={p.x}
+            y={p.y}
+            width={p.w}
+            height={p.h}
+            fill={WALL_FILL}
+          />
+        );
+      })}
+      <rect
+        x={r.x}
+        y={r.y}
+        width={r.w}
+        height={r.h}
+        fill={PLAN_LINEN}
+        stroke="#2f2f2f"
+        strokeWidth="1.1"
+      />
+      {robeSlidingDoorRects(geom).map((door, i) => {
+        const p = robeDoorPx(door, geom, layout);
+        return (
+          <rect
+            key={`robe-door-${i}`}
+            x={p.x}
+            y={p.y}
+            width={Math.max(1, p.w)}
+            height={Math.max(1, p.h)}
+            fill="#ffffff"
+            stroke="#2f2f2f"
+            strokeWidth="1.1"
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+function BedroomFixtures({ room, layout, innerMetres, showHandles = false }) {
+  const { bed, pillows, rug, duvet, runner, fold, nightstands, group } = bedLayout(room, innerMetres);
+  const geom = bedroomDoorAndRobe(room, innerMetres);
+  const b = mRectToPx(bed, layout);
+  const rugPx = rug ? mRectToPx(rug, layout) : null;
+  const duvetPx = duvet ? mRectToPx(duvet, layout) : null;
+  const runnerPx = runner ? mRectToPx(runner, layout) : null;
+  const foldPx = fold ? mRectToPx(fold, layout) : null;
+  const pillowPx = (pillows || []).map((p) => mRectToPx(p, layout));
+  const frameRad = Math.max(2, layout.scale * 0.04);
+  const linenRad = Math.max(2, layout.scale * 0.05);
+  const color = PLAN_WOOD_EDGE;
+  const hinge = geom ? mPointToPx(geom.hinge, layout) : null;
+  const closed = geom ? mPointToPx(geom.closed, layout) : null;
+  const open = geom ? mPointToPx(geom.open, layout) : null;
+  const doorLabel = geom ? mPointToPx(geom.doorLabel, layout) : null;
+  const robeLabel = geom ? mPointToPx(geom.robeLabel, layout) : null;
+  const robeTitle = geom ? mPointToPx(geom.robeTitle, layout) : null;
+  const doorGrab = geom ? mPointToPx(geom.doorGrab, layout) : null;
+  const robeGrab = geom ? mPointToPx(geom.robeGrab, layout) : null;
+  const bedGrab = mPointToPx(rectCenter(group || bed), layout);
+  const hs = fixtureGrabPx(layout);
+  const radius = geom ? Math.max(1, geom.doorWidth * layout.scale) : 0;
+  return (
+    <g>
+      {rugPx ? (
+        <rect
+          x={rugPx.x}
+          y={rugPx.y}
+          width={rugPx.w}
+          height={rugPx.h}
+          rx={Math.max(2, layout.scale * 0.03)}
+          fill={PLAN_RUG}
+          stroke={PLAN_RUG_EDGE}
+          strokeWidth="1"
+        />
+      ) : null}
+      {(nightstands || []).map((ns, i) => (
+        <PlanNightstand key={`ns-${i}`} rect={ns} layout={layout} />
+      ))}
+      <rect
+        x={b.x}
+        y={b.y}
+        width={b.w}
+        height={b.h}
+        rx={frameRad}
+        fill={PLAN_WOOD}
+        stroke={PLAN_WOOD_EDGE}
+        strokeWidth="1.2"
+      />
+      {duvetPx ? (
+        <rect
+          x={duvetPx.x}
+          y={duvetPx.y}
+          width={duvetPx.w}
+          height={duvetPx.h}
+          rx={linenRad}
+          fill={PLAN_LINEN}
+          stroke={PLAN_LINEN_EDGE}
+          strokeWidth="1"
+        />
+      ) : null}
+      {foldPx ? (
+        <rect
+          x={foldPx.x}
+          y={foldPx.y}
+          width={foldPx.w}
+          height={foldPx.h}
+          fill={PLAN_LINEN_EDGE}
+        />
+      ) : null}
+      {runnerPx ? (
+        <rect
+          x={runnerPx.x}
+          y={runnerPx.y}
+          width={runnerPx.w}
+          height={runnerPx.h}
+          fill={PLAN_RUNNER}
+          stroke={PLAN_WOOD_DARK}
+          strokeWidth="0.8"
+        />
+      ) : null}
+      {pillowPx.map((p, i) => (
+        <rect
+          key={`pillow-${i}`}
+          x={p.x}
+          y={p.y}
+          width={p.w}
+          height={p.h}
+          rx={linenRad * 0.7}
+          fill="#fbfaf6"
+          stroke="#c5bfb4"
+          strokeWidth="1"
+        />
+      ))}
+      {geom ? <PlanWoodRobe geom={geom} layout={layout} /> : null}
+      {geom && robeTitle ? (
+        <text
+            x={robeTitle.x}
+            y={robeTitle.y}
+            fill={color}
+            fontSize="11"
+            fontWeight="700"
+            textAnchor="middle"
+            dominantBaseline="middle"
+            transform={
+              geom.robeTitle.vertical
+                ? `rotate(-90 ${robeTitle.x} ${robeTitle.y})`
+                : undefined
+            }
+            style={{ pointerEvents: "none" }}
+          >
+            ROBE
+          </text>
+      ) : null}
+      {geom && robeLabel ? (
+        <text
+          x={robeLabel.x}
+          y={robeLabel.y}
+          fill={color}
+          fontSize="11"
+          fontWeight="700"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          transform={geom.robeLabel.vertical ? `rotate(-90 ${robeLabel.x} ${robeLabel.y})` : undefined}
+          style={{ pointerEvents: "none" }}
+        >
+          {formatPlanMm(geom.robeWidth)}
+        </text>
+      ) : null}
+      <PlanDoorSwing
+        hinge={hinge}
+        closed={closed}
+        open={open}
+        radius={radius}
+        cw={geom?.cw}
+        layout={layout}
+      />
+      {geom && doorLabel ? (
+        <text
+          x={doorLabel.x}
+          y={doorLabel.y}
+          fill={color}
+          fontSize="11"
+          fontWeight="700"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          style={{ pointerEvents: "none" }}
+        >
+          {formatPlanMm(geom.doorWidth)}
+        </text>
+      ) : null}
+      {showHandles ? (
+        <>
+          <GrabSquare cx={bedGrab.x} cy={bedGrab.y} size={hs} color={PLAN_WOOD_EDGE} />
+          <GrabSquare cx={robeGrab?.x} cy={robeGrab?.y} size={hs} color={color} />
+          {geom
+            ? robeResizeHandles(geom).map((h) => {
+                const p = mPointToPx(h.point, layout);
+                return (
+                  <AxisHandle
+                    key={`robe-size-${h.which}`}
+                    cx={p.x}
+                    cy={p.y}
+                    size={hs}
+                    color={color}
+                    axis={robeResizeAxis(geom)}
+                  />
+                );
+              })
+            : null}
+          <GrabSquare cx={doorGrab?.x} cy={doorGrab?.y} size={hs} color={color} />
+          {open ? <MirrorHandle cx={open.x} cy={open.y} size={hs} color={color} /> : null}
+        </>
+      ) : null}
     </g>
   );
 }
@@ -1947,175 +8290,908 @@ function mRectToPx(rect, layout) {
 }
 
 function bathroomFixtures(room) {
-  const { w, h } = unrotatedSize(room);
-  const longIsX = w >= h;
-  const showerW = longIsX
-    ? Math.min(SHOWER_SHORT_M, w)
-    : Math.min(SHOWER_LONG_M, w);
-  const showerH = longIsX
-    ? Math.min(SHOWER_LONG_M, h)
-    : Math.min(SHOWER_SHORT_M, h);
-  const shower = { x: 0, y: 0, w: showerW, h: showerH };
-  const inset = 0.04;
-  let tank;
-  let bowl;
-  if (longIsX) {
-    const tankW = Math.min(0.18, Math.max(0.1, w * 0.12));
-    const tankH = Math.min(0.5, Math.max(0.28, h * 0.28));
-    tank = {
-      x: w - tankW - inset,
-      y: h - tankH - inset,
-      w: tankW,
-      h: tankH,
-    };
-    const bowlW = Math.min(0.42, Math.max(0.22, w * 0.22));
-    const bowlH = Math.min(tankH * 0.78, tank.h);
-    bowl = {
-      x: tank.x - bowlW + 0.03,
-      y: tank.y + (tank.h - bowlH) / 2,
-      w: bowlW,
-      h: bowlH,
-    };
-  } else {
-    const tankW = Math.min(0.5, Math.max(0.28, w * 0.28));
-    const tankH = Math.min(0.18, Math.max(0.1, h * 0.08));
-    tank = {
-      x: w - tankW - inset,
-      y: h - tankH - inset,
-      w: tankW,
-      h: tankH,
-    };
-    const bowlH = Math.min(0.42, Math.max(0.22, h * 0.16));
-    const bowlW = Math.min(tankW * 0.78, tank.w);
-    bowl = {
-      x: tank.x + (tank.w - bowlW) / 2,
-      y: tank.y - bowlH + 0.03,
-      w: bowlW,
-      h: bowlH,
-    };
+  const toiletGeom = bathroomToilet(room);
+  let shower = null;
+  if (bathroomHasShower(room)) {
+    const storedLong = room?.showerLongIsX;
+    const def = defaultBathroomLayout(room.w, room.h);
+    if (storedLong === true || storedLong === false) {
+      shower = applyStoredRoomRect(room, "showerX", "showerY", {
+        x: room.x + def.showerX,
+        y: room.y + def.showerY,
+        w: Math.min(storedLong ? SHOWER_LONG_M : SHOWER_SHORT_M, room.w),
+        h: Math.min(storedLong ? SHOWER_SHORT_M : SHOWER_LONG_M, room.h),
+      });
+    } else {
+      shower = applyStoredRoomRect(room, "showerX", "showerY", {
+        x: room.x + def.showerX,
+        y: room.y + def.showerY,
+        w: Math.min(def.showerLongIsX ? SHOWER_LONG_M : SHOWER_SHORT_M, room.w),
+        h: Math.min(def.showerLongIsX ? SHOWER_SHORT_M : SHOWER_LONG_M, room.h),
+      });
+    }
   }
   return {
-    shower: rotatedLocalRect(room, shower),
-    tank: rotatedLocalRect(room, tank),
-    bowl: rotatedLocalRect(room, bowl),
+    shower,
+    tank: toiletGeom?.tank,
+    bowl: toiletGeom?.bowl,
+    clear: toiletGeom?.clear,
+    toilet: toiletGeom?.rect,
+    toiletGeom,
   };
 }
 
-function BathroomFixtures({ room, layout }) {
-  const { shower, tank, bowl } = bathroomFixtures(room);
-  const s = mRectToPx(shower, layout);
-  const t = mRectToPx(tank, layout);
-  const b = mRectToPx(bowl, layout);
-  const rad = Math.max(2, layout.scale * 0.05);
-  const drainR = Math.max(2, Math.min(s.w, s.h) * 0.07);
+function bathroomTileModule(room) {
+  const longIsX = room.w >= room.h;
+  return {
+    tw: longIsX ? TILE_LONG_M : TILE_SHORT_M,
+    th: longIsX ? TILE_SHORT_M : TILE_LONG_M,
+  };
+}
+
+function bathroomTileRects(room, groutM = 0.003) {
+  const { tw, th } = bathroomTileModule(room);
+  const g = groutM;
+  const x0 = room.x;
+  const y0 = room.y;
+  const x1 = room.x + room.w;
+  const y1 = room.y + room.h;
+  const rects = [];
+  for (let y = y0; y < y1 - 1e-9; y += th) {
+    const yb = Math.min(y + th, y1);
+    for (let x = x0; x < x1 - 1e-9; x += tw) {
+      const xb = Math.min(x + tw, x1);
+      if (xb - x < 0.04 || yb - y < 0.04) continue;
+      rects.push({
+        x: x + g / 2,
+        y: y + g / 2,
+        w: Math.max(0.02, xb - x - g),
+        h: Math.max(0.02, yb - y - g),
+      });
+    }
+  }
+  return rects;
+}
+
+function bathroomTileGroutM(layout) {
+  return Math.max(0.002, 0.7 / Math.max(1, layout.scale));
+}
+
+function drawBathroomTiles(ctx, room, layout) {
+  const floor = mRectToPx({ x: room.x, y: room.y, w: room.w, h: room.h }, layout);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(floor.x, floor.y, floor.w, floor.h);
+  ctx.clip();
+  ctx.fillStyle = BATH_GROUT;
+  ctx.fillRect(floor.x, floor.y, floor.w, floor.h);
+  ctx.fillStyle = BATH_TILE;
+  for (const tile of bathroomTileRects(room, bathroomTileGroutM(layout))) {
+    const p = mRectToPx(tile, layout);
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+  }
+  ctx.restore();
+}
+
+function hybridPlankAlongX(metres) {
+  if (!metres?.length) return true;
+  const b = buildingBounds(metres);
+  return b.maxX - b.minX >= b.maxY - b.minY;
+}
+
+function carpetNoise(i, j) {
+  const s = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function drawHybridPlanks(ctx, layout) {
+  const alongX = hybridPlankAlongX(layout.metres);
+  const pitch = HYBRID_PLANK_M * layout.scale;
+  const gap = Math.max(0.55, HYBRID_GAP_M * layout.scale);
+  const ox = layout.originX;
+  const oy = layout.originY;
+  const b = layout.metres?.length ? buildingBounds(layout.metres) : { minX: 0, minY: 0, maxX: 20, maxY: 20 };
+  const pad = pitch * 2;
+  const minX = b.minX * layout.scale + ox - pad;
+  const minY = b.minY * layout.scale + oy - pad;
+  const maxX = b.maxX * layout.scale + ox + pad;
+  const maxY = b.maxY * layout.scale + oy + pad;
+  ctx.fillStyle = HYBRID_GAP;
+  ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
+  if (alongX) {
+    const yStart = oy + Math.floor((minY - oy) / pitch) * pitch;
+    let i = Math.round((yStart - oy) / pitch);
+    for (let y = yStart; y < maxY + pitch; y += pitch, i += 1) {
+      ctx.fillStyle = HYBRID_PLANKS[((i % HYBRID_PLANKS.length) + HYBRID_PLANKS.length) % HYBRID_PLANKS.length];
+      ctx.fillRect(minX, y + gap / 2, maxX - minX, Math.max(0.5, pitch - gap));
+      ctx.strokeStyle = "rgba(180, 158, 120, 0.28)";
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(minX, y + pitch * 0.38);
+      ctx.lineTo(maxX, y + pitch * 0.38);
+      ctx.stroke();
+    }
+  } else {
+    const xStart = ox + Math.floor((minX - ox) / pitch) * pitch;
+    let i = Math.round((xStart - ox) / pitch);
+    for (let x = xStart; x < maxX + pitch; x += pitch, i += 1) {
+      ctx.fillStyle = HYBRID_PLANKS[((i % HYBRID_PLANKS.length) + HYBRID_PLANKS.length) % HYBRID_PLANKS.length];
+      ctx.fillRect(x + gap / 2, minY, Math.max(0.5, pitch - gap), maxY - minY);
+      ctx.strokeStyle = "rgba(180, 158, 120, 0.28)";
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(x + pitch * 0.38, minY);
+      ctx.lineTo(x + pitch * 0.38, maxY);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawCarpetFloor(ctx, room, layout) {
+  const r = mRectToPx({ x: room.x, y: room.y, w: room.w, h: room.h }, layout);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.clip();
+  ctx.fillStyle = CARPET_BASE;
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  const step = Math.max(2.2, Math.min(4.8, 0.02 * layout.scale));
+  const cols = Math.ceil(r.w / step);
+  const rows = Math.ceil(r.h / step);
+  for (let j = 0; j < rows; j += 1) {
+    for (let i = 0; i < cols; i += 1) {
+      const n = carpetNoise(i, j);
+      ctx.fillStyle =
+        n < 0.34 ? "rgba(148,132,114,0.26)" : n < 0.67 ? "rgba(214,202,184,0.22)" : "rgba(168,152,134,0.16)";
+      ctx.fillRect(r.x + i * step, r.y + j * step, step + 0.4, step + 0.4);
+    }
+  }
+  ctx.restore();
+}
+
+function FloorFinishDefs({ prefix, layout }) {
+  if (!layout) return null;
+  const alongX = hybridPlankAlongX(layout.metres);
+  const pitch = HYBRID_PLANK_M * layout.scale;
+  const gap = Math.max(0.55, HYBRID_GAP_M * layout.scale);
+  const n = HYBRID_PLANKS.length;
+  const pitchN = pitch * n;
+  const grain = Math.max(28, 0.7 * layout.scale);
+  return (
+    <>
+      <pattern
+        id={`${prefix}-hybrid`}
+        patternUnits="userSpaceOnUse"
+        x={layout.originX}
+        y={layout.originY}
+        width={alongX ? grain : pitchN}
+        height={alongX ? pitchN : grain}
+      >
+        <rect width="100%" height="100%" fill={HYBRID_GAP} />
+        {HYBRID_PLANKS.map((fill, i) =>
+          alongX ? (
+            <g key={i}>
+              <rect
+                x="0"
+                y={i * pitch + gap / 2}
+                width={grain}
+                height={Math.max(0.5, pitch - gap)}
+                fill={fill}
+              />
+              <line
+                x1="0"
+                y1={i * pitch + pitch * 0.38}
+                x2={grain}
+                y2={i * pitch + pitch * 0.38}
+                stroke="#c4ae88"
+                strokeWidth="0.65"
+                opacity="0.32"
+              />
+            </g>
+          ) : (
+            <g key={i}>
+              <rect
+                x={i * pitch + gap / 2}
+                y="0"
+                width={Math.max(0.5, pitch - gap)}
+                height={grain}
+                fill={fill}
+              />
+              <line
+                x1={i * pitch + pitch * 0.38}
+                y1="0"
+                x2={i * pitch + pitch * 0.38}
+                y2={grain}
+                stroke="#c4ae88"
+                strokeWidth="0.65"
+                opacity="0.32"
+              />
+            </g>
+          )
+        )}
+      </pattern>
+      <pattern
+        id={`${prefix}-carpet`}
+        patternUnits="userSpaceOnUse"
+        x={layout.originX}
+        y={layout.originY}
+        width="11"
+        height="11"
+      >
+        <rect width="11" height="11" fill={CARPET_BASE} />
+        <circle cx="2.1" cy="2.6" r="1.15" fill={CARPET_SHADOW} opacity="0.3" />
+        <circle cx="7.2" cy="1.8" r="0.95" fill={CARPET_HIGHLIGHT} opacity="0.34" />
+        <circle cx="4.4" cy="6.8" r="1.1" fill={CARPET_SHADOW} opacity="0.22" />
+        <circle cx="9.1" cy="8.2" r="0.9" fill={CARPET_HIGHLIGHT} opacity="0.28" />
+        <circle cx="1.3" cy="8.8" r="0.75" fill="#a89884" opacity="0.2" />
+        <circle cx="8.4" cy="4.6" r="0.7" fill="#ad9d89" opacity="0.18" />
+      </pattern>
+      <filter
+        id={`${prefix}-carpet-n`}
+        x="0%"
+        y="0%"
+        width="100%"
+        height="100%"
+        colorInterpolationFilters="sRGB"
+      >
+        <feTurbulence type="fractalNoise" baseFrequency="0.92 1.18" numOctaves="4" seed="4" result="noise" />
+        <feColorMatrix
+          in="noise"
+          type="matrix"
+          values="0 0 0 0 0.74  0 0 0 0 0.68  0 0 0 0 0.60  0 0 0 0.55 0"
+        />
+      </filter>
+    </>
+  );
+}
+
+function roomFloorFill(kind, prefix, colors) {
+  if (kind === "bathroom" || kind === "porch") return colors.fill;
+  if (kind === "bedroom") return `url(#${prefix}-carpet)`;
+  return `url(#${prefix}-hybrid)`;
+}
+
+function BathroomTileFloor({ room, layout }) {
+  const floor = mRectToPx({ x: room.x, y: room.y, w: room.w, h: room.h }, layout);
+  const clipId = `qc-bath-tile-${room.id}`;
+  const groutM = bathroomTileGroutM(layout);
+  return (
+    <g pointerEvents="none">
+      <defs>
+        <clipPath id={clipId}>
+          <rect x={floor.x} y={floor.y} width={floor.w} height={floor.h} />
+        </clipPath>
+      </defs>
+      <rect x={floor.x} y={floor.y} width={floor.w} height={floor.h} fill={BATH_GROUT} />
+      <g clipPath={`url(#${clipId})`}>
+        {bathroomTileRects(room, groutM).map((tile, i) => {
+          const p = mRectToPx(tile, layout);
+          return (
+            <rect
+              key={`tile-${i}`}
+              x={p.x}
+              y={p.y}
+              width={Math.max(0.5, p.w)}
+              height={Math.max(0.5, p.h)}
+              fill={BATH_TILE}
+            />
+          );
+        })}
+      </g>
+    </g>
+  );
+}
+
+function BathroomFixtures({ room, layout, innerMetres, showHandles = false }) {
+  const { shower, tank, bowl, clear, toilet, toiletGeom } = bathroomFixtures(room);
+  const door = roomDoorSwing(room, innerMetres);
+  const vanity = bathroomVanity(room, innerMetres);
+  const s = shower ? mRectToPx(shower, layout) : null;
+  const t = tank ? mRectToPx(tank, layout) : null;
+  const b = bowl ? mRectToPx(bowl, layout) : null;
+  const c = clear ? mRectToPx(clear, layout) : null;
+  const v = vanity ? mRectToPx(vanity.rect, layout) : null;
+  const basin = vanity ? mRectToPx(vanity.basin, layout) : null;
+  const wm = vanity?.wm ? mRectToPx(vanity.wm.rect, layout) : null;
+  const vanityOptions = vanityOptionsHandlePx(vanity, layout);
+  const hinge = door ? mPointToPx(door.hinge, layout) : null;
+  const closed = door ? mPointToPx(door.closed, layout) : null;
+  const open = door ? mPointToPx(door.open, layout) : null;
+  const doorLabel = door ? mPointToPx(door.doorLabel, layout) : null;
+  const doorGrab = door ? mPointToPx(door.doorGrab, layout) : null;
+  const vanityGrab = vanity ? mPointToPx(vanity.grab, layout) : null;
+  const showerGrab = shower ? mPointToPx(rectCenter(shower), layout) : null;
+  const showerRotate = shower ? fixtureRotateHandlePx(shower, layout) : null;
+  const toiletGrab = toilet ? mPointToPx(rectCenter(toilet), layout) : null;
+  const hs = fixtureGrabPx(layout);
+  const drainR = s ? Math.max(2, Math.min(s.w, s.h) * 0.07) : 0;
+  const waste = s ? { x: s.x + s.w / 2, y: s.y + s.h / 2 } : null;
+  const wasteCorners = s
+    ? [
+        { x: s.x, y: s.y },
+        { x: s.x + s.w, y: s.y },
+        { x: s.x + s.w, y: s.y + s.h },
+        { x: s.x, y: s.y + s.h },
+      ]
+    : [];
+  const color = PLAN_WOOD_EDGE;
+  const vanityColor = PLAN_CERAMIC_EDGE;
+  const radius = door ? Math.max(1, door.doorWidth * layout.scale) : 0;
+  const bowlFront = toiletBowlFront(toiletGeom?.toiletSide);
   return (
     <g>
-      <rect
-        x={s.x}
-        y={s.y}
-        width={s.w}
-        height={s.h}
-        fill="#edd9ff"
-        stroke="#6d28d9"
-        strokeWidth="1.25"
+      {roomKind(room) === "bathroom" ? <BathroomTileFloor room={room} layout={layout} /> : null}
+      {s ? (
+        <>
+          <rect
+            x={s.x}
+            y={s.y}
+            width={s.w}
+            height={s.h}
+            fill={PLAN_GLASS}
+            stroke={PLAN_CERAMIC_EDGE}
+            strokeWidth="1.25"
+          />
+          {wasteCorners.map((pt, i) => (
+            <line
+              key={`waste-${i}`}
+              x1={pt.x}
+              y1={pt.y}
+              x2={waste.x}
+              y2={waste.y}
+              stroke={PLAN_CERAMIC_EDGE}
+              strokeWidth="1"
+              strokeDasharray="4 3"
+            />
+          ))}
+          <circle
+            cx={waste.x}
+            cy={waste.y}
+            r={drainR}
+            fill="none"
+            stroke={PLAN_CERAMIC_EDGE}
+            strokeWidth="1.1"
+          />
+          <circle
+            cx={waste.x}
+            cy={waste.y}
+            r={Math.max(1, drainR * 0.35)}
+            fill={PLAN_CERAMIC_EDGE}
+          />
+        </>
+      ) : null}
+      {v ? (
+        <>
+          <rect
+            x={v.x}
+            y={v.y}
+            width={v.w}
+            height={v.h}
+            fill="#ffffff"
+            stroke={PLAN_CERAMIC_EDGE}
+            strokeWidth="1.2"
+          />
+          <ellipse
+            cx={basin.x + basin.w / 2}
+            cy={basin.y + basin.h / 2}
+            rx={basin.w / 2}
+            ry={basin.h / 2}
+            fill="#ffffff"
+            stroke={vanityColor}
+            strokeWidth="1.1"
+          />
+        </>
+      ) : null}
+      {wm ? (
+        <>
+          <rect
+            x={wm.x}
+            y={wm.y}
+            width={wm.w}
+            height={wm.h}
+            fill="none"
+            stroke="#2f2f2f"
+            strokeWidth="1.1"
+            strokeDasharray="5 4"
+          />
+          <text
+            x={wm.x + Math.max(3, wm.w * 0.08)}
+            y={wm.y + wm.h - Math.max(3, wm.h * 0.08)}
+            fill="#2f2f2f"
+            fontSize={wmLabelPx(wm)}
+            fontWeight="700"
+            textAnchor="start"
+            dominantBaseline="alphabetic"
+            style={{ pointerEvents: "none" }}
+          >
+            WM
+          </text>
+        </>
+      ) : null}
+      {c ? (
+        <rect
+          x={c.x}
+          y={c.y}
+          width={c.w}
+          height={c.h}
+          fill="none"
+          stroke={PLAN_CERAMIC_EDGE}
+          strokeWidth="1.15"
+          strokeDasharray="5 4"
+          strokeLinecap="round"
+        />
+      ) : null}
+      {t && b ? (
+        <>
+          <path
+            d={roundedFrontPathD(b, bowlFront)}
+            fill={PLAN_CERAMIC}
+            stroke={PLAN_CERAMIC_EDGE}
+            strokeWidth="1.2"
+          />
+          <rect
+            x={t.x}
+            y={t.y}
+            width={t.w}
+            height={t.h}
+            fill={PLAN_CERAMIC}
+            stroke={PLAN_CERAMIC_EDGE}
+            strokeWidth="1.2"
+          />
+        </>
+      ) : null}
+      <PlanDoorSwing
+        hinge={hinge}
+        closed={closed}
+        open={open}
+        radius={radius}
+        cw={door?.cw}
+        layout={layout}
       />
+      {door && doorLabel ? (
+        <text
+          x={doorLabel.x}
+          y={doorLabel.y}
+          fill={color}
+          fontSize="11"
+          fontWeight="700"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          style={{ pointerEvents: "none" }}
+        >
+          {formatPlanMm(door.doorWidth)}
+        </text>
+      ) : null}
+      {showHandles ? (
+        <>
+          {showerGrab ? (
+            <GrabSquare cx={showerGrab.x} cy={showerGrab.y} size={hs} color={PLAN_CERAMIC_EDGE} />
+          ) : null}
+          {toiletGrab ? (
+            <GrabSquare cx={toiletGrab.x} cy={toiletGrab.y} size={hs} color={PLAN_CERAMIC_EDGE} />
+          ) : null}
+          <GrabSquare cx={vanityGrab?.x} cy={vanityGrab?.y} size={hs} color={vanityColor} />
+          {vanityOptions ? (
+            <OptionsHandle
+              cx={vanityOptions.cx}
+              cy={vanityOptions.cy}
+              size={vanityOptions.size}
+              color={vanityColor}
+            />
+          ) : null}
+          <GrabSquare cx={doorGrab?.x} cy={doorGrab?.y} size={hs} color={color} />
+          {showerRotate ? (
+            <RotateHandle
+              cx={showerRotate.cx}
+              cy={showerRotate.cy}
+              size={showerRotate.size}
+              color={PLAN_CERAMIC_EDGE}
+            />
+          ) : null}
+          {open ? <MirrorHandle cx={open.x} cy={open.y} size={hs} color={color} /> : null}
+        </>
+      ) : null}
+    </g>
+  );
+}
+
+function KitchenSinkGraphic({ W, H, mirror }) {
+  const sid = useSilverId();
+  const p = kitchenSinkParts(W, H, mirror);
+  const grooves = kitchenSinkGrooves(p);
+  const bowls = [
+    { x: p.bowl1X, w: p.bowl1W },
+    { x: p.bowl2X, w: p.bowl2W },
+  ];
+  return (
+    <g>
+      <SilverGradients id={sid} />
       <rect
-        x={s.x + s.w * 0.08}
-        y={s.y + s.h * 0.08}
-        width={s.w * 0.84}
-        height={s.h * 0.84}
-        fill="none"
-        stroke="#c4b5fd"
-        strokeWidth="1"
-        strokeDasharray="4 3"
-      />
-      <circle
-        cx={s.x + s.w / 2}
-        cy={s.y + s.h / 2}
-        r={drainR}
-        fill="none"
-        stroke="#6d28d9"
+        x={0}
+        y={0}
+        width={W}
+        height={H}
+        rx={p.outerRx}
+        fill={`url(#${sid}-plate)`}
+        stroke={PLAN_STEEL_EDGE}
         strokeWidth="1.1"
       />
+      {grooves.map((g, i) => (
+        <line
+          key={`groove-${i}`}
+          x1={g.x1}
+          y1={g.y}
+          x2={g.x2}
+          y2={g.y}
+          stroke={PLAN_STEEL_GROOVE}
+          strokeWidth={Math.max(0.8, H * 0.028)}
+          strokeLinecap="round"
+        />
+      ))}
+      {bowls.map((b, i) => {
+        const cx = b.x + b.w / 2;
+        const cy = p.bowlY + p.bowlH * 0.58;
+        return (
+          <g key={`bowl-${i}`}>
+            <rect
+              x={b.x}
+              y={p.bowlY}
+              width={b.w}
+              height={p.bowlH}
+              rx={p.rx}
+              fill={`url(#${sid}-bowl)`}
+              stroke={PLAN_STEEL_EDGE}
+              strokeWidth="1.1"
+            />
+            <circle cx={cx} cy={cy} r={p.drainR} fill="none" stroke={PLAN_STEEL_EDGE} strokeWidth="1" />
+            <circle cx={cx} cy={cy} r={p.drainR * 0.28} fill={PLAN_STEEL_EDGE} />
+          </g>
+        );
+      })}
       <circle
-        cx={s.x + s.w / 2}
-        cy={s.y + s.h / 2}
-        r={Math.max(1, drainR * 0.35)}
-        fill="#6d28d9"
+        cx={p.tapX}
+        cy={p.tapY}
+        r={p.tapR}
+        fill={`url(#${sid}-plate)`}
+        stroke={PLAN_STEEL_EDGE}
+        strokeWidth="1"
       />
+    </g>
+  );
+}
+
+function KitchenSink({ room, layout, sinkLocal }) {
+  const frame = kitchenSinkFramePx(room, layout, sinkLocal);
+  if (!frame) return null;
+  const { o, a, c, W, H } = frame;
+  return (
+    <g
+      transform={`matrix(${(a.x - o.x) / W} ${(a.y - o.y) / W} ${(c.x - o.x) / H} ${
+        (c.y - o.y) / H
+      } ${o.x} ${o.y})`}
+    >
+      <KitchenSinkGraphic W={W} H={H} mirror={sinkMirrored(room)} />
+    </g>
+  );
+}
+
+function LaundryFixtures({ room, layout, innerMetres }) {
+  const sid = useSilverId();
+  const { wm, trough, basin } = laundryFixtures(room, innerMetres);
+  const w = mRectToPx(wm, layout);
+  const t = mRectToPx(trough, layout);
+  const b = mRectToPx(basin, layout);
+  return (
+    <g pointerEvents="none">
+      <SilverGradients id={sid} />
       <rect
         x={t.x}
         y={t.y}
         width={t.w}
         height={t.h}
-        rx={rad * 0.6}
-        fill="#faf5ff"
-        stroke="#6d28d9"
-        strokeWidth="1.2"
+        fill={`url(#${sid}-plate)`}
+        stroke={PLAN_STEEL_EDGE}
+        strokeWidth="1.1"
       />
-      <ellipse
+      <rect
+        x={b.x}
+        y={b.y}
+        width={b.w}
+        height={b.h}
+        rx={Math.max(2, layout.scale * 0.04)}
+        fill={`url(#${sid}-bowl)`}
+        stroke={PLAN_STEEL_EDGE}
+        strokeWidth="1.1"
+      />
+      <circle
         cx={b.x + b.w / 2}
         cy={b.y + b.h / 2}
-        rx={b.w / 2}
-        ry={b.h / 2}
-        fill="#faf5ff"
-        stroke="#6d28d9"
-        strokeWidth="1.2"
-      />
-    </g>
-  );
-}
-
-function KitchenFixtures({ room, layout }) {
-  const { w, h } = unrotatedSize(room);
-  const benchM = Math.min(0.6, Math.min(w, h) * 0.45);
-  const longIsX = w >= h;
-  const benchLocal = longIsX
-    ? { x: 0, y: h - benchM, w, h: benchM }
-    : { x: 0, y: 0, w: benchM, h };
-  const cookLocal = longIsX
-    ? {
-        x: benchLocal.x + w * 0.12,
-        y: benchLocal.y + benchM * 0.18,
-        w: Math.min(w * 0.28, 0.7),
-        h: benchM * 0.64,
-      }
-    : {
-        x: benchLocal.x + benchM * 0.18,
-        y: benchLocal.y + h * 0.12,
-        w: benchM * 0.64,
-        h: Math.min(h * 0.28, 0.7),
-      };
-  const bench = rotatedLocalRect(room, benchLocal);
-  const p = mRectToPx(bench, layout);
-  const cook = mRectToPx(rotatedLocalRect(room, cookLocal), layout);
-  return (
-    <g>
-      <rect
-        x={p.x}
-        y={p.y}
-        width={p.w}
-        height={p.h}
-        fill="#fed7aa"
-        stroke="#c2410c"
-        strokeWidth="1.2"
-      />
-      <rect
-        x={cook.x}
-        y={cook.y}
-        width={cook.w}
-        height={cook.h}
-        rx={Math.max(2, layout.scale * 0.04)}
-        fill="#9a3412"
-        stroke="#7c2d12"
+        r={Math.max(1.5, layout.scale * 0.02)}
+        fill="none"
+        stroke={PLAN_STEEL_EDGE}
         strokeWidth="1"
       />
+      <rect
+        x={w.x}
+        y={w.y}
+        width={w.w}
+        height={w.h}
+        fill="none"
+        stroke="#2f2f2f"
+        strokeWidth="1.1"
+        strokeDasharray="5 4"
+      />
+      <text
+        x={w.x + Math.max(3, w.w * 0.08)}
+        y={w.y + w.h - Math.max(3, w.h * 0.08)}
+        fill="#2f2f2f"
+        fontSize={wmLabelPx(w)}
+        fontWeight="700"
+        textAnchor="start"
+        dominantBaseline="alphabetic"
+      >
+        WM
+      </text>
     </g>
   );
 }
 
-function PorchDecking({ room, layout }) {
+function drawLaundryCanvas(ctx, room, layout, bw, stroke, innerMetres) {
+  const { wm, trough, basin } = laundryFixtures(room, innerMetres);
+  const ink = stroke || "#2f2f2f";
+  const t = mRectToPx(trough, layout);
+  const b = mRectToPx(basin, layout);
+  const w = mRectToPx(wm, layout);
+  ctx.save();
+  ctx.lineWidth = 1.1;
+  ctx.strokeStyle = stroke || PLAN_STEEL_EDGE;
+  ctx.fillStyle = canvasSilver(ctx, t.x, t.y, t.w, t.h);
+  ctx.beginPath();
+  ctx.rect(t.x, t.y, t.w, t.h);
+  if (!bw) ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = canvasSilver(ctx, b.x, b.y, b.w, b.h, true);
+  drawCanvasRoundRect(ctx, b.x, b.y, b.w, b.h, Math.max(2, layout.scale * 0.04));
+  if (!bw) ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(b.x + b.w / 2, b.y + b.h / 2, Math.max(1.5, layout.scale * 0.02), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = ink;
+  ctx.strokeRect(w.x, w.y, w.w, w.h);
+  ctx.setLineDash([]);
+  ctx.fillStyle = ink;
+  ctx.font = `700 ${wmLabelPx(w)}px "Segoe UI", system-ui, sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("WM", w.x + Math.max(3, w.w * 0.08), w.y + w.h - Math.max(3, w.h * 0.08));
+  ctx.restore();
+}
+
+/** Custom-bench drawing feedback: a 600 stub off the wall, then the bench outline while dragging. */
+function BenchDrawPreview({ preview, layout }) {
+  if (preview.poly?.length) {
+    const pts = preview.poly.map((p) => mPointToPx(p, layout));
+    return (
+      <polygon
+        points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+        fill={PLAN_WOOD}
+        fillOpacity="0.85"
+        stroke={PLAN_WOOD_EDGE}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        pointerEvents="none"
+      />
+    );
+  }
+  if (!preview.stub) return null;
+  const { point, normal } = preview.stub;
+  const a = mPointToPx(point, layout);
+  const b = mPointToPx(
+    { x: point.x + normal.x * KITCHEN_BENCH_M, y: point.y + normal.y * KITCHEN_BENCH_M },
+    layout
+  );
+  return (
+    <g pointerEvents="none">
+      <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={PLAN_WOOD_EDGE} strokeWidth="3" strokeLinecap="round" />
+      <circle cx={a.x} cy={a.y} r="3.5" fill={PLAN_WOOD_EDGE} />
+    </g>
+  );
+}
+
+function KitchenFixtures({ room, layout, showHandles = false }) {
+  const {
+    benchPolys,
+    benchHoles,
+    overhangSegs,
+    cook,
+    pantry,
+    fridge,
+    sinkLocal,
+    runHandles,
+    cookGrab,
+    sinkGrab,
+    pantryGrab,
+    fridgeGrab,
+    hasAppliances,
+  } = kitchenFixtureRects(room);
+  const c = mRectToPx(cook, layout);
+  const ptry = mRectToPx(pantry, layout);
+  const frg = mRectToPx(fridge, layout);
+  const hs = fixtureGrabPx(layout);
+  const cookPx = cookGrab ? mPointToPx(cookGrab, layout) : null;
+  const sinkPx = sinkGrab ? mPointToPx(sinkGrab, layout) : null;
+  const pantryPx = pantryGrab ? mPointToPx(pantryGrab, layout) : null;
+  const mirrorPx = showHandles ? sinkMirrorHandlePx(room, layout) : null;
+  const fridgePx = fridgeGrab ? mPointToPx(fridgeGrab, layout) : null;
+  const polyToD = (poly) => {
+    const pts = poly.map((p) => mPointToPx(p, layout));
+    if (!pts.length) return "";
+    return `${pts.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join(" ")} Z`;
+  };
+  const holePath = benchHoles?.length
+    ? `${polyToD(benchPolys[0])} ${benchHoles.map(polyToD).join(" ")}`
+    : "";
+  return (
+    <g>
+      {holePath ? (
+        <>
+          <path
+            d={holePath}
+            fill={PLAN_WOOD}
+            fillRule="evenodd"
+            stroke={PLAN_WOOD_EDGE}
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          {benchPolys.slice(1).map((poly, i) => {
+            const pts = poly.map((p) => mPointToPx(p, layout));
+            return (
+              <polygon
+                key={`bench-extra-${i}`}
+                points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                fill={PLAN_WOOD}
+                stroke={PLAN_WOOD_EDGE}
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+              />
+            );
+          })}
+        </>
+      ) : (
+        benchPolys.map((poly, i) => {
+          const pts = poly.map((p) => mPointToPx(p, layout));
+          return (
+            <polygon
+              key={`bench-${i}`}
+              points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill={PLAN_WOOD}
+              stroke={PLAN_WOOD_EDGE}
+              strokeWidth="1.2"
+              strokeLinejoin="round"
+            />
+          );
+        })
+      )}
+      {overhangSegs.map((seg, i) => {
+        const a = mPointToPx(seg[0], layout);
+        const b = mPointToPx(seg[1], layout);
+        return (
+          <line
+            key={`overhang-${i}`}
+            x1={a.x}
+            y1={a.y}
+            x2={b.x}
+            y2={b.y}
+            stroke={PLAN_WOOD_EDGE}
+            strokeWidth="1.15"
+            strokeDasharray="5 4"
+            strokeLinecap="round"
+          />
+        );
+      })}
+      {hasAppliances ? (
+        <>
+          <rect
+            x={c.x}
+            y={c.y}
+            width={c.w}
+            height={c.h}
+            rx={Math.max(2, layout.scale * 0.04)}
+            fill={PLAN_COOK}
+            stroke="#2f2f2f"
+            strokeWidth="1"
+          />
+          {[0.3, 0.7].flatMap((fx) =>
+            [0.3, 0.7].map((fy) => (
+              <circle
+                key={`${fx}-${fy}`}
+                cx={c.x + c.w * fx}
+                cy={c.y + c.h * fy}
+                r={Math.max(2, Math.min(c.w, c.h) * 0.14)}
+                fill="none"
+                stroke="#2a2a2a"
+                strokeWidth="1"
+              />
+            ))
+          )}
+          <KitchenSink room={room} layout={layout} sinkLocal={sinkLocal} />
+          <rect
+            x={ptry.x}
+            y={ptry.y}
+            width={ptry.w}
+            height={ptry.h}
+            fill="#ffffff"
+            stroke="#2f2f2f"
+            strokeWidth="1.1"
+          />
+          <text
+            x={ptry.x + Math.max(3, ptry.w * 0.08)}
+            y={ptry.y + ptry.h - Math.max(3, ptry.h * 0.08)}
+            fill="#2f2f2f"
+            fontSize={Math.max(9, Math.min(ptry.w, ptry.h) * 0.28)}
+            fontWeight="700"
+            textAnchor="start"
+            dominantBaseline="alphabetic"
+            style={{ pointerEvents: "none" }}
+          >
+            P
+          </text>
+          <rect
+            x={frg.x}
+            y={frg.y}
+            width={frg.w}
+            height={frg.h}
+            fill="#ffffff"
+            stroke="#2f2f2f"
+            strokeWidth="1.1"
+          />
+          <text
+            x={frg.x + Math.max(3, frg.w * 0.08)}
+            y={frg.y + frg.h - Math.max(3, frg.h * 0.08)}
+            fill="#2f2f2f"
+            fontSize={Math.max(9, Math.min(frg.w, frg.h) * 0.22)}
+            fontWeight="700"
+            textAnchor="start"
+            dominantBaseline="alphabetic"
+            style={{ pointerEvents: "none" }}
+          >
+            F
+          </text>
+          {showHandles ? (
+            <>
+              <GrabSquare cx={cookPx?.x} cy={cookPx?.y} size={hs} color="#2f2f2f" />
+              <GrabSquare cx={sinkPx?.x} cy={sinkPx?.y} size={hs} color={PLAN_STEEL_EDGE} />
+              <GrabSquare cx={pantryPx?.x} cy={pantryPx?.y} size={hs} color="#2f2f2f" />
+              <GrabSquare cx={fridgePx?.x} cy={fridgePx?.y} size={hs} color="#2f2f2f" />
+              {mirrorPx ? (
+                <OptionsHandle cx={mirrorPx.cx} cy={mirrorPx.cy} size={mirrorPx.size} color={PLAN_STEEL_EDGE} />
+              ) : null}
+            </>
+          ) : null}
+        </>
+      ) : null}
+      {(showHandles ? runHandles || [] : []).map((h) => {
+        const p = mPointToPx(rotatedLocalPoint(room, h), layout);
+        return (
+          <AxisHandle
+            key={`run-${h.which}`}
+            cx={p.x}
+            cy={p.y}
+            size={hs}
+            color={PLAN_WOOD_EDGE}
+            axis={kitchenRunResizeKind(room)}
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+function PorchDecking({ room, layout, metres, showHandles = false }) {
   const r = roomToPx(room, layout);
+  const door = porchFrontDoor(room, metres);
   const clipId = `qc-porch-clip-${room.id}`;
   const boardM = 0.09;
   const gapM = 0.008;
@@ -2127,7 +9203,7 @@ function PorchDecking({ room, layout }) {
     h: Math.max(0.05, room.h - inset * 2),
   };
   const reverse = roomRotation(room) === 180 || roomRotation(room) === 270;
-  const longIsX = room.w >= room.h;
+  const longIsX = roomLayoutLongIsX(room);
   const span = longIsX ? inner.h : inner.w;
   const n = Math.max(2, Math.round((span + gapM) / (boardM + gapM)));
   const board = (span - (n - 1) * gapM) / n;
@@ -2196,8 +9272,103 @@ function PorchDecking({ room, layout }) {
         </clipPath>
       </defs>
       <g clipPath={`url(#${clipId})`}>{boards}</g>
+      {door ? (
+        <>
+          <FrontDoorOpening door={door} layout={layout} />
+          <DoorSwingMarks door={door} layout={layout} color={MONUMENT} showGrab={showHandles} />
+        </>
+      ) : null}
     </g>
   );
+}
+
+function FrontDoorOpening({ door, layout }) {
+  const opening = porchFrontDoorOpening(door);
+  if (!opening) return null;
+  const pts = opening.pts.map((p) => mPointToPx(p, layout));
+  const points = pts.map((p) => `${p.x},${p.y}`).join(" ");
+  return (
+    <g>
+      <polygon points={points} fill="#ffffff" />
+      <polygon points={points} fill={LIVING_FILL} />
+      {opening.jambs.map((jamb, i) => {
+        const a = mPointToPx(jamb[0], layout);
+        const b = mPointToPx(jamb[1], layout);
+        return (
+          <line
+            key={`jamb-${i}`}
+            x1={a.x}
+            y1={a.y}
+            x2={b.x}
+            y2={b.y}
+            stroke={MONUMENT}
+            strokeWidth={PLAN_LINE}
+            strokeLinecap="butt"
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+function DoorSwingMarks({ door, layout, color, showGrab = false }) {
+  if (!door) return null;
+  const hinge = mPointToPx(door.hinge, layout);
+  const closed = mPointToPx(door.closed, layout);
+  const open = mPointToPx(door.open, layout);
+  const doorLabel = mPointToPx(door.doorLabel, layout);
+  const doorGrab = mPointToPx(door.doorGrab, layout);
+  const radius = Math.max(1, door.doorWidth * layout.scale);
+  const sweep = door.cw ? 1 : 0;
+  const hs = fixtureGrabPx(layout);
+  return (
+    <g>
+      <line
+        x1={hinge.x}
+        y1={hinge.y}
+        x2={open.x}
+        y2={open.y}
+        stroke={color}
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <path
+        d={`M ${closed.x} ${closed.y} A ${radius} ${radius} 0 0 ${sweep} ${open.x} ${open.y}`}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.2"
+      />
+      <text
+        x={doorLabel.x}
+        y={doorLabel.y}
+        fill={color}
+        stroke={WHITE}
+        strokeWidth="3"
+        paintOrder="stroke fill"
+        fontSize="11"
+        fontWeight="700"
+        textAnchor="middle"
+        dominantBaseline="middle"
+        style={{ pointerEvents: "none" }}
+      >
+        {formatPlanMm(door.doorWidth)}
+      </text>
+      {showGrab ? (
+        <>
+          <GrabSquare cx={doorGrab.x} cy={doorGrab.y} size={hs} color={color} />
+          <MirrorHandle cx={open.x} cy={open.y} size={hs} color={color} />
+        </>
+      ) : null}
+    </g>
+  );
+}
+
+/** Room edge under the cursor that may be dragged to resize (fixed-size sides excluded). */
+function roomResizeEdgeHit(room, verts, raw) {
+  if (hasCustomBench(room)) return null;
+  const edge = hitTestEdge(verts, raw, true);
+  if (edge && isLaundry(room) && !laundrySideResizable(room, roomSideFromEdge(edge.index))) return null;
+  return edge;
 }
 
 function hitRoomHandle(r, p, size) {
@@ -2218,20 +9389,82 @@ function hitRoomHandle(r, p, size) {
   ) {
     return "rotate";
   }
+  if (
+    p.x >= r.x + r.w - pad - size &&
+    p.x <= r.x + r.w - pad &&
+    p.y >= r.y + r.h - pad - size &&
+    p.y <= r.y + r.h - pad
+  ) {
+    return "delete";
+  }
   return null;
 }
 
-function hitPorchCorner(r, p, size) {
-  const half = size / 2 + 3;
-  const corners = [
-    { x: r.x, y: r.y },
-    { x: r.x + r.w, y: r.y },
-    { x: r.x + r.w, y: r.y + r.h },
-    { x: r.x, y: r.y + r.h },
-  ];
-  return corners.some(
-    (c) => Math.abs(p.x - c.x) <= half && Math.abs(p.y - c.y) <= half
+function DeleteHandle({ cx, cy, size, color = "#b3261e" }) {
+  if (cx == null || cy == null) return null;
+  const s = size;
+  return (
+    <g transform={`translate(${cx}, ${cy})`}>
+      <circle r={s / 2 + 1} fill={WHITE} stroke={color} strokeWidth="1.5" />
+      <line x1={-s * 0.26} y1={-s * 0.2} x2={s * 0.26} y2={-s * 0.2} stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <line x1={-s * 0.08} y1={-s * 0.28} x2={s * 0.08} y2={-s * 0.28} stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <path
+        d={`M ${-s * 0.19} ${-s * 0.14} L ${-s * 0.15} ${s * 0.3} L ${s * 0.15} ${s * 0.3} L ${s * 0.19} ${-s * 0.14}`}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+    </g>
   );
+}
+
+function hitKitchenLayoutHandle(r, p, size) {
+  const pad = 2;
+  return (
+    p.x >= r.x + pad &&
+    p.x <= r.x + pad + size &&
+    p.y >= r.y + r.h - pad - size &&
+    p.y <= r.y + r.h - pad
+  );
+}
+
+/** Options icon spot on the sink (middle of the drainer end); clicking it mirrors the sink. */
+function sinkMirrorHandlePx(room, layout) {
+  const { sinkLocal, hasAppliances } = kitchenFixtureRects(room);
+  if (!hasAppliances || !sinkLocal?.origin) return null;
+  const m = sinkMirrored(room) ? 1 : 0;
+  const local = {
+    x: sinkLocal.origin.x + sinkLocal.along.x * m + sinkLocal.across.x / 2,
+    y: sinkLocal.origin.y + sinkLocal.along.y * m + sinkLocal.across.y / 2,
+  };
+  const p = mPointToPx(rotatedLocalPoint(room, local), layout);
+  return { cx: p.x, cy: p.y, size: fixtureGrabPx(layout) };
+}
+
+function hitSinkMirrorHandle(room, layout, raw) {
+  if (roomKind(room) !== "kitchen") return false;
+  const h = sinkMirrorHandlePx(room, layout);
+  if (!h) return false;
+  return Math.hypot(raw.x - h.cx, raw.y - h.cy) <= h.size / 2 + 3;
+}
+
+function hitKitchenRunHandle(room, layout, raw) {
+  const { runHandles } = kitchenFixtureRects(room);
+  const hs = fixtureGrabPx(layout);
+  const hitR = hs / 2 + 5;
+  let best = null;
+  for (const h of runHandles || []) {
+    const px = mPointToPx(rotatedLocalPoint(room, h), layout);
+    const d = Math.hypot(raw.x - px.x, raw.y - px.y);
+    if (d <= hitR && (!best || d < best.d)) best = { which: h.which, d };
+  }
+  if (!best) return null;
+  return {
+    type: "kitchen-run",
+    kind: kitchenRunResizeKind(room),
+    which: best.which,
+  };
 }
 
 function pointInPxRect(r, p) {
@@ -2253,6 +9486,8 @@ function DesignModal({
   onRoomsChange,
   nextIdRef,
   onBuildingChange,
+  viewScale: _viewScale = null,
+  onViewScaleChange,
   maxArea = true,
   onMaxAreaChange,
   onClose,
@@ -2266,26 +9501,58 @@ function DesignModal({
   if (!frameRef.current && vertices.length >= 3) {
     frameRef.current = frameProp || liveDesignFrame(vertices, ppm, null);
   }
-  const [buildingMetres, setBuildingMetres] = useState(
-    () => frameRef.current?.metres || []
+  const [buildingMetres, setBuildingMetres] = useState(() =>
+    (frameRef.current?.metres || []).map(snapPointToGrid)
   );
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState(null);
   const [buildingSnap, setBuildingSnap] = useState(true);
-  const [capturing, setCapturing] = useState(false);
+  const [threeDOpen, setThreeDOpen] = useState(false);
+  const [showDimensions, setShowDimensions] = useState(false);
+  const [viewMode, setViewMode] = useState(false);
+  /** Custom-bench drawing preview (world metres): a 600 stub on hover/press, then the bench outline. */
+  const [benchPreview, setBenchPreview] = useState(null);
+  const [, setViewTick] = useState(0);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [areaOffsetM, setAreaOffsetM] = useState({ dx: 0, dy: 0 });
+  const areaDragRef = useRef(null);
+  const buildingMetresRef = useRef(buildingMetres);
   roomsRef.current = rooms;
+  buildingMetresRef.current = buildingMetres;
   const maxAreaM2 = maxArea ? MAX_AREA_M2 : 0;
 
   const applyBuildingMetres = useCallback(
-    (nextMetres) => {
+    (unsnapped) => {
+      const nextMetres = unsnapped.map(snapPointToGrid);
+      buildingMetresRef.current = nextMetres;
       setBuildingMetres(nextMetres);
-      const frame = frameRef.current;
-      if (frame && onBuildingChange) {
-        onBuildingChange(designMetresToPixels(nextMetres, frame));
-      }
+      if (onBuildingChange) onBuildingChange(nextMetres);
     },
     [onBuildingChange]
   );
+
+  useEffect(() => {
+    const metres = frameRef.current?.metres || [];
+    if (onBuildingChange && metres.some((p) => snapMetresToStep(p.x) !== p.x || snapMetresToStep(p.y) !== p.y)) {
+      onBuildingChange(metres.map(snapPointToGrid));
+    }
+    const tidy = (list) => {
+      let out = list.map(normaliseRoomToGrid);
+      const metresNow = buildingMetresRef.current;
+      const inner = metresNow?.length ? insetPolygon(metresNow, WALL_THICKNESS_M) : null;
+      out = out.map((r, i) => {
+        const merged = mergeRoomWalls(r, wallCentreLines(metresNow, out, r.id, inner));
+        out[i] = merged;
+        return merged;
+      });
+      return out;
+    };
+    if (JSON.stringify(tidy(roomsRef.current)) !== JSON.stringify(roomsRef.current)) {
+      onRoomsChange((prev) => tidy(prev));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const el = stageRef.current;
@@ -2298,16 +9565,50 @@ function DesignModal({
   }, []);
 
   useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return undefined;
+    const onWheel = (e) => {
+      const current = layoutRef.current;
+      if (!current || dragRef.current) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const deltaPx = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * rect.height : e.deltaY;
+      const scale = Math.min(
+        VIEW_SCALE_MAX,
+        Math.max(VIEW_SCALE_MIN, current.scale * Math.exp(-deltaPx * 0.0015))
+      );
+      if (Math.abs(scale - current.scale) < 1e-6) return;
+      const k = scale / current.scale;
+      freezeLayoutRef.current = {
+        scale,
+        originX: px - (px - current.originX) * k,
+        originY: py - (py - current.originY) * k,
+        offsetX: px - (px - current.offsetX) * k,
+        offsetY: py - (py - current.offsetY) * k,
+      };
+      setViewTick((t) => t + 1);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (threeDOpen || deleteTargetId || clearOpen) return;
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, threeDOpen, deleteTargetId, clearOpen]);
 
   const layout = (() => {
     if (!(size.w > 0 && size.h > 0 && buildingMetres.length >= 3)) return null;
-    const live = layoutFromMetres(buildingMetres, size.w, size.h, rooms);
+    const live = showDimensions
+      ? layoutFitWithDims(buildingMetres, rooms, size.w, size.h)
+      : layoutFromMetres(buildingMetres, size.w, size.h);
     const frozen = freezeLayoutRef.current;
     if (!frozen) return live;
     return {
@@ -2324,6 +9625,10 @@ function DesignModal({
     };
   })();
   layoutRef.current = layout;
+  useEffect(() => {
+    const s = freezeLayoutRef.current?.scale;
+    if (s > 0) onViewScaleChange?.(s);
+  }, [layout, onViewScaleChange]);
   const innerMetres = layout ? insetPolygon(layout.metres, WALL_THICKNESS_M) : null;
   const innerPts =
     layout && innerMetres
@@ -2332,20 +9637,133 @@ function DesignModal({
           y: p.y * layout.scale + layout.originY,
         }))
       : null;
-  const snapThreshM = layout ? Math.max(0.08, 10 / layout.scale) : 0.12;
+  const footprintM = layout ? planFootprintBounds(layout.metres, rooms) : null;
   const buildingSideLabels = layout
-    ? sideLengthLabels(layout.pts, true, layout.scale)
+    ? sideLengthLabels(layout.pts, true, layout.scale, {
+        clearPx: DIM_CLEAR_M * layout.scale,
+        footprintPx: footprintM
+          ? {
+              minX: footprintM.minX * layout.scale + layout.originX,
+              minY: footprintM.minY * layout.scale + layout.originY,
+              maxX: footprintM.maxX * layout.scale + layout.originX,
+              maxY: footprintM.maxY * layout.scale + layout.originY,
+            }
+          : null,
+      })
     : [];
   const livingPt = innerMetres
-    ? livingLabelPoint(innerMetres, interiorRooms(rooms))
+    ? livingLabelPoint(innerMetres, walledRooms(rooms))
     : layout
-      ? livingLabelPoint(layout.metres, interiorRooms(rooms))
+      ? livingLabelPoint(layout.metres, walledRooms(rooms))
       : null;
   const livingDims = innerMetres
-    ? livingApproxDims(innerMetres, interiorRooms(rooms))
+    ? livingApproxDims(innerMetres, walledRooms(rooms))
     : layout
-      ? livingApproxDims(layout.metres, interiorRooms(rooms))
+      ? livingApproxDims(layout.metres, walledRooms(rooms))
       : null;
+  const partitionWalls = layout
+    ? bedroomBathroomInternalWalls(rooms, innerMetres || layout.metres)
+    : [];
+  const areaAnchorM = layout ? areaLabelAnchorM(layout.metres, rooms) : null;
+  const designHandles = layout && !viewMode ? designHandlesPx(layout, rooms) : null;
+  const partitionWallsPx = partitionWalls.map((seg) => wallSegToLayoutPx(seg, layout));
+  const partitionWallCornersPx = layout
+    ? partitionWallCorners(partitionWalls).map((c) => wallCornerToLayoutPx(c, layout))
+    : [];
+
+  const renderPlanRoom = (room) => {
+    const r = roomToPx(room, layout);
+    const edit = !viewMode;
+    const active = edit && hover?.id === room.id;
+    const colors = roomColors(room);
+    const kind = roomKind(room);
+    const hideExtent = viewMode && (kind === "living" || kind === "kitchen");
+    return (
+      <g key={room.id}>
+        <rect
+          x={r.x}
+          y={r.y}
+          width={r.w}
+          height={r.h}
+          fill={kind === "living" || hasCustomBench(room) ? "none" : roomFloorFill(kind, "qc-floor", colors)}
+          stroke={hideExtent ? "none" : active || kind === "living" ? colors.stroke : "#c4b8a8"}
+          strokeWidth={active ? PLAN_LINE_ACTIVE : PLAN_LINE}
+        />
+        {kind === "bedroom" ? (
+          <rect
+            x={r.x + 1}
+            y={r.y + 1}
+            width={Math.max(0, r.w - 2)}
+            height={Math.max(0, r.h - 2)}
+            fill={CARPET_BASE}
+            filter="url(#qc-floor-carpet-n)"
+            opacity="0.42"
+            pointerEvents="none"
+          />
+        ) : null}
+        {kind === "bathroom" || kind === "powder" ? (
+          <BathroomFixtures room={room} layout={layout} innerMetres={innerMetres} showHandles={edit} />
+        ) : kind === "kitchen" ? (
+          <KitchenFixtures room={room} layout={layout} showHandles={edit} />
+        ) : kind === "laundry" ? (
+          <LaundryFixtures room={room} layout={layout} innerMetres={innerMetres} />
+        ) : kind === "living" ? (
+          <LivingSetFixtures room={room} layout={layout} showHandles={edit} />
+        ) : kind === "porch" ? (
+          <PorchDecking room={room} layout={layout} metres={layout.metres} showHandles={edit} />
+        ) : (
+          <BedroomFixtures room={room} layout={layout} innerMetres={innerMetres} showHandles={edit} />
+        )}
+        {kind === "living" ? renderRoomHandles(room) : null}
+      </g>
+    );
+  };
+
+  /** Drag / rotate / options / delete icons; drawn above partition walls so small rooms keep them visible. */
+  const renderRoomHandles = (room) => {
+    if (viewMode) return null;
+    const r = roomToPx(room, layout);
+    const hs = handlePx(layout);
+    const pad = 2;
+    const colors = roomColors(room);
+    const kind = roomKind(room);
+    return (
+      <g key={`handles-${room.id}`}>
+        <rect
+          x={r.x + pad}
+          y={r.y + pad}
+          width={hs}
+          height={hs}
+          fill={colors.stroke}
+          stroke={WHITE}
+          strokeWidth="1"
+        />
+        <g transform={`translate(${r.x + r.w - pad - hs / 2}, ${r.y + pad + hs / 2})`}>
+          <circle r={hs / 2 + 1} fill={WHITE} stroke={colors.stroke} strokeWidth="1.5" />
+          <path
+            d={`M ${-hs * 0.22} ${-hs * 0.08} A ${hs * 0.28} ${hs * 0.28} 0 1 1 ${hs * 0.08} ${-hs * 0.22}`}
+            fill="none"
+            stroke={colors.stroke}
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+          <path
+            d={`M ${hs * 0.08} ${-hs * 0.38} L ${hs * 0.08} ${-hs * 0.08} L ${-hs * 0.16} ${-hs * 0.22}`}
+            fill={colors.stroke}
+          />
+        </g>
+        {kind === "kitchen" ? (
+          <OptionsHandle
+            cx={r.x + pad + hs / 2}
+            cy={r.y + r.h - pad - hs / 2}
+            size={hs}
+            color={colors.stroke}
+          />
+        ) : null}
+        <DeleteHandle cx={r.x + r.w - pad - hs / 2} cy={r.y + r.h - pad - hs / 2} size={hs} />
+      </g>
+    );
+  };
 
   const addRoom = useCallback(
     (kind, w, h) => {
@@ -2356,15 +9774,40 @@ function DesignModal({
       let room;
       if (kind === "porch") {
         const placed = nextPorchPlacement(roomsRef.current, current.metres, w, h);
-        room = keepPorchOutside(null, { id, kind, rot: 0, ...placed }, current.metres, {
+        room = keepPorchOutside(null, { id, kind, rot: 0, ...placed, layoutLongIsX: w >= h }, current.metres, {
           slide: true,
         });
       } else {
         const inner = insetPolygon(current.metres, WALL_THICKNESS_M) || current.metres;
-        const placed = nextRoomPlacement(roomsRef.current, inner, w, h);
-        room = keepRoomInside(null, { id, kind, rot: 0, ...placed }, inner);
+        const remain = kind === "living" ? livingRemainingRect(inner, walledRooms(roomsRef.current)) : null;
+        const placed = remain
+          ? {
+              x: snapMetresToStep(remain.x + remain.w / 2 - w / 2),
+              y: snapMetresToStep(remain.y + remain.h / 2 - h / 2),
+              w,
+              h,
+            }
+          : nextRoomPlacement(roomsRef.current, inner, w, h);
+        room = keepRoomInside(null, snapRoomToGrid({ id, kind, rot: 0, ...placed, layoutLongIsX: w >= h }), inner);
+        if (kind === "bedroom") {
+          room = {
+            ...room,
+            doorAlong: 0,
+            robeWidth: ROBE_WIDTH_DEFAULT_M,
+          };
+        } else if (kind === "bathroom") {
+          room = {
+            ...room,
+            ...defaultBathroomLayout(room.w, room.h),
+          };
+        } else if (kind === "powder") {
+          room = {
+            ...room,
+            ...defaultPowderLayout(w, h),
+          };
+        }
       }
-      onRoomsChange((prev) => prev.concat(room));
+      onRoomsChange((prev) => prev.concat(snapRoomToGrid(room)));
     },
     [nextIdRef, onRoomsChange]
   );
@@ -2377,6 +9820,14 @@ function DesignModal({
     addRoom("bathroom", BATHROOM_W_M, BATHROOM_H_M);
   }, [addRoom]);
 
+  const addPowder = useCallback(() => {
+    addRoom("powder", POWDER_W_M, POWDER_H_M);
+  }, [addRoom]);
+
+  const addLaundry = useCallback(() => {
+    addRoom("laundry", LAUNDRY_LENGTHS_M[0], LAUNDRY_DEPTH_M);
+  }, [addRoom]);
+
   const addKitchen = useCallback(() => {
     addRoom("kitchen", KITCHEN_W_M, KITCHEN_H_M);
   }, [addRoom]);
@@ -2385,46 +9836,130 @@ function DesignModal({
     addRoom("porch", PORCH_W_M, PORCH_H_M);
   }, [addRoom]);
 
+  const addLivingSet = useCallback(() => {
+    addRoom("living", LIVING_SET_ALONG_M, LIVING_SET_ACROSS_M);
+  }, [addRoom]);
+
   const updateRoom = useCallback(
-    (id, next) => {
-      onRoomsChange((prev) => prev.map((r) => (r.id === id ? next : r)));
+    (id, unsnapped) => {
+      const next = snapRoomToGrid(unsnapped);
+      onRoomsChange((prev) =>
+        prev.map((r) => {
+          if (r.id !== id) return r;
+          if (
+            !isBathLike(next) ||
+            !vanityWmSide(next) ||
+            !vanityWmConflicts(next, innerMetres) ||
+            vanityWmConflicts(r, innerMetres)
+          ) {
+            return next;
+          }
+          const resized = next.x !== r.x || next.y !== r.y || next.w !== r.w || next.h !== r.h;
+          return (resized && placeVanityWm(next, innerMetres)) || r;
+        })
+      );
     },
-    [onRoomsChange]
+    [innerMetres, onRoomsChange]
   );
 
   const onStagePointerDown = useCallback(
     (e) => {
-      if (e.button !== 0 || !layout) return;
+      if (e.button !== 0 || !layout || viewMode) return;
       const el = stageRef.current;
       if (!el) return;
       const raw = pointFromEvent(el, e);
       const hs = handlePx(layout);
-      for (let i = roomsRef.current.length - 1; i >= 0; i -= 1) {
-        const room = roomsRef.current[i];
+      const designHit = hitDesignHandle(layout, roomsRef.current, raw);
+      if (designHit) {
+        e.preventDefault();
+        el.setPointerCapture(e.pointerId);
+        freezeLayoutRef.current = {
+          scale: layout.scale,
+          originX: layout.originX,
+          originY: layout.originY,
+          offsetX: layout.offsetX,
+          offsetY: layout.offsetY,
+        };
+        const startMetres = buildingMetres.map((p) => ({ x: p.x, y: p.y }));
+        const startRooms = roomsRef.current.map((r) => ({ ...r }));
+        if (designHit === "design-move") {
+          dragRef.current = {
+            mode: "design-move",
+            grab: pxToMetres(raw, layout),
+            startMetres,
+            startRooms,
+            dx: 0,
+            dy: 0,
+          };
+        } else {
+          const { centre } = designHandlesPx(layout, roomsRef.current);
+          dragRef.current = {
+            mode: "design-rotate",
+            centre,
+            startRaw: raw,
+            startAngle: Math.atan2(raw.y - centre.y, raw.x - centre.x),
+            startMetres,
+            startRooms,
+            turns: 0,
+            moved: false,
+          };
+        }
+        setHover(hintAt({ id: "design", kind: designHit === "design-move" ? "move" : "rotate", type: designHit }, raw));
+        return;
+      }
+      const benchWall = armedBenchWallAt(raw, layout, innerMetres, roomsRef.current);
+      if (benchWall) {
+        e.preventDefault();
+        el.setPointerCapture(e.pointerId);
+        dragRef.current = {
+          mode: "kitchen-bench",
+          id: benchWall.room.id,
+          loop: benchWall.loop,
+          anchor: benchWall.s,
+          cur: benchWall.s,
+          bench: null,
+        };
+        setBenchPreview({ stub: loopPointAt(benchWall.loop, benchWall.s) });
+        return;
+      }
+      const stacked = roomsStackOrder(roomsRef.current);
+      for (let i = stacked.length - 1; i >= 0; i -= 1) {
+        const room = stacked[i];
         const r = roomToPx(room, layout);
         const handle = hitRoomHandle(r, raw, hs);
+        if (handle === "delete") {
+          e.preventDefault();
+          setDeleteTargetId(room.id);
+          setHover(null);
+          return;
+        }
+        if (hitCouchOptions(room, layout, raw)) {
+          e.preventDefault();
+          updateRoom(room.id, cycleCouchType(room, innerMetres));
+          setHover(hintAt({ id: room.id, kind: "rotate", type: "couch-options" }, raw));
+          return;
+        }
+        if (roomKind(room) === "kitchen" && hitKitchenLayoutHandle(r, raw, hs)) {
+          e.preventDefault();
+          updateRoom(room.id, cycleKitchenLayout(room, innerMetres));
+          setHover(hintAt({ id: room.id, kind: "rotate", type: "kitchen-layout" }, raw));
+          return;
+        }
+        if (roomKind(room) === "bathroom") {
+          const { shower } = bathroomFixtures(room);
+          if (hitShowerRotateHandle(shower, layout, raw)) {
+            e.preventDefault();
+            updateRoom(room.id, rotateShower90(room));
+            setHover(hintAt({ id: room.id, kind: "rotate", type: "shower-rotate" }, raw));
+            return;
+          }
+        }
         if (handle === "rotate") {
           e.preventDefault();
-          const rotated = rotateRoom90(room);
-          const axes = isPorch(room)
-            ? mergeSnapAxes(
-                buildingSnapAxes(layout.metres),
-                roomEdgeAxes(porchRooms(roomsRef.current), room.id)
-              )
-            : mergeSnapAxes(
-                innerMetres ? buildingSnapAxes(innerMetres) : null,
-                roomEdgeAxes(interiorRooms(roomsRef.current), room.id)
-              );
-          const snapped = snapRoomMove(
-            rotated.x,
-            rotated.y,
-            rotated.w,
-            rotated.h,
-            axes.xs,
-            axes.ys,
-            snapThreshM
+          const next = mergeRoomWalls(
+            snapRoomToGrid(rotateRoom90(room, innerMetres)),
+            wallCentreLines(layout.metres, roomsRef.current, room.id, innerMetres)
           );
-          const next = { ...rotated, ...snapped };
           updateRoom(
             room.id,
             isPorch(room)
@@ -2433,7 +9968,94 @@ function DesignModal({
           );
           return;
         }
-        if (handle === "move" || (isPorch(room) && (hitPorchCorner(r, raw, hs) || pointInPxRect(r, raw)))) {
+        if (roomKind(room) === "kitchen") {
+          if (hitSinkMirrorHandle(room, layout, raw)) {
+            e.preventDefault();
+            updateRoom(room.id, { ...room, sinkMirror: !sinkMirrored(room) });
+            setHover(hintAt({ id: room.id, kind: "rotate", type: "sink-mirror" }, raw));
+            return;
+          }
+          const appHit = hitKitchenApplianceHandle(room, layout, raw);
+          if (appHit) {
+            e.preventDefault();
+            el.setPointerCapture(e.pointerId);
+            const cursorM = pxToMetres(raw, layout);
+            dragRef.current = {
+              ...startKitchenApplianceDrag(room, appHit.type, cursorM),
+              id: room.id,
+              start: { ...room },
+            };
+            setHover(hintAt({ id: room.id, kind: "move", type: appHit.type }, raw));
+            return;
+          }
+          const runHit = hitKitchenRunHandle(room, layout, raw);
+          if (runHit) {
+            e.preventDefault();
+            el.setPointerCapture(e.pointerId);
+            const cursorM = pxToMetres(raw, layout);
+            dragRef.current = {
+              ...startKitchenRunDrag(room, runHit.which, cursorM),
+              id: room.id,
+              start: { ...room },
+            };
+            setHover(hintAt({ id: room.id, kind: runHit.kind, type: "kitchen-run" }, raw));
+            return;
+          }
+        }
+        if (roomKind(room) === "bedroom" || isBathLike(room) || isPorch(room)) {
+          const fixture = isPorch(room)
+            ? hitPorchFixtureHandle(room, layout, raw, layout.metres)
+            : roomKind(room) === "bedroom"
+              ? hitBedroomFixtureHandle(room, layout, raw, innerMetres)
+              : hitBathroomFixtureHandle(room, layout, raw, innerMetres);
+          if (fixture) {
+            if (fixture.type === "shower-rotate") {
+              e.preventDefault();
+              updateRoom(room.id, rotateShower90(room));
+              setHover(hintAt({ id: room.id, kind: "rotate", type: "shower-rotate" }, raw));
+              return;
+            }
+            if (fixture.type === "vanity-options") {
+              e.preventDefault();
+              const nextRoom = cycleVanityWm(room, innerMetres);
+              updateRoom(room.id, nextRoom);
+              const noFit = !vanityWmSide(room) && !vanityWmSide(nextRoom);
+              setHover(
+                hintAt({ id: room.id, kind: "rotate", type: noFit ? "vanity-options-full" : "vanity-options" }, raw)
+              );
+              return;
+            }
+            if (fixture.type === "door-flip") {
+              e.preventDefault();
+              updateRoom(room.id, flipRoomDoor(room));
+              setHover(hintAt({ id: room.id, kind: "rotate", type: "door-flip" }, raw));
+              return;
+            }
+            if (fixture.type === "robe-resize") {
+              e.preventDefault();
+              el.setPointerCapture(e.pointerId);
+              const cursorM = pxToMetres(raw, layout);
+              dragRef.current = {
+                ...startRobeResizeDrag(room, fixture.which, cursorM, innerMetres),
+                id: room.id,
+                start: { ...room },
+              };
+              setHover(hintAt({ id: room.id, kind: fixture.kind, type: "robe-resize" }, raw));
+              return;
+            }
+            e.preventDefault();
+            el.setPointerCapture(e.pointerId);
+            const cursorM = pxToMetres(raw, layout);
+            dragRef.current = {
+              ...startFixtureDrag(fixture.type, room, cursorM, innerMetres, layout.metres),
+              id: room.id,
+              start: { ...room },
+            };
+            setHover(hintAt({ id: room.id, kind: "move", type: fixture.type }, raw));
+            return;
+          }
+        }
+        if (handle === "move" || (isPorch(room) && pointInPxRect(r, raw))) {
           e.preventDefault();
           el.setPointerCapture(e.pointerId);
           const grab = pxToMetres(raw, layout);
@@ -2452,7 +10074,7 @@ function DesignModal({
           { x: r.x + r.w, y: r.y + r.h },
           { x: r.x, y: r.y + r.h },
         ];
-        const edge = hitTestEdge(verts, raw, true);
+        const edge = roomResizeEdgeHit(room, verts, raw);
         if (edge) {
           e.preventDefault();
           el.setPointerCapture(e.pointerId);
@@ -2460,7 +10082,7 @@ function DesignModal({
             mode: "edge",
             id: room.id,
             side: roomSideFromEdge(edge.index),
-            start: { ...room },
+            start: withLayoutLongIsX(room),
           };
           return;
         }
@@ -2481,19 +10103,29 @@ function DesignModal({
           index: buildingHit.index,
           metres: buildingMetres.map((p) => ({ x: p.x, y: p.y })),
         };
-        setHover({
-          id: "building",
-          kind: buildingHit.axis === "h" ? "ns" : "ew",
-          edgeIndex: buildingHit.index,
-        });
+        setHover(
+          hintAt(
+            {
+              id: "building",
+              kind: buildingHit.axis === "h" ? "ns" : "ew",
+              type: "resize-building",
+              edgeIndex: buildingHit.index,
+            },
+            raw
+          )
+        );
       }
     },
-    [buildingMetres, innerMetres, layout, snapThreshM, updateRoom]
+    [buildingMetres, innerMetres, layout, updateRoom, viewMode]
   );
 
   const onStagePointerMove = useCallback(
     (e) => {
       if (!layout) return;
+      if (viewMode) {
+        setHover(null);
+        return;
+      }
       const el = stageRef.current;
       if (!el) return;
       const raw = pointFromEvent(el, e);
@@ -2501,82 +10133,217 @@ function DesignModal({
       const drag = dragRef.current;
       const hs = handlePx(layout);
 
+      if (drag?.mode === "design-move") {
+        const dx = snapMetresToStep(cursorM.x - drag.grab.x);
+        const dy = snapMetresToStep(cursorM.y - drag.grab.y);
+        if (dx !== drag.dx || dy !== drag.dy) {
+          drag.dx = dx;
+          drag.dy = dy;
+          const next = translateDesign(drag.startMetres, drag.startRooms, dx, dy);
+          applyBuildingMetres(next.metres);
+          onRoomsChange(next.rooms);
+        }
+        setHover(hintAt({ id: "design", kind: "move", type: "design-move" }, raw));
+        return;
+      }
+      if (drag?.mode === "design-rotate") {
+        if (Math.hypot(raw.x - drag.startRaw.x, raw.y - drag.startRaw.y) > 4) drag.moved = true;
+        if (drag.moved) {
+          let delta = Math.atan2(raw.y - drag.centre.y, raw.x - drag.centre.x) - drag.startAngle;
+          delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+          const turns = ((Math.round(delta / (Math.PI / 2)) % 4) + 4) % 4;
+          if (turns !== drag.turns) {
+            drag.turns = turns;
+            const next = rotateDesign90(drag.startMetres, drag.startRooms, turns);
+            applyBuildingMetres(next.metres);
+            onRoomsChange(next.rooms);
+          }
+        }
+        setHover(hintAt({ id: "design", kind: "rotate", type: "design-rotate" }, raw));
+        return;
+      }
+
+      if (drag?.mode === "kitchen-bench") {
+        drag.cur = nearestParamOnLoop(drag.loop, cursorM, drag.cur);
+        const end = snapLoopParam(drag.loop, drag.cur);
+        drag.bench = benchAlongLoop(drag.loop, drag.anchor, end, KITCHEN_BENCH_M);
+        setBenchPreview(
+          drag.bench ? { poly: drag.bench.poly } : { stub: loopPointAt(drag.loop, drag.anchor) }
+        );
+        setHover(hintAt({ id: drag.id, kind: "move", type: "kitchen-custom" }, raw));
+        return;
+      }
+
+      const benchWall = drag ? null : armedBenchWallAt(raw, layout, innerMetres, roomsRef.current);
+      if (benchWall) {
+        setBenchPreview({ stub: loopPointAt(benchWall.loop, benchWall.s) });
+        setHover(hintAt({ id: benchWall.room.id, kind: "move", type: "kitchen-custom" }, raw));
+        return;
+      }
+      if (!drag) setBenchPreview(null);
+
       if (drag?.mode === "move") {
         const nx = drag.start.x + (cursorM.x - drag.grab.x);
         const ny = drag.start.y + (cursorM.y - drag.grab.y);
         const porch = isPorch(drag.start);
-        const axes = porch
-          ? mergeSnapAxes(
-              buildingSnapAxes(layout.metres),
-              roomEdgeAxes(porchRooms(roomsRef.current), drag.id)
-            )
-          : mergeSnapAxes(
-              innerMetres ? buildingSnapAxes(innerMetres) : null,
-              roomEdgeAxes(interiorRooms(roomsRef.current), drag.id)
+        const next = hasCustomBench(drag.start)
+          ? {
+              ...drag.start,
+              x: roundMm(drag.start.x + snapMetresToStep(nx - drag.start.x)),
+              y: roundMm(drag.start.y + snapMetresToStep(ny - drag.start.y)),
+            }
+          : mergeRoomWalls(
+              snapRoomToGrid({ ...drag.start, x: nx, y: ny }),
+              wallCentreLines(layout.metres, roomsRef.current, drag.id, innerMetres)
             );
-        const snapped = snapRoomMove(
-          nx,
-          ny,
-          drag.start.w,
-          drag.start.h,
-          axes.xs,
-          axes.ys,
-          snapThreshM
-        );
-        const next = { ...drag.start, ...snapped };
+        const current =
+          roomsRef.current.find((r) => r.id === drag.id) || drag.start;
         updateRoom(
           drag.id,
           porch
-            ? keepPorchOutside(drag.start, next, layout.metres)
+            ? keepPorchOutside(current, next, layout.metres, { slide: true })
             : keepRoomInside(drag.start, next, innerMetres)
         );
-        setHover({ id: drag.id, kind: "move" });
+        setHover(hintAt({ id: drag.id, kind: "move", type: porch ? "porch-move" : "room-move" }, raw));
         return;
       }
       if (drag?.mode === "edge") {
         const start = drag.start;
+        const { minW, minH } = roomMinSize(start);
         let next = { ...start };
         if (drag.side === "left") {
           const right = start.x + start.w;
-          next.x = Math.min(cursorM.x, right - ROOM_MIN_M);
+          next.x = Math.min(cursorM.x, right - minW);
           next.w = right - next.x;
         } else if (drag.side === "right") {
-          next.w = Math.max(ROOM_MIN_M, cursorM.x - start.x);
+          next.w = Math.max(minW, cursorM.x - start.x);
         } else if (drag.side === "top") {
           const bottom = start.y + start.h;
-          next.y = Math.min(cursorM.y, bottom - ROOM_MIN_M);
+          next.y = Math.min(cursorM.y, bottom - minH);
           next.h = bottom - next.y;
         } else if (drag.side === "bottom") {
-          next.h = Math.max(ROOM_MIN_M, cursorM.y - start.y);
+          next.h = Math.max(minH, cursorM.y - start.y);
         }
-        const axes = mergeSnapAxes(
-          innerMetres ? buildingSnapAxes(innerMetres) : null,
-          roomEdgeAxes(roomsRef.current, drag.id)
+        const limit = innerMetres;
+        const pinToWall = cursorAtOrPastInnerEdge(drag.side, cursorM, limit, 0.001);
+        if (isLaundry(start)) {
+          next = resizeLaundry(start, drag.side, next, limit);
+        } else if (pinToWall) {
+          next = pinRoomEdgeToInner(start, drag.side, limit);
+          next = clampRoomEdgeInInner(start, next, drag.side, limit);
+        } else {
+          next = snapRoomEdgeToGrid(start, drag.side, next);
+          next = mergeRoomSideWall(
+            next,
+            drag.side,
+            wallCentreLines(layout.metres, roomsRef.current, drag.id, innerMetres)
+          );
+          next = clampRoomEdgeInInner(start, next, drag.side, limit);
+        }
+        const resized = { ...start, ...next };
+        updateRoom(
+          drag.id,
+          roomKind(resized) === "kitchen" ? compactKitchenAppliances(resized) : resized
         );
-        next = snapRoomEdge(start, drag.side, next, axes.xs, axes.ys, snapThreshM);
-        next = clampRoomEdgeInInner(start, next, drag.side, innerMetres);
-        updateRoom(drag.id, { ...start, ...next });
-        setHover({
-          id: drag.id,
-          kind: drag.side === "top" || drag.side === "bottom" ? "ns" : "ew",
-        });
+        setHover(
+          hintAt(
+            {
+              id: drag.id,
+              kind: drag.side === "top" || drag.side === "bottom" ? "ns" : "ew",
+              type: "resize",
+            },
+            raw
+          )
+        );
+        return;
+      }
+      if (drag?.mode === "door") {
+        const next = isPorch(drag.start)
+          ? movePorchFrontDoor(drag.start, cursorM, drag.grabAlong, layout.metres)
+          : moveBedroomDoor(drag.start, cursorM, drag.grabAlong, innerMetres);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: "move", type: "door" }, raw));
+        return;
+      }
+      if (drag?.mode === "robe") {
+        const next = moveBedroomRobe(drag.start, cursorM, drag.grabAlong, innerMetres);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: "move", type: "robe" }, raw));
+        return;
+      }
+      if (drag?.mode === "robe-resize") {
+        const next = moveBedroomRobeSize(
+          drag.start,
+          drag.which,
+          cursorM,
+          drag.grabAlong,
+          innerMetres
+        );
+        updateRoom(drag.id, next);
+        setHover(
+          hintAt(
+            {
+              id: drag.id,
+              kind: robeResizeAxis(bedroomDoorAndRobe(drag.start, innerMetres)),
+              type: "robe-resize",
+            },
+            raw
+          )
+        );
+        return;
+      }
+      if (drag?.mode === "bed") {
+        const next = moveBedroomBed(drag.start, cursorM, drag.grabAlong, innerMetres);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: "move", type: "bed" }, raw));
+        return;
+      }
+      if (drag?.mode === "shower") {
+        const { shower } = bathroomFixtures(drag.start);
+        updateRoom(
+          drag.id,
+          moveRoomItemRect(drag.start, shower, cursorM, drag.grab, "showerX", "showerY")
+        );
+        setHover(hintAt({ id: drag.id, kind: "move", type: "shower" }, raw));
+        return;
+      }
+      if (drag?.mode === "toilet") {
+        const next = moveBathroomToilet(drag.start, cursorM, drag.grabAlong);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: "move", type: "toilet" }, raw));
+        return;
+      }
+      if (drag?.mode === "vanity") {
+        const next = moveBathroomVanity(drag.start, cursorM, drag.grabAlong, innerMetres);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: "move", type: "vanity" }, raw));
+        return;
+      }
+      if (drag?.mode === "cook" || drag?.mode === "sink" || drag?.mode === "pantry" || drag?.mode === "fridge") {
+        const live = roomsRef.current.find((r) => r.id === drag.id) || drag.start;
+        const next = moveKitchenAppliance(live, drag.mode, cursorM, drag.grabAlong);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: "move", type: drag.mode }, raw));
+        return;
+      }
+      if (drag?.mode === "kitchen-run") {
+        const next = moveKitchenRun(drag.start, drag.which, cursorM, drag.grabAlong);
+        updateRoom(drag.id, next);
+        setHover(
+          hintAt(
+            {
+              id: drag.id,
+              kind: kitchenRunResizeKind(drag.start),
+              type: "kitchen-run",
+            },
+            raw
+          )
+        );
         return;
       }
       if (drag?.mode === "building-edge") {
-        let moved = clampEdgeMove(
-          drag.metres,
-          drag.index,
-          cursorM,
-          maxAreaM2,
-          1
-        );
-        moved = snapBuildingEdgeMove(moved, drag.index, roomsRef.current, {
-          grid: buildingSnap,
-          thresh: Math.max(snapThreshM, 0.22),
-        });
-        if (maxAreaM2 > 0 && polygonAreaM2(moved, 1) > maxAreaM2 + 1e-9) {
-          moved = clampEdgeMove(drag.metres, drag.index, cursorM, maxAreaM2, 1);
-        }
+        const live = buildingMetresRef.current?.length ? buildingMetresRef.current : drag.metres;
+        let moved = clampEdgeMove(live, drag.index, cursorM, maxAreaM2, 1);
         moved = clampBuildingEdgeToRooms(
           drag.metres,
           moved,
@@ -2589,28 +10356,123 @@ function DesignModal({
           drag.index,
           roomsRef.current
         );
+        if (buildingSnap) {
+          moved = snapBuildingEdgeMove(moved, drag.index, roomsRef.current, {
+            grid: false,
+            thresh: BUILDING_STEP_M * 0.45,
+          });
+        }
+        moved = snapBuildingEdgeToStep(drag.metres, moved, drag.index, BUILDING_STEP_M);
+        if (maxAreaM2 > 0 && polygonAreaM2(moved, 1) > maxAreaM2 + 1e-9) {
+          const capped = clampEdgeMove(live, drag.index, cursorM, maxAreaM2, 1);
+          const snapped = snapBuildingEdgeToStep(
+            drag.metres,
+            capped,
+            drag.index,
+            BUILDING_STEP_M
+          );
+          moved = keepMovedUnderArea(snapped, capped, maxAreaM2, 1);
+        }
+        moved = snapBuildingEdgeToStep(drag.metres, moved, drag.index, BUILDING_STEP_M);
         applyBuildingMetres(moved);
         const a = layout.pts[drag.index];
         const b = layout.pts[(drag.index + 1) % layout.pts.length];
-        setHover({
-          id: "building",
-          kind: a && b && edgeAxis(a, b) === "h" ? "ns" : "ew",
-          edgeIndex: drag.index,
-        });
+        setHover(
+          hintAt(
+            {
+              id: "building",
+              kind: a && b && edgeAxis(a, b) === "h" ? "ns" : "ew",
+              type: "resize-building",
+              edgeIndex: drag.index,
+            },
+            raw
+          )
+        );
         return;
       }
 
       let nextHover = null;
-      for (let i = roomsRef.current.length - 1; i >= 0; i -= 1) {
-        const room = roomsRef.current[i];
+      const designHover = hitDesignHandle(layout, roomsRef.current, raw);
+      if (designHover) {
+        setHover(
+          hintAt(
+            { id: "design", kind: designHover === "design-move" ? "move" : "rotate", type: designHover },
+            raw
+          )
+        );
+        return;
+      }
+      const stacked = roomsStackOrder(roomsRef.current);
+      for (let i = stacked.length - 1; i >= 0; i -= 1) {
+        const room = stacked[i];
         const r = roomToPx(room, layout);
         const handle = hitRoomHandle(r, raw, hs);
-        if (handle === "rotate") {
-          nextHover = { id: room.id, kind: "rotate" };
+        if (handle === "delete") {
+          nextHover = { id: room.id, kind: "rotate", type: "room-delete" };
           break;
         }
-        if (handle === "move" || (isPorch(room) && (hitPorchCorner(r, raw, hs) || pointInPxRect(r, raw)))) {
-          nextHover = { id: room.id, kind: "move" };
+        if (hitCouchOptions(room, layout, raw)) {
+          nextHover = { id: room.id, kind: "rotate", type: "couch-options" };
+          break;
+        }
+        if (roomKind(room) === "kitchen" && hitKitchenLayoutHandle(r, raw, hs)) {
+          nextHover = { id: room.id, kind: "rotate", type: "kitchen-layout" };
+          break;
+        }
+        if (roomKind(room) === "bathroom") {
+          const { shower } = bathroomFixtures(room);
+          if (hitShowerRotateHandle(shower, layout, raw)) {
+            nextHover = { id: room.id, kind: "rotate", type: "shower-rotate" };
+            break;
+          }
+        }
+        if (handle === "rotate") {
+          nextHover = { id: room.id, kind: "rotate", type: "room-rotate" };
+          break;
+        }
+        if (roomKind(room) === "kitchen") {
+          if (hitSinkMirrorHandle(room, layout, raw)) {
+            nextHover = { id: room.id, kind: "rotate", type: "sink-mirror" };
+            break;
+          }
+          const appHit = hitKitchenApplianceHandle(room, layout, raw);
+          if (appHit) {
+            nextHover = { id: room.id, kind: "move", type: appHit.type };
+            break;
+          }
+          const runHit = hitKitchenRunHandle(room, layout, raw);
+          if (runHit) {
+            nextHover = { id: room.id, kind: runHit.kind, type: "kitchen-run" };
+            break;
+          }
+        }
+        if (roomKind(room) === "bedroom") {
+          const fixture = hitBedroomFixtureHandle(room, layout, raw, innerMetres);
+          if (fixture) {
+            nextHover = { id: room.id, kind: fixture.kind || "move", type: fixture.type };
+            break;
+          }
+        }
+        if (isBathLike(room)) {
+          const fixture = hitBathroomFixtureHandle(room, layout, raw, innerMetres);
+          if (fixture) {
+            nextHover = { id: room.id, kind: fixture.kind || "move", type: fixture.type };
+            break;
+          }
+        }
+        if (isPorch(room)) {
+          const fixture = hitPorchFixtureHandle(room, layout, raw, layout.metres);
+          if (fixture) {
+            nextHover = { id: room.id, kind: fixture.kind || "move", type: fixture.type };
+            break;
+          }
+        }
+        if (handle === "move" || (isPorch(room) && pointInPxRect(r, raw))) {
+          nextHover = {
+            id: room.id,
+            kind: "move",
+            type: isPorch(room) ? "porch-move" : "room-move",
+          };
           break;
         }
         if (isPorch(room)) continue;
@@ -2620,9 +10482,13 @@ function DesignModal({
           { x: r.x + r.w, y: r.y + r.h },
           { x: r.x, y: r.y + r.h },
         ];
-        const edge = hitTestEdge(verts, raw, true);
+        const edge = roomResizeEdgeHit(room, verts, raw);
         if (edge) {
-          nextHover = { id: room.id, kind: edge.axis === "h" ? "ns" : "ew" };
+          nextHover = {
+            id: room.id,
+            kind: edge.axis === "h" ? "ns" : "ew",
+            type: "resize",
+          };
           break;
         }
       }
@@ -2632,46 +10498,77 @@ function DesignModal({
           nextHover = {
             id: "building",
             kind: buildingHit.axis === "h" ? "ns" : "ew",
+            type: "resize-building",
             edgeIndex: buildingHit.index,
           };
         }
       }
-      setHover(nextHover);
+      setHover(hintAt(nextHover, raw));
     },
-    [applyBuildingMetres, buildingSnap, innerMetres, layout, maxAreaM2, snapThreshM, updateRoom]
+    [
+      applyBuildingMetres,
+      buildingSnap,
+      innerMetres,
+      layout,
+      maxAreaM2,
+      onRoomsChange,
+      updateRoom,
+      viewMode,
+    ]
   );
 
-  const onStagePointerUp = useCallback((e) => {
-    const el = stageRef.current;
-    if (el && e?.pointerId != null) {
-      try {
-        el.releasePointerCapture(e.pointerId);
-      } catch {
-        /* already released */
+  const onStagePointerUp = useCallback(
+    (e) => {
+      const el = stageRef.current;
+      if (el && e?.pointerId != null) {
+        try {
+          el.releasePointerCapture(e.pointerId);
+        } catch {
+          /* already released */
+        }
       }
-    }
-    const wasBuilding = dragRef.current?.mode === "building-edge";
-    dragRef.current = null;
-    freezeLayoutRef.current = null;
-    if (wasBuilding) {
-      setBuildingMetres((prev) => prev.map((p) => ({ x: p.x, y: p.y })));
-    }
-  }, []);
+      const drag = dragRef.current;
+      const wasBuilding = drag?.mode === "building-edge";
+      dragRef.current = null;
+      if (wasBuilding) {
+        setBuildingMetres((prev) => prev.map((p) => ({ x: p.x, y: p.y })));
+      }
+      if (drag?.mode === "design-rotate") {
+        if (!drag.moved) {
+          const next = rotateDesign90(drag.startMetres, drag.startRooms, 1);
+          applyBuildingMetres(next.metres);
+          onRoomsChange(next.rooms);
+        }
+        setHover(null);
+      }
+      if (drag?.mode === "kitchen-bench") {
+        setBenchPreview(null);
+        setHover(null);
+        if (drag.bench) {
+          onRoomsChange((prev) =>
+            prev.map((r) => (r.id === drag.id ? finalizeCustomBench(r, drag.bench) : r))
+          );
+        }
+      }
+    },
+    [applyBuildingMetres, onRoomsChange]
+  );
 
-  const onDownloadPng = useCallback(async () => {
-    const current = layoutRef.current;
-    if (!current || capturing) return;
-    setCapturing(true);
-    try {
-      const canvas = buildDesignExportCanvas(current, roomsRef.current);
-      const bytes = canvasToPngBytes(canvas);
-      await savePngBytes(bytes, designPngFilename(current.areaM2));
-    } catch (err) {
-      console.error("[QuickConcept] design PNG download failed:", err);
-    } finally {
-      setCapturing(false);
-    }
-  }, [capturing]);
+  const deleteTarget = deleteTargetId ? rooms.find((r) => r.id === deleteTargetId) || null : null;
+  const cancelDelete = useCallback(() => setDeleteTargetId(null), []);
+  const confirmDelete = useCallback(() => {
+    const id = deleteTargetId;
+    setDeleteTargetId(null);
+    if (id) onRoomsChange((prev) => prev.filter((r) => r.id !== id));
+  }, [deleteTargetId, onRoomsChange]);
+
+  const cancelClear = useCallback(() => setClearOpen(false), []);
+  const confirmClear = useCallback(() => {
+    setClearOpen(false);
+    dragRef.current = null;
+    setHover(null);
+    onRoomsChange([]);
+  }, [onRoomsChange]);
 
   const stageCursor =
     hover?.kind === "move"
@@ -2703,8 +10600,8 @@ function DesignModal({
     >
       <div
         style={{
-          width: "min(1400px, calc(100vw - 40px))",
-          height: "calc(100vh - 40px)",
+          width: "calc(100vw - 24px)",
+          height: "calc(100vh - 24px)",
           maxHeight: "100%",
           background: SECTION_GREY,
           borderRadius: "18px",
@@ -2816,6 +10713,30 @@ function DesignModal({
             </button>
             <button
               type="button"
+              onClick={addPowder}
+              disabled={!layout}
+              style={{
+                ...toolbarButtonStyle(Boolean(layout)),
+                width: "100%",
+                minWidth: 0,
+              }}
+            >
+              Add Powder Room
+            </button>
+            <button
+              type="button"
+              onClick={addLaundry}
+              disabled={!layout}
+              style={{
+                ...toolbarButtonStyle(Boolean(layout)),
+                width: "100%",
+                minWidth: 0,
+              }}
+            >
+              Add Euro Laundry
+            </button>
+            <button
+              type="button"
               onClick={addKitchen}
               disabled={!layout}
               style={{
@@ -2837,6 +10758,31 @@ function DesignModal({
               }}
             >
               Add Porch
+            </button>
+            <button
+              type="button"
+              onClick={addLivingSet}
+              disabled={!layout}
+              style={{
+                ...toolbarButtonStyle(Boolean(layout)),
+                width: "100%",
+                minWidth: 0,
+              }}
+            >
+              Add Living Room
+            </button>
+            <button
+              type="button"
+              onClick={() => setClearOpen(true)}
+              disabled={!layout || rooms.length === 0}
+              style={{
+                ...toolbarButtonStyle(Boolean(layout) && rooms.length > 0),
+                width: "100%",
+                minWidth: 0,
+                marginTop: 16,
+              }}
+            >
+              Clear
             </button>
             {rooms.map((room, index) => {
               const kind = roomKind(room);
@@ -2873,7 +10819,7 @@ function DesignModal({
               cursor: stageCursor,
               touchAction: "none",
               userSelect: "none",
-              ...(layout
+              ...(layout && !viewMode
                 ? metreGridStyle(layout.scale, layout.offsetX, layout.offsetY)
                 : { backgroundColor: WHITE }),
             }}
@@ -2891,6 +10837,7 @@ function DesignModal({
                         points={(innerPts || layout.pts).map((p) => `${p.x},${p.y}`).join(" ")}
                       />
                     </clipPath>
+                    {FloorFinishDefs({ prefix: "qc-floor", layout })}
                   </defs>
                   {innerPts ? (
                     <path
@@ -2901,128 +10848,132 @@ function DesignModal({
                   ) : null}
                   <path
                     d={livingPathD(innerPts || layout.pts, layout, rooms)}
-                    fill={LIVING_FILL}
+                    fill="url(#qc-floor-hybrid)"
                     fillRule="evenodd"
                     clipPath="url(#qc-living-clip)"
                   />
                   <polygon
                     points={layout.pts.map((p) => `${p.x},${p.y}`).join(" ")}
                     fill="none"
-                    stroke={MONUMENT}
-                    strokeWidth="2"
+                    stroke={WALL_FILL}
+                    strokeWidth={PLAN_LINE}
                     strokeLinejoin="round"
                   />
                   {innerPts ? (
                     <polygon
                       points={innerPts.map((p) => `${p.x},${p.y}`).join(" ")}
                       fill="none"
-                      stroke={MONUMENT}
-                      strokeWidth="1.25"
+                      stroke={WALL_FILL}
+                      strokeWidth={PLAN_LINE}
                       strokeLinejoin="round"
                     />
                   ) : null}
-                  {!capturing && hover?.id === "building" && hover.edgeIndex != null ? (
+                  {hover?.id === "building" && hover.edgeIndex != null ? (
                     <line
                       x1={layout.pts[hover.edgeIndex].x}
                       y1={layout.pts[hover.edgeIndex].y}
                       x2={layout.pts[(hover.edgeIndex + 1) % layout.pts.length].x}
                       y2={layout.pts[(hover.edgeIndex + 1) % layout.pts.length].y}
                       stroke="#ca8a04"
-                      strokeWidth="4"
+                      strokeWidth={PLAN_LINE_HOVER}
                       strokeLinecap="round"
                     />
                   ) : null}
-                  {rooms.map((room) => {
-                    const r = roomToPx(room, layout);
-                    const hs = handlePx(layout);
-                    const pad = 2;
-                    const active = hover?.id === room.id;
-                    const colors = roomColors(room);
-                    const kind = roomKind(room);
+                  {rooms.filter((room) => !isLivingSet(room)).map(renderPlanRoom)}
+                  {partitionWallsPx.map((s, i) => (
+                    <line
+                      key={`iw-${i}`}
+                      x1={s.x1}
+                      y1={s.y1}
+                      x2={s.x2}
+                      y2={s.y2}
+                      stroke={WALL_FILL}
+                      strokeWidth={Math.max(PLAN_LINE, WALL_THICKNESS_M * layout.scale)}
+                      strokeLinecap="butt"
+                    />
+                  ))}
+                  {partitionWallCornersPx.map((c, i) => {
+                    const t = Math.max(PLAN_LINE, WALL_THICKNESS_M * layout.scale);
                     return (
-                      <g key={room.id}>
-                        <rect
-                          x={r.x}
-                          y={r.y}
-                          width={r.w}
-                          height={r.h}
-                          fill={colors.fill}
-                          stroke={colors.stroke}
-                          strokeWidth={active ? 2.5 : 2}
-                        />
-                        {kind === "bathroom" ? (
-                          <BathroomFixtures room={room} layout={layout} />
-                        ) : kind === "kitchen" ? (
-                          <KitchenFixtures room={room} layout={layout} />
-                        ) : kind === "porch" ? (
-                          <PorchDecking room={room} layout={layout} />
-                        ) : (
-                          <BedroomBed room={room} layout={layout} />
-                        )}
-                        {!capturing && kind === "porch" ? (
-                          [
-                            { x: r.x, y: r.y },
-                            { x: r.x + r.w, y: r.y },
-                            { x: r.x + r.w, y: r.y + r.h },
-                            { x: r.x, y: r.y + r.h },
-                          ].map((c, ci) => (
-                            <rect
-                              key={`porch-corner-${ci}`}
-                              x={c.x - hs / 2}
-                              y={c.y - hs / 2}
-                              width={hs}
-                              height={hs}
-                              fill={colors.stroke}
-                              stroke={WHITE}
-                              strokeWidth="1"
-                            />
-                          ))
-                        ) : !capturing ? (
-                          <rect
-                            x={r.x + pad}
-                            y={r.y + pad}
-                            width={hs}
-                            height={hs}
-                            fill={colors.stroke}
-                            stroke={WHITE}
-                            strokeWidth="1"
-                          />
-                        ) : null}
-                        {!capturing ? (
-                          <g
-                            transform={`translate(${r.x + r.w - pad - hs / 2}, ${r.y + pad + hs / 2})`}
-                          >
-                            <circle r={hs / 2 + 1} fill={WHITE} stroke={colors.stroke} strokeWidth="1.5" />
-                            <path
-                              d={`M ${-hs * 0.22} ${-hs * 0.08} A ${hs * 0.28} ${hs * 0.28} 0 1 1 ${hs * 0.08} ${-hs * 0.22}`}
-                              fill="none"
-                              stroke={colors.stroke}
-                              strokeWidth="1.6"
-                              strokeLinecap="round"
-                            />
-                            <path
-                              d={`M ${hs * 0.08} ${-hs * 0.38} L ${hs * 0.08} ${-hs * 0.08} L ${-hs * 0.16} ${-hs * 0.22}`}
-                              fill={colors.stroke}
-                            />
-                          </g>
-                        ) : null}
-                      </g>
+                      <rect
+                        key={`iwc-${i}`}
+                        x={c.x - t / 2}
+                        y={c.y - t / 2}
+                        width={t}
+                        height={t}
+                        fill={WALL_FILL}
+                      />
                     );
                   })}
+                  {rooms.filter((room) => !isLivingSet(room)).map(renderRoomHandles)}
+                  {rooms.filter(isLivingSet).map(renderPlanRoom)}
+                  {benchPreview && !viewMode ? <BenchDrawPreview preview={benchPreview} layout={layout} /> : null}
+                  {designHandles ? (
+                    <>
+                      <DesignMoveHandle
+                        cx={designHandles.move.cx}
+                        cy={designHandles.move.cy}
+                        size={designHandles.size}
+                        color={MONUMENT}
+                      />
+                      <RotateHandle
+                        cx={designHandles.rotate.cx}
+                        cy={designHandles.rotate.cy}
+                        size={designHandles.size}
+                        color={MONUMENT}
+                      />
+                    </>
+                  ) : null}
                 </svg>
-                {!capturing && layout?.areaM2 > 0 ? (
+                {layout?.areaM2 > 0 && areaAnchorM ? (
                   <div
+                    title="Drag to move"
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
+                      e.stopPropagation();
+                      e.preventDefault();
+                      e.currentTarget.setPointerCapture?.(e.pointerId);
+                      areaDragRef.current = {
+                        pointerId: e.pointerId,
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        start: areaOffsetM,
+                      };
+                    }}
+                    onPointerMove={(e) => {
+                      e.stopPropagation();
+                      const drag = areaDragRef.current;
+                      if (!drag || drag.pointerId !== e.pointerId || !(layout.scale > 0)) return;
+                      setAreaOffsetM({
+                        dx: drag.start.dx + (e.clientX - drag.startX) / layout.scale,
+                        dy: drag.start.dy + (e.clientY - drag.startY) / layout.scale,
+                      });
+                    }}
+                    onPointerUp={(e) => {
+                      e.stopPropagation();
+                      if (areaDragRef.current?.pointerId === e.pointerId) areaDragRef.current = null;
+                    }}
+                    onPointerCancel={(e) => {
+                      e.stopPropagation();
+                      areaDragRef.current = null;
+                    }}
                     style={{
                       position: "absolute",
-                      top: 12,
-                      left: "50%",
+                      left: (areaAnchorM.x + areaOffsetM.dx) * layout.scale + layout.originX,
+                      top:
+                        (areaAnchorM.y + areaOffsetM.dy) * layout.scale +
+                        layout.originY +
+                        AREA_LABEL_GAP_PX,
                       transform: "translateX(-50%)",
+                      zIndex: 6,
                       color: MONUMENT,
                       fontSize: "0.95rem",
                       fontWeight: 700,
                       letterSpacing: "0.02em",
                       whiteSpace: "nowrap",
-                      pointerEvents: "none",
+                      cursor: viewMode ? "default" : "grab",
+                      pointerEvents: viewMode ? "none" : "auto",
+                      touchAction: "none",
                       textShadow:
                         "0 0 4px #fff, 0 0 4px #fff, 0 1px 2px rgba(255,255,255,0.9)",
                     }}
@@ -3035,20 +10986,32 @@ function DesignModal({
                     x={livingPt.x * layout.scale + layout.originX}
                     y={livingPt.y * layout.scale + layout.originY}
                     title="Living"
-                    subtitle={livingDims ? formatRoomDims(livingDims.w, livingDims.h) : null}
+                    subtitle={livingDims ? formatRoomMetres(livingDims.w, livingDims.h) : null}
                   />
                 ) : null}
-                {buildingSideLabels.map((side) => (
-                  <EdgeDimLabel
-                    key={side.key}
-                    x={side.x}
-                    y={side.y}
-                    text={side.label}
-                    angleDeg={side.angleDeg}
-                    color={WHITE}
+                {showDimensions ? (
+                  <PlanDimensionsOverlay
+                    layout={layout}
+                    rooms={rooms}
+                    innerMetres={innerMetres || layout.metres}
+                    walls={partitionWalls}
+                    width={size.w}
+                    height={size.h}
                   />
-                ))}
+                ) : viewMode ? null : (
+                  buildingSideLabels.map((side) => (
+                    <EdgeDimLabel
+                      key={side.key}
+                      x={side.x}
+                      y={side.y}
+                      text={side.label}
+                      angleDeg={side.angleDeg}
+                      color={WHITE}
+                    />
+                  ))
+                )}
                 {rooms.map((room) => {
+                  if (isLivingSet(room)) return null;
                   const r = roomToPx(room, layout);
                   return (
                     <RoomDimLabel
@@ -3056,11 +11019,11 @@ function DesignModal({
                       x={r.x + r.w / 2}
                       y={r.y + r.h / 2}
                       title={roomKindLabel(roomKind(room))}
-                      subtitle={formatRoomDims(room.w, room.h)}
+                      subtitle={hasCustomBench(room) ? null : formatRoomMetres(room.w, room.h)}
                     />
                   );
                 })}
-                {!capturing ? (
+                {viewMode ? null : (
                   <div
                     style={{
                       position: "absolute",
@@ -3077,6 +11040,29 @@ function DesignModal({
                     }}
                   >
                     1 square = 1 m
+                  </div>
+                )}
+                {hover?.hint ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: Math.max(12, hover.x || 0),
+                      top: Math.max(12, (hover.y || 0) - 8),
+                      transform: "translate(-50%, -100%)",
+                      pointerEvents: "none",
+                      zIndex: 8,
+                      background: "transparent",
+                      color: WHITE,
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      letterSpacing: "0.02em",
+                      padding: "5px 9px",
+                      whiteSpace: "nowrap",
+                      textShadow:
+                        "0 0 4px #000, 0 0 4px #000, 0 1px 2px rgba(0,0,0,0.9)",
+                    }}
+                  >
+                    {hover.hint}
                   </div>
                 ) : null}
               </>
@@ -3096,17 +11082,76 @@ function DesignModal({
         >
           <button
             type="button"
-            onClick={onDownloadPng}
-            disabled={!layout || capturing}
-            style={toolbarButtonStyle(Boolean(layout) && !capturing)}
+            onClick={() => {
+              dragRef.current = null;
+              setHover(null);
+              setViewMode((v) => !v);
+            }}
+            disabled={!layout}
+            aria-pressed={viewMode}
+            title={viewMode ? "Switch to edit mode" : "Switch to view mode"}
+            style={{
+              ...toolbarButtonStyle(Boolean(layout)),
+              ...(viewMode ? { background: MONUMENT, color: WHITE, border: `1px solid ${MONUMENT}` } : null),
+            }}
           >
-            {capturing ? "Downloading…" : "Download"}
+            {viewMode ? "View Mode" : "Edit Mode"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              freezeLayoutRef.current = null;
+              setShowDimensions((v) => !v);
+            }}
+            disabled={!layout}
+            aria-pressed={showDimensions}
+            style={{
+              ...toolbarButtonStyle(Boolean(layout)),
+              ...(showDimensions ? { background: MONUMENT, color: WHITE, border: `1px solid ${MONUMENT}` } : null),
+            }}
+          >
+            Show Dimensions
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!layoutRef.current) return;
+              setThreeDOpen(true);
+            }}
+            disabled={!layout}
+            style={toolbarButtonStyle(Boolean(layout))}
+          >
+            3D
           </button>
           <button type="button" onClick={onClose} style={toolbarButtonStyle(true)}>
             OK
           </button>
         </div>
       </div>
+      {threeDOpen && layout ? (
+        <Design3DModal
+          layout={layout}
+          rooms={rooms}
+          onClose={() => setThreeDOpen(false)}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <ConfirmModal
+          title={`Delete ${roomKindLabel(roomKind(deleteTarget))}?`}
+          message={`This removes the ${roomKindLabel(roomKind(deleteTarget)).toLowerCase()} and everything in it from the design.`}
+          onConfirm={confirmDelete}
+          onCancel={cancelDelete}
+        />
+      ) : null}
+      {clearOpen ? (
+        <ConfirmModal
+          title="Clear design?"
+          message="This removes every room, porch and living room from the design. The building shape stays."
+          confirmLabel="Clear"
+          onConfirm={confirmClear}
+          onCancel={cancelClear}
+        />
+      ) : null}
     </div>
   );
 }
@@ -3241,6 +11286,7 @@ export default function QuickConcept() {
   const [designRooms, setDesignRooms] = useState([]);
   const bedroomIdRef = useRef(0);
   const designFrameRef = useRef(null);
+  const designScaleRef = useRef(null);
 
   const [query, setQuery] = useState("");
   const [quotePick, setQuotePick] = useState("");
@@ -3286,6 +11332,7 @@ export default function QuickConcept() {
     (shownRect && shownRect.w >= MIN_SIZE_PX && shownRect.h >= MIN_SIZE_PX) ||
     polyVertices.length > 0;
   const canDesign = committedPoly;
+  const quoteContact = quoteContactFromPick(quotePick, quoteGroups);
   const drawingGuides =
     tool === "polygon" && !polyClosed && polyVertices.length
       ? collectOrthoGuides(
@@ -3299,22 +11346,49 @@ export default function QuickConcept() {
     shownRect && shownRect.w >= MIN_SIZE_PX && shownRect.h >= MIN_SIZE_PX
       ? sideLengthLabels(rectToVertices(shownRect), true, ppm)
       : [];
-  const polySideLabels =
-    displayPoly.length >= 2 ? sideLengthLabels(displayPoly, Boolean(polyClosed), ppm) : [];
   const mapInnerPts =
     polyClosed && displayPoly.length >= 3
       ? insetPolygon(displayPoly, WALL_THICKNESS_M * ppm)
       : null;
-  const mapFrame =
-    polyClosed && displayPoly.length >= 3
-      ? liveDesignFrame(displayPoly, ppm, designFrameRef.current)
+  const mapFrame = designFrameRef.current
+    ? { ...designFrameRef.current, srcPpm: ppm }
+    : polyClosed && displayPoly.length >= 3
+      ? liveDesignFrame(displayPoly, ppm, null)
       : null;
   const mapRoomPolys = mapFrame
-    ? designRooms.map((room) => ({
-        room,
-        pts: roomToMapPixels(room, mapFrame),
-      }))
+    ? designRooms
+        .filter((room) => !isLivingSet(room))
+        .map((room) => ({
+          room,
+          pts: roomToMapPixels(room, mapFrame),
+        }))
     : [];
+  const mapFootprintPx = (() => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const add = (x, y) => {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    };
+    for (const p of displayPoly || []) add(p.x, p.y);
+    for (const item of mapRoomPolys) {
+      for (const p of item.pts || []) add(p.x, p.y);
+    }
+    if (!Number.isFinite(minX)) return null;
+    return { minX, minY, maxX, maxY };
+  })();
+  const polySideLabels =
+    displayPoly.length >= 2
+      ? sideLengthLabels(displayPoly, Boolean(polyClosed), ppm, {
+          clearPx: DIM_CLEAR_M * ppm,
+          footprintPx: mapFootprintPx,
+        })
+      : [];
   const mapLivingHoles = mapRoomPolys
     .filter((item) => !isPorch(item.room))
     .map((item) => item.pts);
@@ -3322,7 +11396,7 @@ export default function QuickConcept() {
     ? insetPolygon(mapFrame.metres, WALL_THICKNESS_M) || mapFrame.metres
     : null;
   const mapLivingRemain = mapLivingMetres
-    ? livingRemainingRect(mapLivingMetres, interiorRooms(designRooms))
+    ? livingRemainingRect(mapLivingMetres, walledRooms(designRooms))
     : null;
   const mapLivingPt =
     mapLivingRemain && mapFrame
@@ -3341,6 +11415,15 @@ export default function QuickConcept() {
   const mapLivingDims = mapLivingRemain
     ? { w: mapLivingRemain.w, h: mapLivingRemain.h }
     : null;
+  const mapPartitionSegs = mapFrame
+    ? bedroomBathroomInternalWalls(designRooms, mapLivingMetres || mapFrame.metres)
+    : [];
+  const mapPartitionWalls = mapPartitionSegs.map((seg) =>
+    designMetresToPixels(wallSegMetres(seg), mapFrame)
+  );
+  const mapPartitionCorners = mapFrame
+    ? partitionWallCorners(mapPartitionSegs).map((c) => designMetresToPixels([c], mapFrame)[0])
+    : [];
 
   const syncGeoFromPixels = useCallback((verts) => {
     const map = mapRef.current;
@@ -3354,11 +11437,30 @@ export default function QuickConcept() {
   const toPoint = useCallback((el, e) => pointFromEvent(el, e), []);
   const areaLimit = useCallback(() => (maxAreaRef.current ? MAX_AREA_M2 : 0), []);
   const limitedRect = useCallback((start, end) => {
-    return clampRectFromPoints(start, end, areaLimit(), ppmRef.current);
+    return clampRectFromPointsStepped(start, end, areaLimit(), ppmRef.current, BUILDING_STEP_M);
   }, [areaLimit]);
   const limitedPolyPoint = useCallback((vertices, cursor) => {
-    const snapped = snapOrthogonalCursor(vertices, cursor, snapRef.current);
-    return clampPolygonPoint(vertices, snapped, areaLimit(), ppmRef.current);
+    const ppm = ppmRef.current;
+    const stepPx = BUILDING_STEP_M * ppm;
+    let p = snapOrthogonalCursor(vertices, cursor, snapRef.current);
+    const last = vertices?.[vertices.length - 1];
+    if (last) {
+      const closing = vertices.length >= 3 && pointsNear(p, vertices[0]);
+      const onVertex = vertices.some((v) => pointsNear(p, v));
+      if (!closing && !onVertex) p = snapPixelLengthFrom(last, p, stepPx);
+    }
+    p = clampPolygonPoint(vertices, p, areaLimit(), ppm);
+    if (last && vertices.length >= 1) {
+      const closing = vertices.length >= 3 && pointsNear(p, vertices[0]);
+      const onVertex = vertices.some((v) => pointsNear(p, v));
+      if (!closing && !onVertex) {
+        const floored = snapPixelLengthFrom(last, p, stepPx, "floor");
+        if (polygonAreaM2([...vertices, floored], ppm) <= areaLimit() + 1e-9 || !(areaLimit() > 0)) {
+          p = floored;
+        }
+      }
+    }
+    return p;
   }, [areaLimit]);
 
   const commitShape = useCallback((verts) => {
@@ -3370,6 +11472,7 @@ export default function QuickConcept() {
     setPolyClosed(true);
     polyRef.current = { vertices: verts, closed: true };
     designFrameRef.current = null;
+    designScaleRef.current = null;
     setDesignRooms([]);
     bedroomIdRef.current = 0;
     syncGeoFromPixels(verts);
@@ -3387,13 +11490,24 @@ export default function QuickConcept() {
     setHoverEdge(null);
     polyRef.current = { vertices: [], closed: false };
     designFrameRef.current = null;
+    designScaleRef.current = null;
     setDesignRooms([]);
     bedroomIdRef.current = 0;
   }, []);
 
   const applyDesignBuilding = useCallback(
-    (pixelVerts) => {
-      if (!pixelVerts || pixelVerts.length < 3) return;
+    (nextMetres) => {
+      if (!nextMetres || nextMetres.length < 3) return;
+      const frame = designFrameRef.current;
+      if (!frame) return;
+      const ppmNow = ppmRef.current;
+      const nextFrame = {
+        ...frame,
+        metres: nextMetres.map((p) => ({ x: p.x, y: p.y })),
+        srcPpm: ppmNow,
+      };
+      designFrameRef.current = nextFrame;
+      const pixelVerts = designMetresToPixels(nextMetres, nextFrame);
       setPolyVertices(pixelVerts);
       polyRef.current = { vertices: pixelVerts, closed: true };
       syncGeoFromPixels(pixelVerts);
@@ -3410,17 +11524,21 @@ export default function QuickConcept() {
     if (!closed || vertices.length < 3) return;
     const ppmNow = ppmRef.current;
     const prev = designFrameRef.current;
-    const live = liveDesignFrame(vertices, ppmNow, prev);
-    if (prev && live && designRooms.length) {
-      setDesignRooms((rooms) => rooms.map((r) => remapRoomToFrame(r, prev, live)));
-    }
-    designFrameRef.current = live;
+    const frame = prev
+      ? { ...prev, srcPpm: ppmNow }
+      : liveDesignFrame(vertices, ppmNow, null);
+    designFrameRef.current = frame;
     setDesign({
       vertices: vertices.map((p) => ({ x: p.x, y: p.y })),
       ppm: ppmNow,
-      frame: live,
+      frame,
     });
-  }, [designRooms.length]);
+  }, []);
+
+  const onDesignViewScale = useCallback((s) => {
+    if (!(s > 0)) return;
+    if (designScaleRef.current == null) designScaleRef.current = s;
+  }, []);
 
   const selectTool = useCallback(
     (next) => {
@@ -3450,6 +11568,7 @@ export default function QuickConcept() {
     setPolyClosed(true);
     polyRef.current = { vertices: pts, closed: true };
     designFrameRef.current = null;
+    designScaleRef.current = null;
     setDesignRooms([]);
     bedroomIdRef.current = 0;
     syncGeoFromPixels(pts);
@@ -3566,13 +11685,25 @@ export default function QuickConcept() {
     const point = raw;
 
     if (drag?.mode === "edge") {
-      const moved = clampEdgeMove(
+      const ppm = ppmRef.current;
+      const maxM2 = areaLimit();
+      const live = polyRef.current.vertices?.length ? polyRef.current.vertices : drag.vertices;
+      const capped = clampEdgeMove(live, drag.index, raw, maxM2, ppm);
+      let moved = snapBuildingEdgeToStep(
         drag.vertices,
+        capped,
         drag.index,
-        raw,
-        areaLimit(),
-        ppmRef.current
+        BUILDING_STEP_M * ppm
       );
+      if (maxM2 > 0 && polygonAreaM2(moved, ppm) > maxM2 + 1e-9) {
+        const resnapped = snapBuildingEdgeToStep(
+          drag.vertices,
+          clampEdgeMove(live, drag.index, raw, maxM2, ppm),
+          drag.index,
+          BUILDING_STEP_M * ppm
+        );
+        moved = keepMovedUnderArea(resnapped, capped, maxM2, ppm);
+      }
       setPolyVertices(moved);
       polyRef.current = { vertices: moved, closed: true };
       syncGeoFromPixels(moved);
@@ -3989,9 +12120,10 @@ export default function QuickConcept() {
       const item = [...quoteGroups.VIC, ...quoteGroups.QLD].find(
         (row) => String(row.id) === String(id)
       );
-      if (!item?.label) return;
-      setQuery(item.label);
-      void runSearch(item.label);
+      const search = item.search || item.label;
+      if (!search) return;
+      setQuery(search);
+      void runSearch(search);
     },
     [quoteGroups, runSearch]
   );
@@ -4436,7 +12568,7 @@ export default function QuickConcept() {
                                 points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
                                 fill={colors.fill}
                                 stroke={colors.stroke}
-                                strokeWidth="1.5"
+                                strokeWidth={PLAN_LINE}
                                 strokeLinejoin="round"
                               />
                             );
@@ -4445,7 +12577,7 @@ export default function QuickConcept() {
                             points={displayPoly.map((p) => `${p.x},${p.y}`).join(" ")}
                             fill="none"
                             stroke={shapeStroke}
-                            strokeWidth="2"
+                            strokeWidth={PLAN_LINE}
                             strokeLinejoin="round"
                           />
                           {mapInnerPts ? (
@@ -4453,18 +12585,46 @@ export default function QuickConcept() {
                               points={mapInnerPts.map((p) => `${p.x},${p.y}`).join(" ")}
                               fill="none"
                               stroke={shapeStroke}
-                              strokeWidth="1.25"
+                              strokeWidth={PLAN_LINE}
                               strokeLinejoin="round"
                               opacity="0.9"
                             />
                           ) : null}
+                          {mapPartitionWalls.map((pts, i) =>
+                            pts?.length === 2 ? (
+                              <line
+                                key={`map-iw-${i}`}
+                                x1={pts[0].x}
+                                y1={pts[0].y}
+                                x2={pts[1].x}
+                                y2={pts[1].y}
+                                stroke={WALL_FILL}
+                                strokeWidth={Math.max(PLAN_LINE, WALL_THICKNESS_M * ppm)}
+                                strokeLinecap="butt"
+                              />
+                            ) : null
+                          )}
+                          {mapPartitionCorners.map((c, i) => {
+                            if (!c) return null;
+                            const t = Math.max(PLAN_LINE, WALL_THICKNESS_M * ppm);
+                            return (
+                              <rect
+                                key={`map-iwc-${i}`}
+                                x={c.x - t / 2}
+                                y={c.y - t / 2}
+                                width={t}
+                                height={t}
+                                fill={WALL_FILL}
+                              />
+                            );
+                          })}
                         </>
                       ) : (
                         <polyline
                           points={displayPoly.map((p) => `${p.x},${p.y}`).join(" ")}
                           fill="none"
                           stroke={shapeStroke}
-                          strokeWidth="2"
+                          strokeWidth={PLAN_LINE}
                           strokeLinejoin="round"
                           strokeLinecap="round"
                         />
@@ -4477,7 +12637,7 @@ export default function QuickConcept() {
                         x2={displayPoly[(hoverEdge.index + 1) % displayPoly.length].x}
                         y2={displayPoly[(hoverEdge.index + 1) % displayPoly.length].y}
                         stroke={shapeStroke}
-                        strokeWidth="5"
+                        strokeWidth={PLAN_LINE_HOVER}
                         strokeLinecap="round"
                         opacity="0.45"
                       />
@@ -4504,7 +12664,7 @@ export default function QuickConcept() {
                       y={mapLivingPt.y}
                       title="Living"
                       subtitle={
-                        mapLivingDims ? formatRoomDims(mapLivingDims.w, mapLivingDims.h) : null
+                        mapLivingDims ? formatRoomMetres(mapLivingDims.w, mapLivingDims.h) : null
                       }
                     />
                   ) : polyClosed && displayPoly.length >= 3 && polyAreaM2 > 0 ? (
@@ -4524,7 +12684,7 @@ export default function QuickConcept() {
                         x={c.x}
                         y={c.y}
                         title={roomKindLabel(roomKind(room))}
-                        subtitle={formatRoomDims(room.w, room.h)}
+                        subtitle={formatRoomMetres(room.w, room.h)}
                       />
                     );
                   })}
@@ -4553,8 +12713,13 @@ export default function QuickConcept() {
           onRoomsChange={setDesignRooms}
           nextIdRef={bedroomIdRef}
           onBuildingChange={applyDesignBuilding}
+          viewScale={designScaleRef.current}
+          onViewScaleChange={onDesignViewScale}
           maxArea={maxArea}
           onMaxAreaChange={setMaxArea}
+          address={projectSiteAddress(quotePick, quoteGroups, resultLabel, query)}
+          quoteEmail={quoteContact.email}
+          quoteFirstName={quoteContact.firstName}
           onClose={closeDesign}
         />
       ) : null}

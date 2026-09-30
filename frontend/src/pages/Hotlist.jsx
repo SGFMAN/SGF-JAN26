@@ -685,6 +685,8 @@ export default function Hotlist() {
       "{Suburb}": item?.suburb || "",
       "{State}": item?.state || "",
       "{ClientName}": item?.client_name || "",
+      "{ClientEmail}": item?.email || "",
+      "{ClientPhone}": item?.phone || "",
       "{Contact1}": item?.email || "",
       "{Email}": item?.email || "",
       "{Phone}": item?.phone || "",

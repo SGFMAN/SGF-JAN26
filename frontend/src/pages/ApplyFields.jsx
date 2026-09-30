@@ -9,6 +9,7 @@ import {
   isDesignPhaseStatus,
   isExcludedFromProjectLists,
   isPermitPhaseStatus,
+  isReadyToBuildStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
 import useAppLogo from "../hooks/useAppLogo.js";
@@ -31,6 +32,7 @@ const STATUS_ONLY_FILTERS = [
   { key: "pre-engagement", label: "Pre-engagement Only", match: isPreEngagementPhaseStatus },
   { key: "design", label: "Design Phase Only", match: isDesignPhaseStatus },
   { key: "permit", label: "Permit Only", match: isPermitPhaseStatus },
+  { key: "ready-to-build", label: "Ready to Build Only", match: isReadyToBuildStatus },
   { key: "construction", label: "Construction Only", match: isConstructionPhaseStatus },
   { key: "complete", label: "Completed Only", match: isCompleteStatus },
 ];
@@ -127,6 +129,7 @@ const FIELD_DEFINITIONS = {
       "Pre-Engagement Phase",
       "Design Phase",
       "Permit Phase",
+      "Ready to Build",
       "Construction Phase",
       "Cancelled",
       "Complete",

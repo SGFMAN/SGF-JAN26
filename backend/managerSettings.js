@@ -6,6 +6,7 @@ const PROJECT_STATUS_OPTIONS = [
   "Pre-Engagement Phase",
   "Design Phase",
   "Permit Phase",
+  "Ready to Build",
   "Construction Phase",
   "Cancelled",
   "Complete",

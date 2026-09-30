@@ -11,6 +11,7 @@ import QuickConcept from "./pages/QuickConcept";
 import FinishedProjects from "./pages/FinishedProjects";
 import PreEngagementPhase from "./pages/PreEngagementPhase";
 import PermitPhase from "./pages/PermitPhase";
+import ReadyToBuild from "./pages/ReadyToBuild";
 import InConstruction from "./pages/InConstruction";
 import SiteVisitManager from "./pages/SiteVisitManager";
 import SiteVisitPlanner from "./pages/SiteVisitPlanner";
@@ -121,6 +122,7 @@ export default function App() {
             <Route path="/finished-projects" element={<Auth><FinishedProjects /></Auth>} />
             <Route path="/pre-engagement-phase" element={<Auth><PreEngagementPhase /></Auth>} />
             <Route path="/permit-phase" element={<Auth><PermitPhase /></Auth>} />
+            <Route path="/ready-to-build" element={<Auth><ReadyToBuild /></Auth>} />
             <Route path="/construction-phase" element={<Auth><InConstruction /></Auth>} />
             <Route path="/in-construction" element={<Navigate to="/construction-phase" replace />} />
             <Route path="/site-visit-manager" element={<Auth><SiteVisitManager /></Auth>} />

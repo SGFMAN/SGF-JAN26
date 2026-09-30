@@ -10,6 +10,7 @@ import {
   isExcludedFromProjectLists,
   isOnHoldFlag,
   isPermitPhaseStatus,
+  isReadyToBuildStatus,
   isPreEngagementPhaseStatus,
 } from "../utils/projectStatus";
 import { fetchProjectsList, getCachedProjectsList } from "../utils/projectsListCache";
@@ -43,6 +44,7 @@ export const PROJECT_STATUS_MENU_LINKS = [
   { to: "/pre-engagement-phase", label: "Pre-Engagement" },
   { to: "/projects", label: "Design" },
   { to: "/permit-phase", label: "Permit" },
+  { to: "/ready-to-build", label: "Ready to Build" },
   { to: "/construction-phase", label: "Construction" },
   { to: "/on-hold", label: "On Hold" },
   { to: "/archive", label: "Archive" },
@@ -69,6 +71,8 @@ function countForPath(projects, path) {
       return projects.filter((p) => isDesignPhaseStatus(p.status)).length;
     case "/permit-phase":
       return projects.filter((p) => isPermitPhaseStatus(p.status)).length;
+    case "/ready-to-build":
+      return projects.filter((p) => isReadyToBuildStatus(p.status)).length;
     case "/construction-phase":
       return projects.filter((p) => isConstructionPhaseStatus(p.status)).length;
     case "/on-hold":
