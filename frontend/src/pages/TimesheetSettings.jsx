@@ -9,8 +9,8 @@ import {
   PAY_RATE,
   buildCollatedTimesheetTxt,
   clampPayHours,
-  enteredTimesheetUsers,
   formatHourOptionLabel,
+  submittedTimesheetUsers,
   timesheetTickedUsers,
   submittedTimesheetUserIds,
 } from "../utils/timeSheetCollate";
@@ -386,9 +386,9 @@ export default function TimesheetSettings() {
 
   async function handleExport() {
     if (exporting || !cycleKey) return;
-    const included = enteredTimesheetUsers(users, sheets);
+    const included = submittedTimesheetUsers(users, sheets);
     if (included.length === 0) {
-      alert("No hours have been entered for this pay cycle yet.");
+      alert("No one has sent a time sheet for this pay cycle yet.");
       return;
     }
     const from = String(fromEmail || "").trim();
@@ -414,9 +414,9 @@ export default function TimesheetSettings() {
         }
 
         const cycleSheets = Array.isArray(sheetsData.sheets) ? sheetsData.sheets : [];
-        const enteredUsers = enteredTimesheetUsers(users, cycleSheets);
-        if (enteredUsers.length === 0) {
-          throw new Error("No hours have been entered for this pay cycle yet.");
+        const sentUsers = submittedTimesheetUsers(users, cycleSheets);
+        if (sentUsers.length === 0) {
+          throw new Error("No one has sent a time sheet for this pay cycle yet.");
         }
 
         const txt = buildCollatedTimesheetTxt({
@@ -510,7 +510,7 @@ export default function TimesheetSettings() {
             Timesheet
           </h2>
           <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.4 }}>
-            Email saved hours for {periodLabel || "this pay cycle"}. The fortnight just finished stays open until Export. Export is the cutoff: it sends the email, clears those hours, and opens the next fortnight.
+            Email {periodLabel || "this pay cycle"} for users marked Sent. Hours are saved as they are entered. Export includes only the green names.
           </p>
         </div>
         <button

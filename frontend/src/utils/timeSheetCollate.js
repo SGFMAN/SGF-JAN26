@@ -107,40 +107,6 @@ export function submittedTimesheetUserIds(sheets) {
   return ids;
 }
 
-function sheetHasEnteredHours(sheet) {
-  const entries = Array.isArray(sheet?.dayEntries) ? sheet.dayEntries : [];
-  return entries.some((entry) => hasExportableTimesheetHours(entry));
-}
-
-/** Users with saved hours for the pay cycle, in name order. */
-export function enteredTimesheetUsers(users, sheets) {
-  const usersById = new Map();
-  for (const user of Array.isArray(users) ? users : []) {
-    const id = Number(user?.id);
-    if (!Number.isFinite(id)) continue;
-    usersById.set(id, user);
-  }
-
-  const seen = new Set();
-  const entered = [];
-  for (const sheet of Array.isArray(sheets) ? sheets : []) {
-    if (!sheetHasEnteredHours(sheet)) continue;
-    const userId = Number(sheet.userId);
-    if (!Number.isFinite(userId) || seen.has(userId)) continue;
-    seen.add(userId);
-    entered.push(
-      usersById.get(userId) || {
-        id: userId,
-        name: String(sheet.userName || "").trim() || "User",
-      }
-    );
-  }
-
-  return entered.sort((a, b) =>
-    String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
-  );
-}
-
 /** Users who clicked Send for the current pay cycle, in name order. */
 export function submittedTimesheetUsers(users, sheets) {
   const usersById = new Map();
@@ -255,13 +221,13 @@ export function buildCollatedTimesheetTxt({ users, sheets, periodDays, rates }) 
   const days = Array.isArray(periodDays) ? periodDays : [];
   const sheetByUser = new Map();
   for (const sheet of Array.isArray(sheets) ? sheets : []) {
-    if (!sheetHasEnteredHours(sheet)) continue;
+    if (!isSubmittedTimesheet(sheet)) continue;
     const userId = Number(sheet?.userId);
     if (!Number.isFinite(userId)) continue;
     sheetByUser.set(userId, sheet);
   }
 
-  const included = enteredTimesheetUsers(users, sheets);
+  const included = submittedTimesheetUsers(users, sheets);
 
   const lines = [EXPORT_HEADERS.join("\t")];
   for (const user of included) {
