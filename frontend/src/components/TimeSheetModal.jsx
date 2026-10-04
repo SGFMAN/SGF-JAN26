@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import ModalBackdrop from "./ModalBackdrop";
 import TimeSheetSettingsContent from "./TimeSheetSettingsContent";
 import { UI, TEXT } from "../utils/uiThemeTokens";
 import { TIMESHEET_GAP } from "../utils/timesheetLayout";
@@ -43,20 +44,13 @@ export default function TimeSheetModal({ open, onClose }) {
   }
 
   return (
-    <div
-      role="presentation"
+    <ModalBackdrop
       onClick={onClose}
       style={{
-        position: "fixed",
-        inset: 0,
         background: "rgba(0, 0, 0, 0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 10006,
         padding: "24px",
         boxSizing: "border-box",
-        overflow: "hidden",
+        overflow: "auto",
       }}
     >
       <div
@@ -122,6 +116,6 @@ export default function TimeSheetModal({ open, onClose }) {
 
         {cycle ? <TimeSheetSettingsContent cycle={cycle} /> : null}
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

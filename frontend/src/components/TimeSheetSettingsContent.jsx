@@ -9,7 +9,7 @@ import { saveTimesheetToServer } from "../utils/timeSheetExport";
 import { prefetchConstructionProjectsForTimeSheet } from "../utils/timeSheetProjects";
 import { UI, TEXT, outlineBorder } from "../utils/uiThemeTokens";
 
-const SENT_MODAL_Z = 10020;
+const SENT_MODAL_Z = 21000;
 
 export default function TimeSheetSettingsContent({ cycle }) {
   const loggedInUserId = getLoggedInUserId() || "";
