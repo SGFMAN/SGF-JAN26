@@ -90,15 +90,26 @@ function publicCycle(cycle) {
   };
 }
 
-/** The fortnight staff are still filling in. Stays on the fortnight just finished until export. */
+/**
+ * The date stored in settings is the last fortnight that Export has closed.
+ * The sheet shows the calendar fortnight once that close has happened.
+ * If a new Wednesday has started and the fortnight just finished is not closed yet, keep showing it.
+ * Export never reveals a fortnight that has not started.
+ */
 async function getOpenTimesheetCycle(pool) {
   await ensureTimesheetOpenCycleColumn(pool);
+  const calendar = describeCycle(payCycleWednesdayForDate(new Date()));
+  const previous = describeCycle(addDays(calendar.wednesday, -PAY_CYCLE_LENGTH_DAYS));
   const result = await pool.query(`SELECT timesheet_open_cycle_date FROM settings WHERE id = 1`);
-  const stored = cycleFromLocalDate(result.rows[0]?.timesheet_open_cycle_date);
-  if (stored) return stored;
-  const opened = describeCycle(payCycleWednesdayForDate(new Date()));
-  await saveOpenCycleDate(pool, opened.localDate);
-  return opened;
+  let exported = cycleFromLocalDate(result.rows[0]?.timesheet_open_cycle_date);
+
+  if (exported && exported.wednesday > calendar.wednesday) {
+    exported = previous;
+    await saveOpenCycleDate(pool, previous.localDate);
+  }
+
+  if (!exported || exported.wednesday >= previous.wednesday) return calendar;
+  return previous;
 }
 
 async function advanceOpenTimesheetCycle(pool, exportedCycleKey) {
@@ -111,10 +122,16 @@ async function advanceOpenTimesheetCycle(pool, exportedCycleKey) {
     throw error;
   }
 
-  await clearTimesheetCycle(pool, open.cycleKey);
+  const today = startOfDay(new Date());
   const next = describeCycle(addDays(open.wednesday, PAY_CYCLE_LENGTH_DAYS));
+
+  // A second export on the day a fortnight opens only resends the email.
+  // It must not unlock the fortnight after that.
+  if (open.wednesday >= today) return open;
+
+  await saveOpenCycleDate(pool, open.localDate);
   await clearTimesheetCycle(pool, next.cycleKey);
-  await saveOpenCycleDate(pool, next.localDate);
+  if (next.wednesday > today) return open;
   return next;
 }
 

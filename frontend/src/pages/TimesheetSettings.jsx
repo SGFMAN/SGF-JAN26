@@ -454,11 +454,12 @@ export default function TimesheetSettings() {
           body: JSON.stringify({ cycleKey }),
         });
         const resetData = await resetRes.json().catch(() => ({}));
-        if (!resetRes.ok) {
-          throw new Error(resetData.error || `Exported, but failed to open the next pay cycle (${resetRes.status})`);
-        }
         if (resetData.openCycle) {
           setOpenCycle(payCycleFromParts(resetData.openCycle));
+          window.dispatchEvent(new CustomEvent("sgf-timesheet-cycle-changed"));
+        }
+        if (!resetRes.ok) {
+          throw new Error(resetData.error || `Exported, but failed to open the next pay cycle (${resetRes.status})`);
         }
       });
       await loadSheets();
@@ -510,7 +511,7 @@ export default function TimesheetSettings() {
             Timesheet
           </h2>
           <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.4 }}>
-            Email {periodLabel || "this pay cycle"} for users marked Sent. Hours are saved as they are entered. Export includes only the green names.
+            Email {periodLabel || "this pay cycle"} for users marked Sent. Export unlocks the next pay cycle. Those dates show on payday, or straight away if payday has already started.
           </p>
         </div>
         <button

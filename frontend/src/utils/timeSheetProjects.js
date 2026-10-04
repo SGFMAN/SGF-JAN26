@@ -1,6 +1,7 @@
 import { isConstructionPhaseStatus } from "./projectStatus";
 import {
   ANNUAL_LEAVE_PROJECT_VALUE,
+  isLeaveTimesheetProject,
   OFFICE_PROJECT_VALUE,
   PUBLIC_HOLIDAY_PROJECT_VALUE,
   SICK_LEAVE_PROJECT_VALUE,
@@ -17,6 +18,11 @@ export const FIXED_TIMESHEET_PROJECTS = [
   { value: PUBLIC_HOLIDAY_PROJECT_VALUE, label: "Public Holiday" },
   { value: SICK_LEAVE_PROJECT_VALUE, label: "Sick Leave" },
 ];
+
+export function fixedProjectsForTimesheetDay(isSaturday) {
+  if (!isSaturday) return FIXED_TIMESHEET_PROJECTS;
+  return FIXED_TIMESHEET_PROJECTS.filter((project) => !isLeaveTimesheetProject(project.value));
+}
 
 export function formatConstructionProjectLabel(project) {
   const suburb = (project.suburb || "").trim();

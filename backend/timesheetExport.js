@@ -10,6 +10,16 @@ const EXPORT_HEADERS = [
 ];
 
 const PAYROLL_CATEGORY = "Base Hourly";
+const PAYROLL_BY_PROJECT = {
+  "annual-leave": "Holiday Pay",
+  "public-holiday": "Public Holiday",
+  "sick-leave": "Sick Pay",
+};
+
+function payrollCategory(entry) {
+  const key = String(entry?.projectId ?? "").trim();
+  return PAYROLL_BY_PROJECT[key] || PAYROLL_CATEGORY;
+}
 
 function sanitizeFilenamePart(value) {
   return String(value || "")
@@ -21,6 +31,18 @@ function sanitizeFilenamePart(value) {
 
 function isSunday(day) {
   return (day.weekday || day.expectedWeekday) === "Sunday";
+}
+
+function isSaturday(day) {
+  return (day.weekday || day.expectedWeekday) === "Saturday";
+}
+
+function entryForExport(day, entry) {
+  const source = entry || {};
+  const leave = Object.prototype.hasOwnProperty.call(PAYROLL_BY_PROJECT, String(source.projectId ?? "").trim());
+  if (isSaturday(day) && leave) return { ...source, projectId: "office" };
+  if (!isSaturday(day) && leave) return { ...source, workMinutes: 8 * 60 };
+  return source;
 }
 
 function splitEmployeeName(fullName) {
@@ -70,12 +92,12 @@ function buildTimesheetLines({ userName, periodDays, dayEntries }) {
   days.forEach((day, index) => {
     if (isSunday(day)) return;
 
-    const entry = entries[index] || {};
+    const entry = entryForExport(day, entries[index]);
     lines.push(
       [
         lastName,
         firstName,
-        PAYROLL_CATEGORY,
+        payrollCategory(entry),
         formatExportDate(day),
         minutesToUnits(entry.workMinutes),
       ].join("\t")

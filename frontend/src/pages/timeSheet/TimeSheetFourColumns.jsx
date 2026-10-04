@@ -1,15 +1,19 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PAY_PERIOD_WEEKDAY_ORDER, isTimesheetSunday } from "../../utils/timeSheetPayCycle";
 import {
+  applyTimesheetDayRules,
   createDefaultDayEntries,
+  isLeaveTimesheetProject,
   loadUserTemplate,
   saveUserTemplate,
   WORK_HOUR_OPTIONS,
   DEFAULT_PROJECT_VALUE,
+  DEFAULT_WORK_HOURS_MINUTES,
 } from "../../utils/timeSheetTime";
 import {
   formatConstructionProjectLabel,
   FIXED_TIMESHEET_PROJECTS,
+  fixedProjectsForTimesheetDay,
   getCachedConstructionProjects,
   prefetchConstructionProjectsForTimeSheet,
 } from "../../utils/timeSheetProjects";
@@ -308,12 +312,12 @@ export default function TimeSheetFourColumns({
     }
 
     if (persistTemplate || !(showDates && cycleKey)) {
-      skipAutoSaveRef.current = true;
-      setDayEntries(
-        persistTemplate
-          ? loadUserTemplate(selectedUserId) ?? createDefaultDayEntries()
-          : createDefaultDayEntries()
-      );
+      const loaded = persistTemplate
+        ? loadUserTemplate(selectedUserId) ?? createDefaultDayEntries()
+        : createDefaultDayEntries();
+      const normalized = applyTimesheetDayRules(loaded);
+      skipAutoSaveRef.current = normalized === loaded;
+      setDayEntries(normalized);
       readyToSaveRef.current = Boolean(persistTemplate);
       return undefined;
     }
@@ -326,16 +330,20 @@ export default function TimeSheetFourColumns({
         if (cancelled) return;
         if (userEditedRef.current) {
           readyToSaveRef.current = true;
+          const edited = applyTimesheetDayRules(latestEntriesRef.current);
+          latestEntriesRef.current = edited;
+          setDayEntries(edited);
           await saveTimesheetDraft({
             cycleKey,
             periodDays: periodDaysRef.current,
-            dayEntries: latestEntriesRef.current,
+            dayEntries: edited,
           });
           return;
         }
         if (remote?.dayEntries) {
-          skipAutoSaveRef.current = true;
-          setDayEntries(remote.dayEntries);
+          const normalized = applyTimesheetDayRules(remote.dayEntries);
+          skipAutoSaveRef.current = normalized === remote.dayEntries;
+          setDayEntries(normalized);
         } else if (remote) {
           skipAutoSaveRef.current = true;
           setDayEntries(createDefaultDayEntries());
@@ -423,7 +431,9 @@ export default function TimeSheetFourColumns({
     if (!hasUser) return;
     userEditedRef.current = true;
     setDayEntries((prev) =>
-      prev.map((entry, i) => (i === index ? { ...entry, ...updater(entry) } : entry))
+      applyTimesheetDayRules(
+        prev.map((entry, i) => (i === index ? { ...entry, ...updater(entry) } : entry))
+      )
     );
   }
 
@@ -482,6 +492,9 @@ export default function TimeSheetFourColumns({
   function renderDayRow(day, index, week) {
     const entry = dayEntries[index] ?? createDefaultDayEntries()[0];
     const { rowStyle, dayTextColor } = getDayHighlight(day, showDates, week);
+    const saturday = (day.weekday || day.expectedWeekday) === "Saturday";
+    const fixedProjects = fixedProjectsForTimesheetDay(saturday);
+    const hoursLocked = !saturday && isLeaveTimesheetProject(entry.projectId);
     return (
       <div
         key={day.iso ?? day.key}
@@ -520,8 +533,8 @@ export default function TimeSheetFourColumns({
         </div>
 
         <TimeSelect
-          disabled={!hasUser}
-          value={entry.workMinutes}
+          disabled={!hasUser || hoursLocked}
+          value={hoursLocked ? DEFAULT_WORK_HOURS_MINUTES : entry.workMinutes}
           options={WORK_HOUR_OPTIONS}
           onChange={(minutes) =>
             updateDayEntry(index, () => ({
@@ -534,13 +547,25 @@ export default function TimeSheetFourColumns({
           value={entry.projectId || DEFAULT_PROJECT_VALUE}
           disabled={!hasUser || loadingProjects}
           onChange={(e) =>
-            updateDayEntry(index, () => ({
-              projectId: e.target.value,
-            }))
+            updateDayEntry(index, (current) => {
+              const projectId = e.target.value;
+              if (isLeaveTimesheetProject(projectId)) {
+                return {
+                  projectId,
+                  workMinutes: DEFAULT_WORK_HOURS_MINUTES,
+                  overtimeMinutes: 0,
+                };
+              }
+              return { ...current, projectId };
+            })
           }
-          style={projectSelectStyle}
+          style={{
+            ...projectSelectStyle,
+            cursor: !hasUser || loadingProjects ? "not-allowed" : "pointer",
+            opacity: !hasUser || loadingProjects ? 0.65 : 1,
+          }}
         >
-          {FIXED_TIMESHEET_PROJECTS.map((project) => (
+          {fixedProjects.map((project) => (
             <option key={project.value} value={project.value}>
               {project.label}
             </option>

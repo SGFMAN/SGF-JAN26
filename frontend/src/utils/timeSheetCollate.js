@@ -1,11 +1,36 @@
 import { isTimesheetSelectableDay } from "./timeSheetPayCycle";
-import { SELECT_DURATION_MINUTES } from "./timeSheetTime";
+import {
+  ANNUAL_LEAVE_PROJECT_VALUE,
+  applyTimesheetDayRules,
+  PUBLIC_HOLIDAY_PROJECT_VALUE,
+  SELECT_DURATION_MINUTES,
+  SICK_LEAVE_PROJECT_VALUE,
+} from "./timeSheetTime";
 
 export const PAY_RATE = {
   BASE: "Base Hourly",
+  HOLIDAY: "Holiday Pay",
+  PUBLIC_HOLIDAY: "Public Holiday",
+  SICK: "Sick Pay",
   OT15: "Overtime (1.5x)",
   OT2: "Overtime (2x)",
 };
+
+const LEAVE_PAYROLL_CATEGORY = {
+  [ANNUAL_LEAVE_PROJECT_VALUE]: PAY_RATE.HOLIDAY,
+  [PUBLIC_HOLIDAY_PROJECT_VALUE]: PAY_RATE.PUBLIC_HOLIDAY,
+  [SICK_LEAVE_PROJECT_VALUE]: PAY_RATE.SICK,
+};
+
+/** Office and live jobs stay Base Hourly. Leave projects use their own payroll category. */
+export function payrollCategoryForProject(projectId) {
+  const key = String(projectId ?? "").trim();
+  return LEAVE_PAYROLL_CATEGORY[key] || PAY_RATE.BASE;
+}
+
+function usesBaseHourFormat(category) {
+  return category !== PAY_RATE.OT15 && category !== PAY_RATE.OT2;
+}
 
 export const BASE_HOURLY_MIN = 4;
 export const BASE_HOURLY_MAX = 12;
@@ -45,9 +70,9 @@ export function formatHourOptionLabel(hours) {
 
 export function formatTimesheetHours(hours, category = PAY_RATE.BASE) {
   const n = Number(hours);
-  const isBase = category === PAY_RATE.BASE;
-  if (!Number.isFinite(n) || n <= 0) return isBase ? "0.00000000" : "0";
-  if (isBase) return n.toFixed(8);
+  const decimalUnits = usesBaseHourFormat(category);
+  if (!Number.isFinite(n) || n <= 0) return decimalUnits ? "0.00000000" : "0";
+  if (decimalUnits) return n.toFixed(8);
   return String(Math.round(n));
 }
 
@@ -178,9 +203,10 @@ export function hasExportableTimesheetHours(entry) {
 /**
  * Split a day's total hours into Base / 1.5x / 2x bands.
  * Weekdays: base first, then 1.5x, then remaining 2x.
- * Saturday: no base; first 1.5x hours, then remaining 2x.
+ * Saturday work: no base; first 1.5x hours, then remaining 2x.
+ * Leave still uses its payroll category, including Saturday.
  */
-export function splitHoursByPayRate(totalHours, day, rates) {
+export function splitHoursByPayRate(totalHours, day, rates, projectId) {
   const total = Number(totalHours);
   if (!Number.isFinite(total) || total <= 0) return [];
 
@@ -196,13 +222,15 @@ export function splitHoursByPayRate(totalHours, day, rates) {
     OVERTIME_15_MAX,
     DEFAULT_OVERTIME_15_HOURS
   );
+  const baseCategory = payrollCategoryForProject(projectId);
+  const leaveDay = baseCategory !== PAY_RATE.BASE;
 
   const bands = [];
   let remaining = total;
 
-  if (!isSaturday(day)) {
+  if (!isSaturday(day) || leaveDay) {
     const base = Math.min(remaining, baseCap);
-    if (base > 0) bands.push({ category: PAY_RATE.BASE, hours: base });
+    if (base > 0) bands.push({ category: baseCategory, hours: base });
     remaining -= base;
   }
 
@@ -233,14 +261,14 @@ export function buildCollatedTimesheetTxt({ users, sheets, periodDays, rates }) 
   for (const user of included) {
     const { lastName, firstName } = timesheetExportNameParts(user);
     const sheet = sheetByUser.get(Number(user.id));
-    const entries = Array.isArray(sheet?.dayEntries) ? sheet.dayEntries : [];
+    const entries = applyTimesheetDayRules(Array.isArray(sheet?.dayEntries) ? sheet.dayEntries : []);
     const sheetDays = Array.isArray(sheet?.periodDays) && sheet.periodDays.length === days.length ? sheet.periodDays : days;
     for (let i = 0; i < days.length; i += 1) {
       const day = sheetDays[i] || days[i];
       if (!isTimesheetSelectableDay(day)) continue;
       const entry = entries[i];
       if (!hasExportableTimesheetHours(entry)) continue;
-      const bands = splitHoursByPayRate(entryTotalHours(entry), day, rates);
+      const bands = splitHoursByPayRate(entryTotalHours(entry), day, rates, entry?.projectId);
       for (const band of bands) {
         lines.push(
           [lastName, firstName, band.category, formatTimesheetDate(day), formatTimesheetHours(band.hours, band.category)].join("\t")

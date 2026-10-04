@@ -11,6 +11,47 @@ export const ANNUAL_LEAVE_PROJECT_VALUE = "annual-leave";
 export const PUBLIC_HOLIDAY_PROJECT_VALUE = "public-holiday";
 export const SICK_LEAVE_PROJECT_VALUE = "sick-leave";
 export const DEFAULT_PROJECT_VALUE = OFFICE_PROJECT_VALUE;
+
+const LEAVE_PROJECT_VALUES = new Set([
+  ANNUAL_LEAVE_PROJECT_VALUE,
+  PUBLIC_HOLIDAY_PROJECT_VALUE,
+  SICK_LEAVE_PROJECT_VALUE,
+]);
+
+export function isLeaveTimesheetProject(projectId) {
+  return LEAVE_PROJECT_VALUES.has(String(projectId ?? "").trim());
+}
+
+/**
+ * Saturday cannot be leave. A weekday leave day is locked at 8 hours.
+ * Returns the same array when nothing changes.
+ */
+export function applyTimesheetDayRules(entries) {
+  if (!Array.isArray(entries)) return entries;
+  let changed = false;
+  const next = entries.map((entry, index) => {
+    if (!entry || typeof entry !== "object") return entry;
+    const leave = isLeaveTimesheetProject(entry.projectId);
+    if (isSaturdayIndex(index)) {
+      if (!leave) return entry;
+      changed = true;
+      return { ...entry, projectId: DEFAULT_PROJECT_VALUE };
+    }
+    if (!leave) return entry;
+    const work = Number(entry.workMinutes);
+    const overtime = Number(entry.overtimeMinutes);
+    if (work === DEFAULT_WORK_HOURS_MINUTES && (!Number.isFinite(overtime) || overtime === 0)) {
+      return entry;
+    }
+    changed = true;
+    return {
+      ...entry,
+      workMinutes: DEFAULT_WORK_HOURS_MINUTES,
+      overtimeMinutes: 0,
+    };
+  });
+  return changed ? next : entries;
+}
 export const MAX_WORK_HOURS_MINUTES = 8 * 60;
 export const MAX_BREAK_MINUTES = 60;
 export const MAX_OVERTIME_MINUTES = 8 * 60;
