@@ -10,6 +10,18 @@ export default defineConfig({
       allow: [".."],
     },
     proxy: {
+      "/api/projects": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        timeout: 600000,
+        proxyTimeout: 600000,
+      },
+      "/api/tools/archicad-models": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        timeout: 600000,
+        proxyTimeout: 600000,
+      },
       "/api": {
         target: "http://localhost:3001",
         changeOrigin: true,

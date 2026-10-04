@@ -1850,6 +1850,7 @@ export default function Hotlist() {
             <NewProject
               isOpen={true}
               onClose={handleModalClose}
+              closeOnBackdropClick={false}
               formData={formData}
               onFormDataChange={handleFormDataChange}
               onNext={handleModalNext}
@@ -1860,6 +1861,7 @@ export default function Hotlist() {
             <NewProject2
               isOpen={true}
               onClose={handleModalClose}
+              closeOnBackdropClick={false}
               formData={formData}
               onFormDataChange={handleFormDataChange}
               onBack={handleModalBack}
@@ -1876,6 +1878,7 @@ export default function Hotlist() {
             <NewProject
               isOpen={true}
               onClose={handleModalClose}
+              closeOnBackdropClick={false}
               formData={formData}
               onFormDataChange={handleFormDataChange}
               onNext={handleModalNext}
@@ -1886,6 +1889,7 @@ export default function Hotlist() {
             <NewProject2
               isOpen={true}
               onClose={handleModalClose}
+              closeOnBackdropClick={false}
               formData={formData}
               onFormDataChange={handleFormDataChange}
               onBack={handleModalBack}

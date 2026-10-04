@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { getLoggedInUserId } from "../utils/auth";
 import TimeSheetFourColumns from "../pages/timeSheet/TimeSheetFourColumns";
 import TimeSheetSideMenu from "./TimeSheetSideMenu";
-import { getPayCycleWednesdayForDate, getPayPeriodDays } from "../utils/timeSheetPayCycle";
+import { getPayPeriodDays } from "../utils/timeSheetPayCycle";
 import { TIMESHEET_GAP } from "../utils/timesheetLayout";
 import { saveTimesheetToServer } from "../utils/timeSheetExport";
 import { prefetchConstructionProjectsForTimeSheet } from "../utils/timeSheetProjects";
@@ -11,19 +11,18 @@ import { UI, TEXT, outlineBorder } from "../utils/uiThemeTokens";
 
 const SENT_MODAL_Z = 10020;
 
-export default function TimeSheetSettingsContent() {
+export default function TimeSheetSettingsContent({ cycle }) {
   const loggedInUserId = getLoggedInUserId() || "";
   const [resetSignal, setResetSignal] = useState(0);
   const [sending, setSending] = useState(false);
   const [showSentModal, setShowSentModal] = useState(false);
   const dayEntriesRef = useRef(null);
 
-  const currentCycleWednesday = useMemo(() => getPayCycleWednesdayForDate(), []);
   const currentPeriodDays = useMemo(
-    () => getPayPeriodDays(currentCycleWednesday),
-    [currentCycleWednesday]
+    () => cycle?.periodDays || getPayPeriodDays(cycle?.cycleWednesday),
+    [cycle]
   );
-  const cycleKey = currentCycleWednesday.toISOString().slice(0, 10);
+  const cycleKey = cycle?.cycleKey || "";
 
   if (!loggedInUserId) {
     return (
@@ -44,6 +43,9 @@ export default function TimeSheetSettingsContent() {
       setShowSentModal(true);
     } catch (error) {
       console.error("Time sheet send:", error);
+      if (error?.cycleClosed) {
+        window.dispatchEvent(new CustomEvent("sgf-timesheet-cycle-changed"));
+      }
       alert(error.message || "Failed to send time sheet.");
     } finally {
       setSending(false);

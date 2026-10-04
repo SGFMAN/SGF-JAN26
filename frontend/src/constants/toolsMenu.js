@@ -6,6 +6,7 @@ export const TOOLS_MENU_LINKS = [
   { to: "/apply-fields", label: "Apply Fields" },
   { to: "/planner", label: "Planner" },
   { to: "/quick-concept", label: "Quick Concept" },
+  { to: "/archicad-viewer", label: "Archicad 3D Viewer" },
 ];
 
 export function isToolsPath(path) {

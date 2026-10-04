@@ -60,6 +60,7 @@ function suburbContainsNumbers(suburb) {
 export default function NewProject({
   isOpen,
   onClose,
+  closeOnBackdropClick = true,
   formData,
   onFormDataChange,
   onNext,
@@ -214,7 +215,7 @@ export default function NewProject({
   });
 
   return (
-    <ModalBackdrop onClick={onClose}>
+    <ModalBackdrop onClick={closeOnBackdropClick ? onClose : undefined}>
       <div
         style={{
           background: SECTION_GREY,

@@ -144,6 +144,17 @@ export function isTimesheetSelectableDay(day) {
   return !isTimesheetSunday(day);
 }
 
+/** Rebuild a pay cycle from the open-cycle API payload. */
+export function payCycleFromParts({ year, month, day, cycleKey }) {
+  const cycleWednesday = new Date(Number(year), Number(month) - 1, Number(day));
+  cycleWednesday.setHours(0, 0, 0, 0);
+  return {
+    cycleKey: String(cycleKey || ""),
+    cycleWednesday,
+    periodDays: getPayPeriodDays(cycleWednesday),
+  };
+}
+
 export function getPayPeriodBounds(cycleWednesday = getPayCycleWednesdayForDate()) {
   const periodStart = startOfDay(cycleWednesday);
   const periodEnd = addDays(periodStart, PAY_CYCLE_LENGTH_DAYS - 1);

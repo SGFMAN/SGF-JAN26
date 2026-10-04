@@ -61,6 +61,35 @@ async function ensureUserTimesheetColumns(pool) {
   }
 }
 
+async function upsertTimesheetDraft(pool, { userId, cycleKey, userName, periodDays, dayEntries }) {
+  await pool.query(
+    `INSERT INTO timesheets (user_id, cycle_key, user_name, period_days, day_entries, submitted, updated_at)
+     VALUES ($1, $2, $3, $4, $5, FALSE, NOW())
+     ON CONFLICT (user_id, cycle_key) DO UPDATE SET
+       user_name = EXCLUDED.user_name,
+       period_days = EXCLUDED.period_days,
+       day_entries = EXCLUDED.day_entries,
+       updated_at = NOW()`,
+    [
+      userId,
+      cycleKey,
+      userName,
+      JSON.stringify(Array.isArray(periodDays) ? periodDays : []),
+      JSON.stringify(Array.isArray(dayEntries) ? dayEntries : []),
+    ]
+  );
+}
+
+async function getTimesheetForUser(pool, userId, cycleKey) {
+  const result = await pool.query(
+    `SELECT user_id, cycle_key, user_name, period_days, day_entries, submitted, updated_at
+     FROM timesheets
+     WHERE user_id = $1 AND cycle_key = $2`,
+    [userId, cycleKey]
+  );
+  return result.rows[0] ? mapTimesheetRow(result.rows[0]) : null;
+}
+
 async function upsertTimesheet(pool, { userId, cycleKey, userName, periodDays, dayEntries }) {
   await pool.query(
     `INSERT INTO timesheets (user_id, cycle_key, user_name, period_days, day_entries, submitted, updated_at)
@@ -115,6 +144,21 @@ async function listTimesheets(pool, { cycleKey } = {}) {
   return result.rows.map(mapTimesheetRow);
 }
 
+async function clearTimesheetCycle(pool, cycleKey) {
+  const key = String(cycleKey || "").trim();
+  if (!key) return 0;
+  const result = await pool.query(
+    `UPDATE timesheets
+     SET submitted = FALSE,
+         day_entries = $2,
+         period_days = $3,
+         updated_at = NOW()
+     WHERE cycle_key = $1`,
+    [key, JSON.stringify([]), JSON.stringify([])]
+  );
+  return result.rowCount;
+}
+
 async function clearTimesheetSubmissions(pool, cycleKey) {
   const key = String(cycleKey || "").trim();
   if (!key) return 0;
@@ -132,7 +176,10 @@ async function clearTimesheetSubmissions(pool, cycleKey) {
 module.exports = {
   ensureTimesheetsTable,
   ensureUserTimesheetColumns,
+  upsertTimesheetDraft,
+  getTimesheetForUser,
   upsertTimesheet,
   listTimesheets,
+  clearTimesheetCycle,
   clearTimesheetSubmissions,
 };

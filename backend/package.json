@@ -15,6 +15,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@ifc-lite/geometry": "^7.6.0",
     "@omsimos/pdf-raster": "^0.1.1",
     "@turf/turf": "^7.3.5",
     "bcryptjs": "^3.0.3",

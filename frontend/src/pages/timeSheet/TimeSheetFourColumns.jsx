@@ -4,34 +4,27 @@ import {
   createDefaultDayEntries,
   loadUserTemplate,
   saveUserTemplate,
-  loadPayCycleSheet,
-  savePayCycleSheet,
   WORK_HOUR_OPTIONS,
-  BREAK_DURATION_OPTIONS,
-  OFFICE_PROJECT_VALUE,
   DEFAULT_PROJECT_VALUE,
-  SELECT_PROJECT_VALUE,
-  SELECT_PROJECT_LABEL,
 } from "../../utils/timeSheetTime";
 import {
   formatConstructionProjectLabel,
-  OFFICE_PROJECT_LABEL,
+  FIXED_TIMESHEET_PROJECTS,
   getCachedConstructionProjects,
   prefetchConstructionProjectsForTimeSheet,
 } from "../../utils/timeSheetProjects";
 import TimeSelect from "./TimeSelect";
-import { buildSavedButtonStyle } from "../../utils/uiButtonStyles.js";
 import { measureTextWidth } from "../../utils/measureTextWidth.js";
+import { fetchMyTimesheet, saveTimesheetDraft } from "../../utils/timeSheetExport";
 
 import { TIMESHEET_GAP, TIMESHEET_WEEKEND_GAP, DISPLAY_ROWS_PER_WEEK } from "../../utils/timesheetLayout";
-import { UI, TEXT, MENU, outlineBorder } from "../../utils/uiThemeTokens.js";
+import { UI, TEXT, STREAM, outlineBorder } from "../../utils/uiThemeTokens.js";
 
 const MAIN_AREA_BG = UI.panelBg;
 const LAYOUT_GAP = TIMESHEET_GAP;
 const ROW_GAP_MIN = LAYOUT_GAP;
 const CONTENT_INSET_X = LAYOUT_GAP;
-const WEEK1_BUTTON_STYLE_ID = 1;
-const WEEK2_BUTTON_STYLE_ID = 2;
+const DRAFT_SAVE_DELAY_MS = 400;
 
 /** Equal gaps: padding (top/bottom/left/right) + between 6 visible rows + weekend spacer. */
 function useUniformCellGap(panelRefs, deps, enabled = true) {
@@ -116,7 +109,7 @@ function startOfLocalDay(date) {
   return d.getTime();
 }
 
-function getDayHighlight(day, showDates) {
+function getDayHighlight(day, showDates, week) {
   if (!showDates || !day.date) {
     return { rowStyle: {}, dayTextColor: TEXT.dark };
   }
@@ -126,15 +119,18 @@ function getDayHighlight(day, showDates) {
 
   if (dayMs === todayMs) {
     return {
-      rowStyle: { backgroundColor: MENU.purpleLight, borderRadius: "4px", border: outlineBorder },
+      rowStyle: { backgroundColor: STREAM.streamGreenLight, borderRadius: "4px" },
       dayTextColor: TEXT.dark,
     };
   }
 
   if (dayMs < todayMs) {
     return {
-      rowStyle: { backgroundColor: MENU.purple, borderRadius: "4px" },
-      dayTextColor: MENU.activeText,
+      rowStyle: {
+        backgroundColor: week === 2 ? STREAM.qldRedLight : STREAM.vicBlueLight,
+        borderRadius: "4px",
+      },
+      dayTextColor: TEXT.dark,
     };
   }
 
@@ -190,16 +186,35 @@ export default function TimeSheetFourColumns({
   const week2PanelRef = useRef(null);
   const weekPanelRefs = useRef([]);
   const skipAutoSaveRef = useRef(false);
+  const readyToSaveRef = useRef(false);
+  const userEditedRef = useRef(false);
+  const pendingSaveRef = useRef(false);
+  const latestEntriesRef = useRef(dayEntries);
+  const periodDaysRef = useRef(periodDays);
+  const saveMetaRef = useRef({ selectedUserId, cycleKey, showDates, persistTemplate });
 
-  const [, setUiButtonStyleRevision] = useState(0);
+  latestEntriesRef.current = dayEntries;
+  periodDaysRef.current = periodDays;
+  saveMetaRef.current = { selectedUserId, cycleKey, showDates, persistTemplate };
 
   useEffect(() => {
-    const refresh = () => setUiButtonStyleRevision((n) => n + 1);
-    window.addEventListener("sgf-ui-button-styles-change", refresh);
-    window.addEventListener("sgf-ui-theme-change", refresh);
     return () => {
-      window.removeEventListener("sgf-ui-button-styles-change", refresh);
-      window.removeEventListener("sgf-ui-theme-change", refresh);
+      if (!pendingSaveRef.current) return;
+      const meta = saveMetaRef.current;
+      if (meta.persistTemplate || !meta.showDates || !meta.cycleKey || !meta.selectedUserId) return;
+      pendingSaveRef.current = false;
+      const entries = latestEntriesRef.current;
+      void saveTimesheetDraft({
+        cycleKey: meta.cycleKey,
+        periodDays: periodDaysRef.current,
+        dayEntries: entries,
+      }).catch((error) => {
+        if (error?.cycleClosed) {
+          window.dispatchEvent(new CustomEvent("sgf-timesheet-cycle-changed"));
+          return;
+        }
+        console.error("Time sheet save:", error);
+      });
     };
   }, []);
 
@@ -234,13 +249,12 @@ export default function TimeSheetFourColumns({
 
   const longestProjectLabel = useMemo(() => {
     const labels = [
-      SELECT_PROJECT_LABEL,
-      OFFICE_PROJECT_LABEL,
+      ...FIXED_TIMESHEET_PROJECTS.map((project) => project.label),
       ...constructionProjects.map((project) => formatConstructionProjectLabel(project)),
     ];
     return labels.reduce(
       (longest, label) => (label.length > longest.length ? label : longest),
-      SELECT_PROJECT_LABEL
+      ""
     );
   }, [constructionProjects]);
 
@@ -250,7 +264,7 @@ export default function TimeSheetFourColumns({
   );
 
   const longestHourLabel = useMemo(() => {
-    const labels = [...WORK_HOUR_OPTIONS, ...BREAK_DURATION_OPTIONS].map((option) => option.label);
+    const labels = WORK_HOUR_OPTIONS.map((option) => option.label);
     return labels.reduce(
       (longest, label) => (label.length > longest.length ? label : longest),
       labels[0] ?? ""
@@ -280,26 +294,71 @@ export default function TimeSheetFourColumns({
     [longestDayLabel]
   );
 
-  const rowColumns = `${dayColumnWidth}px ${timeColumnWidth}px ${timeColumnWidth}px ${timeColumnWidth}px ${projectColumnWidth}px`;
+  const rowColumns = `${dayColumnWidth}px ${timeColumnWidth}px ${projectColumnWidth}px`;
 
   useEffect(() => {
+    let cancelled = false;
+    readyToSaveRef.current = false;
+    userEditedRef.current = false;
+    pendingSaveRef.current = false;
+
     if (!selectedUserId) {
       setDayEntries(createDefaultDayEntries());
-      return;
+      return undefined;
     }
-    skipAutoSaveRef.current = true;
-    if (persistTemplate) {
-      setDayEntries(loadUserTemplate(selectedUserId) ?? createDefaultDayEntries());
-    } else if (showDates && cycleKey) {
-      setDayEntries(loadPayCycleSheet(selectedUserId, cycleKey) ?? createDefaultDayEntries());
-    } else {
-      setDayEntries(createDefaultDayEntries());
+
+    if (persistTemplate || !(showDates && cycleKey)) {
+      skipAutoSaveRef.current = true;
+      setDayEntries(
+        persistTemplate
+          ? loadUserTemplate(selectedUserId) ?? createDefaultDayEntries()
+          : createDefaultDayEntries()
+      );
+      readyToSaveRef.current = Boolean(persistTemplate);
+      return undefined;
     }
+
+    setDayEntries(createDefaultDayEntries());
+
+    (async () => {
+      try {
+        const remote = await fetchMyTimesheet(cycleKey);
+        if (cancelled) return;
+        if (userEditedRef.current) {
+          readyToSaveRef.current = true;
+          await saveTimesheetDraft({
+            cycleKey,
+            periodDays: periodDaysRef.current,
+            dayEntries: latestEntriesRef.current,
+          });
+          return;
+        }
+        if (remote?.dayEntries) {
+          skipAutoSaveRef.current = true;
+          setDayEntries(remote.dayEntries);
+        } else if (remote) {
+          skipAutoSaveRef.current = true;
+          setDayEntries(createDefaultDayEntries());
+        }
+      } catch (error) {
+        if (error?.cycleClosed) {
+          window.dispatchEvent(new CustomEvent("sgf-timesheet-cycle-changed"));
+        } else {
+          console.error("Time sheet load:", error);
+        }
+      } finally {
+        if (!cancelled) readyToSaveRef.current = true;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedUserId, persistTemplate, showDates, cycleKey]);
 
   useEffect(() => {
     if (!resetSignal) return;
-    skipAutoSaveRef.current = true;
+    userEditedRef.current = true;
     setDayEntries(createDefaultDayEntries());
   }, [resetSignal]);
 
@@ -323,16 +382,35 @@ export default function TimeSheetFourColumns({
   }, []);
 
   useEffect(() => {
-    if (!selectedUserId) return;
+    if (!selectedUserId || !readyToSaveRef.current) return undefined;
     if (skipAutoSaveRef.current) {
       skipAutoSaveRef.current = false;
-      return;
+      return undefined;
     }
     if (persistTemplate) {
       saveUserTemplate(selectedUserId, dayEntries);
-    } else if (showDates && cycleKey) {
-      savePayCycleSheet(selectedUserId, cycleKey, dayEntries);
+      return undefined;
     }
+    if (!(showDates && cycleKey)) return undefined;
+
+    userEditedRef.current = true;
+    pendingSaveRef.current = true;
+    const handle = setTimeout(() => {
+      pendingSaveRef.current = false;
+      void saveTimesheetDraft({
+        cycleKey,
+        periodDays: periodDaysRef.current,
+        dayEntries,
+      }).catch((error) => {
+        if (error?.cycleClosed) {
+          window.dispatchEvent(new CustomEvent("sgf-timesheet-cycle-changed"));
+          return;
+        }
+        console.error("Time sheet save:", error);
+      });
+    }, DRAFT_SAVE_DELAY_MS);
+
+    return () => clearTimeout(handle);
   }, [dayEntries, persistTemplate, showDates, cycleKey, selectedUserId]);
 
   useEffect(() => {
@@ -343,6 +421,7 @@ export default function TimeSheetFourColumns({
 
   function updateDayEntry(index, updater) {
     if (!hasUser) return;
+    userEditedRef.current = true;
     setDayEntries((prev) =>
       prev.map((entry, i) => (i === index ? { ...entry, ...updater(entry) } : entry))
     );
@@ -379,20 +458,16 @@ export default function TimeSheetFourColumns({
     overflow: "visible",
   };
 
-  function weekHeadingStyle(buttonStyleId) {
-    const saved = buildSavedButtonStyle(buttonStyleId, true);
+  function weekHeadingStyle(week) {
     return {
-      ...(saved ?? {
-        color: TEXT.dark,
-        background: UI.cardBg,
-        border: outlineBorder,
-      }),
+      color: TEXT.light,
+      background: week === 2 ? STREAM.qldRed : STREAM.vicBlue,
       margin: "0 auto",
       maxWidth: "100%",
       fontSize: "0.82rem",
       fontWeight: 600,
       textAlign: "center",
-      padding: saved?.padding ?? "3px 8px",
+      padding: "3px 8px",
       lineHeight: 1.15,
       borderRadius: "8px",
       boxSizing: "border-box",
@@ -404,9 +479,9 @@ export default function TimeSheetFourColumns({
     };
   }
 
-  function renderDayRow(day, index) {
+  function renderDayRow(day, index, week) {
     const entry = dayEntries[index] ?? createDefaultDayEntries()[0];
-    const { rowStyle, dayTextColor } = getDayHighlight(day, showDates);
+    const { rowStyle, dayTextColor } = getDayHighlight(day, showDates, week);
     return (
       <div
         key={day.iso ?? day.key}
@@ -455,30 +530,8 @@ export default function TimeSheetFourColumns({
           }
         />
 
-        <TimeSelect
-          disabled={!hasUser}
-          value={entry.breakMinutes}
-          options={BREAK_DURATION_OPTIONS}
-          onChange={(minutes) =>
-            updateDayEntry(index, () => ({
-              breakMinutes: minutes,
-            }))
-          }
-        />
-
-        <TimeSelect
-          disabled={!hasUser}
-          value={entry.overtimeMinutes}
-          options={WORK_HOUR_OPTIONS}
-          onChange={(minutes) =>
-            updateDayEntry(index, () => ({
-              overtimeMinutes: minutes,
-            }))
-          }
-        />
-
         <select
-          value={entry.projectId ?? DEFAULT_PROJECT_VALUE}
+          value={entry.projectId || DEFAULT_PROJECT_VALUE}
           disabled={!hasUser || loadingProjects}
           onChange={(e) =>
             updateDayEntry(index, () => ({
@@ -487,8 +540,11 @@ export default function TimeSheetFourColumns({
           }
           style={projectSelectStyle}
         >
-          <option value={SELECT_PROJECT_VALUE}>{SELECT_PROJECT_LABEL}</option>
-          <option value={OFFICE_PROJECT_VALUE}>{OFFICE_PROJECT_LABEL}</option>
+          {FIXED_TIMESHEET_PROJECTS.map((project) => (
+            <option key={project.value} value={project.value}>
+              {project.label}
+            </option>
+          ))}
           {constructionProjects.map((project) => (
             <option key={project.id} value={String(project.id)}>
               {formatConstructionProjectLabel(project)}
@@ -513,8 +569,6 @@ export default function TimeSheetFourColumns({
         >
           <div style={{ ...headerCell, textAlign: "left" }}>Day</div>
           <div style={headerCell}>Hours</div>
-          <div style={headerCell}>Break</div>
-          <div style={headerCell}>Overtime</div>
           <div style={headerCell}>Project</div>
         </div>
       </div>
@@ -531,7 +585,7 @@ export default function TimeSheetFourColumns({
     overflow: "visible",
   };
 
-  function renderWeekSection(title, buttonStyleId, weekDays, weekStartIndex, panelRef) {
+  function renderWeekSection(title, week, weekDays, weekStartIndex, panelRef) {
     return (
       <div
         ref={panelRef}
@@ -545,7 +599,7 @@ export default function TimeSheetFourColumns({
             : { flex: "1 1 0", minHeight: 0, ...uniformGapStyle }),
         }}
       >
-        <div style={weekHeadingStyle(buttonStyleId)} aria-hidden="true">
+        <div style={weekHeadingStyle(week)} aria-hidden="true">
           {title}
         </div>
         {renderColumnHeaderRow()}
@@ -561,7 +615,7 @@ export default function TimeSheetFourColumns({
                 />
               );
             }
-            return renderDayRow(item.day, item.index);
+            return renderDayRow(item.day, item.index, week);
           })}
         </div>
       </div>
@@ -635,8 +689,8 @@ export default function TimeSheetFourColumns({
           boxSizing: "border-box",
         }}
       >
-        {renderWeekSection("Week 1", WEEK1_BUTTON_STYLE_ID, week1Days, 0, week1PanelRef)}
-        {renderWeekSection("Week 2", WEEK2_BUTTON_STYLE_ID, week2Days, 7, week2PanelRef)}
+        {renderWeekSection("Week 1", 1, week1Days, 0, week1PanelRef)}
+        {renderWeekSection("Week 2", 2, week2Days, 7, week2PanelRef)}
       </div>
     </div>
   );

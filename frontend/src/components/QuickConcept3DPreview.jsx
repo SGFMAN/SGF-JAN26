@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import sgfLogoUrl from "../images/SGF Homes.png";
 
 const WALL_H = 2.55;
 const WALL_T = 0.1;
-const LINE = 0x1a1a1a;
+const LINE = 0xb8b8b8;
 const PLAN_DOOR_W = 0.87;
 const PLAN_DOOR_H = 2.1;
 const BENCH_DEPTH_M = 0.6;
@@ -23,6 +25,20 @@ const SINK_ACROSS_M = 0.495;
 const SINK_RIGHT_M = 0.05;
 const BED_SHORT_M = 1.8;
 const BED_LONG_M = 2.0;
+const VANITY_WIDTH_M = 0.9;
+const VANITY_DEPTH_M = 0.4;
+const VANITY_H = 0.85;
+const VANITY_KICK_H = 0.15;
+const VANITY_KICK_INSET = 0.05;
+const SHOWER_LONG_M = 1.8;
+const SHOWER_SHORT_M = 0.9;
+const SHOWER_GLASS_H = 2.1;
+const SHOWER_TILE_H = 2.4;
+const TOILET_TANK_ALONG_M = 0.5;
+const TOILET_TANK_DEPTH_M = 0.18;
+const TOILET_BOWL_WIDTH_M = 0.32;
+const TOILET_BOWL_LENGTH_M = 0.58;
+const TOILET_CLEAR_ALONG_M = 0.9;
 const NIGHTSTAND_M = 0.4;
 const NIGHTSTAND_GAP_M = 0.06;
 const ROBE_DEPTH_M = 0.6;
@@ -31,13 +47,20 @@ const ROBE_MIN_M = 1.2;
 const ROBE_MAX_M = 1.8;
 const ROBE_DOOR_T_M = 0.02;
 const ROBE_NIB_T_M = 0.1;
-const ROBE_H_M = 2.2;
-const ROBE_DOOR_H_M = 2.05;
+const ROBE_H_M = WALL_H;
+const ROBE_DOOR_H_M = WALL_H;
 const HYBRID_PLANK_M = 0.15;
 const HYBRID_GAP_M = 0.003;
 const HYBRID_TONE_HEX = [0xdcc9a8, 0xd3be9c, 0xcdb792, 0xd7c3a2];
+const DECK_TONE_HEX = [0x7a5232, 0x684428, 0x57381f, 0x73502e, 0x4a301a, 0x8a5e38];
+const DECK_BOARD_M = 0.09;
+const DECK_GAP_M = 0.008;
 const ISO_AZIMUTH = Math.PI / 4;
-const ISO_ELEVATION = Math.atan(1 / Math.sqrt(2));
+// 90° is straight down. 80° sits just off that, tilted back toward the front.
+const ISO_ELEVATION = (80 * Math.PI) / 180;
+const EYE_LEVEL_ELEVATION = (45 * Math.PI) / 180;
+// Vertical field of a moderate architectural lens. Near edges read larger than far ones.
+const PERSPECTIVE_FOV = 38;
 
 function pointInPolygon(p, pts) {
   if (!pts || pts.length < 3) return false;
@@ -67,9 +90,12 @@ function roomKind(room) {
   return "bedroom";
 }
 
-/** Walled rooms only: porches and living furniture sets sit on/outside the open living floor. */
+/** Walled rooms only. Kitchen uses the same hybrid boards as the living floor, with no separate outline. */
 function interiorRooms(rooms) {
-  return (rooms || []).filter((r) => roomKind(r) !== "porch" && roomKind(r) !== "living");
+  return (rooms || []).filter((r) => {
+    const kind = roomKind(r);
+    return kind !== "porch" && kind !== "living" && kind !== "kitchen";
+  });
 }
 
 const COUCH_CUSHION_M = 0.8;
@@ -104,19 +130,47 @@ function livingSetGeom3D(room) {
   const lAtEnd = type === "L-right" ? alongIsRight : !alongIsRight;
   const tOf = (u) => (lAtEnd ? s0 + u : s1 - u);
   const ubox = (u0, u1, d0, d1) => box(tOf(u0), tOf(u1), d0, d1);
+  const frontOver = 0.035;
+  const backOver = 0.04;
+  const seam = 0.03;
+  const sideOver = 0.025;
   let seats;
+  let cushions;
   let backs;
   let arms;
   let tableU;
   if (isL) {
     const retD0 = seatD0 - C - A;
     const cornerU = A + C * 2;
-    seats = [ubox(A, A + C * 3, seatD0, seatD1), ubox(cornerU, cornerU + C, retD0 + A, seatD0)];
+    seats = [
+      ...[0, 1, 2].map((i) => ubox(A + i * C, A + (i + 1) * C, seatD0, seatD1)),
+      ubox(cornerU, cornerU + C, retD0 + A, seatD0),
+    ];
+    cushions = [
+      ...[0, 1, 2].map((i) =>
+        ubox(
+          A + i * C - (i === 0 ? sideOver : seam),
+          A + (i + 1) * C + (i === 2 ? backOver : seam),
+          seatD0 - frontOver,
+          seatD1 + backOver
+        )
+      ),
+      ubox(cornerU - frontOver, cornerU + C + backOver, retD0 + A - sideOver, seatD0 + seam),
+    ];
     backs = [ubox(0, W, seatD1, depth), ubox(W - COUCH_BACK_M, W, retD0, seatD1)];
     arms = [ubox(0, A, seatD0, seatD1), ubox(cornerU, cornerU + C, retD0, retD0 + A)];
     tableU = cornerU / 2;
   } else {
-    seats = [ubox(A, W - A, seatD0, seatD1)];
+    const n = type === "2" ? 2 : 3;
+    seats = Array.from({ length: n }, (_, i) => ubox(A + i * C, A + (i + 1) * C, seatD0, seatD1));
+    cushions = Array.from({ length: n }, (_, i) =>
+      ubox(
+        A + i * C - (i === 0 ? sideOver : seam),
+        A + (i + 1) * C + (i === n - 1 ? sideOver : seam),
+        seatD0 - frontOver,
+        seatD1 + backOver
+      )
+    );
     backs = [ubox(0, W, seatD1, depth)];
     arms = [ubox(0, A, seatD0, seatD1), ubox(W - A, W, seatD0, seatD1)];
     tableU = W / 2;
@@ -133,9 +187,21 @@ function livingSetGeom3D(room) {
       tableMid + COFFEE_D_M / 2
     ),
     seats,
+    cushions,
     backs,
     arms,
+    inward: frame.inward,
   };
+}
+
+function frontDoorAzimuth(doors) {
+  const door = (doors || []).find((d) => d.external && d.inward);
+  if (!door) return ISO_AZIMUTH;
+  const ox = -(door.inward.x || 0);
+  const oz = -(door.inward.y || 0);
+  const len = Math.hypot(ox, oz);
+  if (len < 1e-6) return ISO_AZIMUTH;
+  return Math.atan2(ox / len, oz / len);
 }
 
 function ringBounds(pts) {
@@ -150,61 +216,6 @@ function ringBounds(pts) {
     maxY = Math.max(maxY, p.y);
   }
   return { minX, minY, maxX, maxY };
-}
-
-function projectedOrthoBounds(camera, object) {
-  camera.updateMatrixWorld(true);
-  object.updateWorldMatrix?.(true, true);
-  object.updateMatrixWorld?.(true);
-  const box = new THREE.Box3().setFromObject(object);
-  if (box.isEmpty()) return null;
-  const inv = camera.matrixWorldInverse;
-  const v = new THREE.Vector3();
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  const xs = [box.min.x, box.max.x];
-  const ys = [box.min.y, box.max.y];
-  const zs = [box.min.z, box.max.z];
-  for (const x of xs) {
-    for (const y of ys) {
-      for (const z of zs) {
-        v.set(x, y, z).applyMatrix4(inv);
-        minX = Math.min(minX, v.x);
-        maxX = Math.max(maxX, v.x);
-        minY = Math.min(minY, v.y);
-        maxY = Math.max(maxY, v.y);
-      }
-    }
-  }
-  return {
-    minX,
-    maxX,
-    minY,
-    maxY,
-    cx: (minX + maxX) / 2,
-    cy: (minY + maxY) / 2,
-    width: Math.max(0.01, maxX - minX),
-    height: Math.max(0.01, maxY - minY),
-  };
-}
-
-function applyOrthoBounds(camera, bounds, aspect, padFrac = 0.04) {
-  if (!bounds) return;
-  const pad = 1 + Math.max(0, padFrac);
-  let halfW = (bounds.width / 2) * pad;
-  let halfH = (bounds.height / 2) * pad;
-  if (aspect > 0) {
-    const contentAspect = halfW / halfH;
-    if (aspect > contentAspect) halfW = halfH * aspect;
-    else halfH = halfW / aspect;
-  }
-  camera.left = bounds.cx - halfW;
-  camera.right = bounds.cx + halfW;
-  camera.top = bounds.cy + halfH;
-  camera.bottom = bounds.cy - halfH;
-  camera.updateProjectionMatrix();
 }
 
 function cropCanvasWhitespace(source, threshold = 248) {
@@ -350,6 +361,38 @@ function addBox(parent, w, h, d, x, y, z, fill, lineMat, rotY = 0) {
   return addOutlined(parent, new THREE.BoxGeometry(bw, bh, bd), fill, lineMat, x, y, z, rotY);
 }
 
+function addLooseBox(parent, w, h, d, x, y, z, fill, lineMat) {
+  if (w < 0.008 || h < 0.008 || d < 0.008) return null;
+  return addOutlined(parent, new THREE.BoxGeometry(w, h, d), fill, lineMat, x, y, z);
+}
+
+function addStoneTop(parent, w, d, x, y, z, material, lineMat) {
+  const bw = Math.max(0.012, Math.abs(w) || 0.012);
+  const bd = Math.max(0.012, Math.abs(d) || 0.012);
+  const bh = BENCH_TOP_M;
+  const geo = new THREE.BoxGeometry(bw, bh, bd);
+  const uv = geo.attributes.uv;
+  const tile = 0.85;
+  const scales = [
+    [bd / tile, bh / tile],
+    [bd / tile, bh / tile],
+    [bw / tile, bd / tile],
+    [bw / tile, bd / tile],
+    [bw / tile, bh / tile],
+    [bw / tile, bh / tile],
+  ];
+  for (let f = 0; f < 6; f += 1) {
+    const su = scales[f][0];
+    const sv = scales[f][1];
+    for (let i = 0; i < 4; i += 1) {
+      const idx = f * 4 + i;
+      uv.setXY(idx, uv.getX(idx) * su, uv.getY(idx) * sv);
+    }
+  }
+  uv.needsUpdate = true;
+  return addOutlined(parent, geo, material, lineMat, x, y, z);
+}
+
 function roomRotation(room) {
   const n = ((Number(room?.rot) || 0) % 360 + 360) % 360;
   if (n === 90 || n === 180 || n === 270) return n;
@@ -394,6 +437,54 @@ function rotatedLocalRect(room, rect) {
     w: Math.max(...xs) - minX,
     h: Math.max(...ys) - minY,
   };
+}
+
+function rotatedLocalPoint(room, p) {
+  const rot = roomRotation(room);
+  const uw = rot === 90 || rot === 270 ? room.h : room.w;
+  const uh = rot === 90 || rot === 270 ? room.w : room.h;
+  const dx = p.x - uw / 2;
+  const dy = p.y - uh / 2;
+  let rdx = dx;
+  let rdy = dy;
+  if (rot === 90) {
+    rdx = -dy;
+    rdy = dx;
+  } else if (rot === 180) {
+    rdx = -dx;
+    rdy = -dy;
+  } else if (rot === 270) {
+    rdx = dy;
+    rdy = -dx;
+  }
+  return { x: room.x + room.w / 2 + rdx, y: room.y + room.h / 2 + rdy };
+}
+
+function rotatedLocalVec(room, v) {
+  const rot = roomRotation(room);
+  if (rot === 90) return { x: -v.y, y: v.x };
+  if (rot === 180) return { x: -v.x, y: -v.y };
+  if (rot === 270) return { x: v.y, y: -v.x };
+  return { x: v.x, y: v.y };
+}
+
+function subtractRect(outer, hole) {
+  if (!outer || !hole) return outer ? [outer] : [];
+  const ix0 = Math.max(outer.x, hole.x);
+  const iy0 = Math.max(outer.y, hole.y);
+  const ix1 = Math.min(outer.x + outer.w, hole.x + hole.w);
+  const iy1 = Math.min(outer.y + outer.h, hole.y + hole.h);
+  if (ix1 - ix0 < 0.02 || iy1 - iy0 < 0.02) return [outer];
+  const parts = [];
+  if (iy0 - outer.y > 0.012) parts.push({ x: outer.x, y: outer.y, w: outer.w, h: iy0 - outer.y });
+  if (outer.y + outer.h - iy1 > 0.012) {
+    parts.push({ x: outer.x, y: iy1, w: outer.w, h: outer.y + outer.h - iy1 });
+  }
+  if (ix0 - outer.x > 0.012) parts.push({ x: outer.x, y: iy0, w: ix0 - outer.x, h: iy1 - iy0 });
+  if (outer.x + outer.w - ix1 > 0.012) {
+    parts.push({ x: ix1, y: iy0, w: outer.x + outer.w - ix1, h: iy1 - iy0 });
+  }
+  return parts;
 }
 
 function kitchenLayoutKind(room) {
@@ -722,29 +813,23 @@ function fridgeLocalOnBench(bench, along) {
 }
 
 function sinkRectOnBench(bench, along) {
-  const half = SINK_ALONG_M / 2;
-  const t = Math.max(bench.along0 + half, Math.min(bench.along1 - half, along));
   const inset = (BENCH_DEPTH_M - SINK_ACROSS_M) / 2;
+  const t0 = Math.max(bench.along0, Math.min(bench.along1 - SINK_ALONG_M, along));
+  const t = Math.max(bench.along0, Math.min(bench.along1 - SINK_ALONG_M, t0 + SINK_RIGHT_M));
+  if (bench.alongAxis === "x" && bench.wall === "min") {
+    const front = bench.y + bench.h - inset;
+    return { x: t, y: front - SINK_ACROSS_M, w: SINK_ALONG_M, h: SINK_ACROSS_M };
+  }
   if (bench.alongAxis === "x") {
-    if (bench.wall === "min") {
-      const front = bench.y + bench.h - inset;
-      const x = Math.max(bench.along0, Math.min(bench.along1 - SINK_ALONG_M, t - half + SINK_RIGHT_M));
-      return { x, y: front - SINK_ACROSS_M, w: SINK_ALONG_M, h: SINK_ACROSS_M };
-    }
     const front = bench.y + inset;
-    const x = Math.max(bench.along0, Math.min(bench.along1 - SINK_ALONG_M, t - half + SINK_RIGHT_M));
-    return { x, y: front, w: SINK_ALONG_M, h: SINK_ACROSS_M };
+    return { x: t, y: front, w: SINK_ALONG_M, h: SINK_ACROSS_M };
   }
   if (bench.wall === "min") {
     const front = bench.x + bench.w - inset;
-    const x = Math.max(bench.x, Math.min(bench.x + bench.w - SINK_ACROSS_M, front - SINK_ACROSS_M));
-    const y = Math.max(bench.along0, Math.min(bench.along1 - SINK_ALONG_M, t - half + SINK_RIGHT_M));
-    return { x, y, w: SINK_ACROSS_M, h: SINK_ALONG_M };
+    return { x: front - SINK_ACROSS_M, y: t, w: SINK_ACROSS_M, h: SINK_ALONG_M };
   }
   const front = bench.x + inset;
-  const x = Math.max(bench.x, Math.min(bench.x + bench.w - SINK_ACROSS_M, front));
-  const y = Math.max(bench.along0, Math.min(bench.along1 - SINK_ALONG_M, t - half + SINK_RIGHT_M));
-  return { x, y, w: SINK_ACROSS_M, h: SINK_ALONG_M };
+  return { x: front, y: t, w: SINK_ACROSS_M, h: SINK_ALONG_M };
 }
 
 function resolveKitchenAppliance(room, type) {
@@ -770,10 +855,17 @@ function resolveKitchenAppliance(room, type) {
   }
   const cook = resolveKitchenAppliance(room, "cook");
   if (cook && cook.bench.id === main.id) {
-    const after = cook.along + COOKTOP_M / 2 + 0.25 + SINK_ALONG_M / 2;
-    if (after + SINK_ALONG_M / 2 <= main.along1) return { bench: main, along: after };
+    const cookStart = Number.isFinite(Number(room?.cookAlong)) ? cook.along : cook.along - COOKTOP_M / 2;
+    const after = cookStart + COOKTOP_M + 0.12;
+    return {
+      bench: main,
+      along: Math.max(main.along0, Math.min(main.along1 - SINK_ALONG_M, after)),
+    };
   }
-  return { bench: main, along: main.along0 + 0.2 + SINK_ALONG_M / 2 };
+  return {
+    bench: main,
+    along: Math.max(main.along0, Math.min(main.along1 - SINK_ALONG_M, main.along0 + 0.2)),
+  };
 }
 
 function kitchenCookRect(room) {
@@ -847,8 +939,8 @@ function doorOnEdge(door, a, b) {
 }
 
 // One white 4-panel internal door leaf, 50% open, hinged at the design hinge
-// and swinging into the room. Built as a single shape so the panel recesses
-// are part of the door, not boxes stacked on it.
+// and swinging into the room. The four panels are solid white, set back in the
+// frame so the door reads as panelled rather than glazed.
 function addDoorLeaf(parent, door, cx, cz, mats) {
   if (!door?.hinge || !door?.open) return;
   const width = Math.max(0.2, door.doorWidth || PLAN_DOOR_W);
@@ -879,19 +971,45 @@ function addDoorLeaf(parent, door, cx, cz, mats) {
   const uz = dz / l;
   const rotY = Math.atan2(-uz, ux);
   if (door.external) {
-    addBox(
-      parent,
-      width,
-      PLAN_DOOR_H,
-      0.04,
-      hx + ux * (width / 2),
-      PLAN_DOOR_H / 2,
-      hz + uz * (width / 2),
-      mats.timber,
-      mats.line,
-      rotY
-    );
-    return;
+    const t = 0.04;
+    const glassCount = 5;
+    const glassH = 0.1;
+    const side = 0.1;
+    const bottom = 0.3;
+    const top = 0.3;
+    const glassW = Math.max(0.08, width - side * 2);
+    const glassSpan = PLAN_DOOR_H - bottom - top - glassCount * glassH;
+    const glassGap = glassCount > 1 ? glassSpan / (glassCount - 1) : 0;
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(width, 0);
+    shape.lineTo(width, PLAN_DOOR_H);
+    shape.lineTo(0, PLAN_DOOR_H);
+    shape.closePath();
+    const x0 = (width - glassW) / 2;
+    const panes = [];
+    for (let g = 0; g < glassCount; g += 1) {
+      const y0 = bottom + g * (glassH + glassGap);
+      const hole = new THREE.Path();
+      hole.moveTo(x0, y0);
+      hole.lineTo(x0 + glassW, y0);
+      hole.lineTo(x0 + glassW, y0 + glassH);
+      hole.lineTo(x0, y0 + glassH);
+      hole.closePath();
+      shape.holes.push(hole);
+      panes.push(y0);
+    }
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
+    geo.translate(0, 0, -t / 2);
+    const mesh = addOutlined(parent, geo, mats.doorPanel, mats.softLine, hx, 0, hz, rotY);
+    if (!mesh) return null;
+    mesh.userData.doorLeaf = true;
+    for (const y0 of panes) {
+      const pane = new THREE.Mesh(new THREE.BoxGeometry(glassW, glassH, 0.006), mats.doorGlass);
+      pane.position.set(x0 + glassW / 2, y0 + glassH / 2, 0);
+      mesh.add(pane);
+    }
+    return mesh;
   }
   const t = 0.04;
   const inset = 0.09;
@@ -915,15 +1033,27 @@ function addDoorLeaf(parent, door, cx, cz, mats) {
     hole.closePath();
     shape.holes.push(hole);
   };
+  const specs = [];
   const xs = [inset, inset + panelW + gap];
   for (const x of xs) {
     panel(x, rail, panelW, botH);
     panel(x, rail * 2 + botH, panelW, topH);
+    specs.push([x, rail, panelW, botH], [x, rail * 2 + botH, panelW, topH]);
   }
   const geo = new THREE.ExtrudeGeometry(shape, { depth: t, bevelEnabled: false });
   geo.translate(0, 0, -t / 2);
-  const mesh = addOutlined(parent, geo, mats.fill, mats.line, hx, 0, hz, rotY);
-  if (mesh) mesh.userData.doorLeaf = true;
+  const mesh = addOutlined(parent, geo, mats.fill, mats.softLine, hx, 0, hz, rotY);
+  if (!mesh) return null;
+  mesh.userData.doorLeaf = true;
+  const panelT = t * 0.42;
+  for (const [x0, y0, pw, ph] of specs) {
+    const panelGeo = new THREE.BoxGeometry(Math.max(0.01, pw), Math.max(0.01, ph), panelT);
+    const panelMesh = new THREE.Mesh(panelGeo, mats.doorPanel);
+    panelMesh.position.set(x0 + pw / 2, y0 + ph / 2, 0);
+    panelMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(panelGeo), mats.softLine));
+    mesh.add(panelMesh);
+  }
+  return mesh;
 }
 
 function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats) {
@@ -957,9 +1087,14 @@ function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats) {
     WALL_T,
     hits,
     mats.wall,
-    mats.line
+    mats.softLine
   );
-  for (const hit of hits) addDoorLeaf(parent, hit.door, cx, cz, mats);
+  const frontDoors = [];
+  for (const hit of hits) {
+    const leaf = addDoorLeaf(parent, hit.door, cx, cz, mats);
+    if (leaf) frontDoors.push(leaf);
+  }
+  if (mesh) mesh.userData.frontDoors = frontDoors;
   return mesh ? [mesh] : [];
 }
 
@@ -976,6 +1111,29 @@ function addPartitionWalls(parent, walls, doors, cx, cz, mats, drawnDoors) {
   }
   for (const g of groups.values()) {
     const spans = g.spans.slice().sort((a, b) => a[0] - b[0]);
+    const openings = [];
+    for (const door of doors || []) {
+      if (door.external || !door.hinge || !door.closed) continue;
+      const near = g.horiz
+        ? Math.abs(door.hinge.y - g.fixed) <= 0.12 && Math.abs(door.closed.y - g.fixed) <= 0.12
+        : Math.abs(door.hinge.x - g.fixed) <= 0.12 && Math.abs(door.closed.x - g.fixed) <= 0.12;
+      if (!near) continue;
+      const tA = g.horiz ? door.hinge.x : door.hinge.y;
+      const tB = g.horiz ? door.closed.x : door.closed.y;
+      const lo = Math.min(tA, tB);
+      const hi = Math.max(tA, tB);
+      if (hi - lo < 0.2) continue;
+      openings.push({ lo, hi });
+    }
+    for (const opening of openings) {
+      for (const span of spans) {
+        if (Math.abs(span[1] - opening.lo) <= 0.08 || Math.abs(span[0] - opening.hi) <= 0.08) {
+          span[0] = Math.min(span[0], opening.lo);
+          span[1] = Math.max(span[1], opening.hi);
+        }
+      }
+    }
+    spans.sort((a, b) => a[0] - b[0]);
     const merged = [];
     for (const [a, b] of spans) {
       const last = merged[merged.length - 1];
@@ -1005,7 +1163,7 @@ function addPartitionWalls(parent, walls, doors, cx, cz, mats, drawnDoors) {
         WALL_T,
         hits,
         mats.wall,
-        mats.line
+        mats.softLine
       );
       for (const hit of hits) {
         addDoorLeaf(parent, hit.door, cx, cz, mats);
@@ -1148,7 +1306,16 @@ function robeGeom3D(room) {
     );
   }
   return {
-    rect: wallBoxRect(anchor, frame.along, frame.inward, 0, robeWidth, 0, ROBE_DEPTH_M),
+    // Carcass stops behind the two sliding tracks so the mirror leaves sit in front.
+    rect: wallBoxRect(
+      anchor,
+      frame.along,
+      frame.inward,
+      0,
+      robeWidth,
+      0,
+      Math.max(0.08, front - t * 2 - 0.008)
+    ),
     nibs,
     doors: [
       wallBoxRect(anchor, frame.along, frame.inward, 0, leaf, front - t * 2, front - t),
@@ -1170,6 +1337,31 @@ function addWorldRect(parent, rect, height, yCenter, fill, lineMat, cx, cz) {
     fill,
     lineMat
   );
+}
+
+function addRoundedWorldRect(parent, rect, height, yCenter, radius, fill, lineMat, cx, cz) {
+  if (!rect || !(rect.w > 0.04) || !(rect.h > 0.04) || !(height > 0.02)) return;
+  const bw = Math.max(0.04, rect.w);
+  const bh = Math.max(0.04, height);
+  const bd = Math.max(0.04, rect.h);
+  const r = Math.max(0.01, Math.min(radius, bw / 2 - 0.001, bh / 2 - 0.001, bd / 2 - 0.001));
+  const geo = new RoundedBoxGeometry(bw, bh, bd, 4, r);
+  const mesh = addOutlined(
+    parent,
+    geo,
+    fill,
+    lineMat,
+    rect.x - cx + rect.w / 2,
+    yCenter,
+    rect.y - cz + rect.h / 2
+  );
+  if (!mesh) return;
+  for (const child of [...mesh.children]) {
+    if (!child.isLineSegments) continue;
+    mesh.remove(child);
+    child.geometry?.dispose?.();
+  }
+  mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 40), lineMat));
 }
 
 function roomWallFrame(room, side) {
@@ -1237,15 +1429,6 @@ function bedroomBedGroup(room) {
   );
   const { origin, along, inward } = frame;
   const bed = wallBoxRect(origin, along, inward, alongM, alongM + alongLen, 0, depth);
-  const rug = wallBoxRect(
-    origin,
-    along,
-    inward,
-    alongM - 0.24,
-    alongM + alongLen + 0.24,
-    0,
-    depth + 0.28
-  );
   const nsSize = NIGHTSTAND_M;
   const nsGap = NIGHTSTAND_GAP_M;
   const nightstands = [
@@ -1260,7 +1443,33 @@ function bedroomBedGroup(room) {
       0.02 + nsSize
     ),
   ];
-  return { bed, rug, nightstands };
+  const pillowGap = Math.min(0.08, alongLen * 0.12);
+  const pillowAlong = Math.min(0.58, Math.max(0.18, (alongLen - pillowGap) * 0.42));
+  const pillowUsed = pillowAlong * 2 + pillowGap;
+  const pillowStart = alongM + Math.max(0, (alongLen - pillowUsed) / 2);
+  const pillowDepth = Math.min(0.36, Math.max(0.22, depth * 0.18));
+  const pillowInset = 0.05;
+  const pillows = [
+    wallBoxRect(
+      origin,
+      along,
+      inward,
+      pillowStart,
+      pillowStart + pillowAlong,
+      pillowInset,
+      pillowInset + pillowDepth
+    ),
+    wallBoxRect(
+      origin,
+      along,
+      inward,
+      pillowStart + pillowAlong + pillowGap,
+      pillowStart + pillowAlong + pillowGap + pillowAlong,
+      pillowInset,
+      pillowInset + pillowDepth
+    ),
+  ];
+  return { bed, nightstands, pillows, inward };
 }
 
 function bathroomTileRects(room) {
@@ -1289,13 +1498,289 @@ function bathroomTileRects(room) {
   return rects;
 }
 
+function showerRect3D(room) {
+  const rotN = Number(room?.showerRot);
+  const rot =
+    rotN === 0 || rotN === 1 || rotN === 2 || rotN === 3
+      ? rotN
+      : room?.showerLongIsX === false
+        ? 1
+        : room?.showerLongIsX === true
+          ? 0
+          : room.h >= room.w
+            ? 1
+            : 0;
+  const longIsX = rot % 2 === 0;
+  const w = Math.min(longIsX ? SHOWER_LONG_M : SHOWER_SHORT_M, room.w);
+  const h = Math.min(longIsX ? SHOWER_SHORT_M : SHOWER_LONG_M, room.h);
+  const lx = Number(room?.showerX);
+  const ly = Number(room?.showerY);
+  const x = room.x + (Number.isFinite(lx) ? lx : 0);
+  const y = room.y + (Number.isFinite(ly) ? ly : longIsX ? 0 : Math.max(0, room.h - h));
+  return {
+    x: Math.min(Math.max(room.x, x), room.x + Math.max(0, room.w - w)),
+    y: Math.min(Math.max(room.y, y), room.y + Math.max(0, room.h - h)),
+    w,
+    h,
+    rot,
+  };
+}
+
+function showerSideAgainstInternal(shower, side, walls) {
+  const spans = [];
+  const horizontal = side === "top" || side === "bottom";
+  const edge = horizontal
+    ? side === "top"
+      ? shower.y
+      : shower.y + shower.h
+    : side === "left"
+      ? shower.x
+      : shower.x + shower.w;
+  const a0 = horizontal ? shower.x : shower.y;
+  const a1 = horizontal ? shower.x + shower.w : shower.y + shower.h;
+  for (const wall of walls || []) {
+    if (horizontal) {
+      if (wall.axis !== "h" || Math.abs(wall.y - edge) > 0.22) continue;
+    } else if (wall.axis !== "v" || Math.abs(wall.x - edge) > 0.22) continue;
+    const lo = Math.max(a0, Math.min(wall.t0, wall.t1));
+    const hi = Math.min(a1, Math.max(wall.t0, wall.t1));
+    if (hi - lo > 0.15) spans.push([lo, hi]);
+  }
+  spans.sort((p, q) => p[0] - q[0]);
+  const merged = [];
+  for (const [a, b] of spans) {
+    const last = merged[merged.length - 1];
+    if (last && a <= last[1] + 0.12) last[1] = Math.max(last[1], b);
+    else merged.push([a, b]);
+  }
+  if (!merged.length) return [];
+  const sideLen = a1 - a0;
+  const covered = merged.reduce((sum, [a, b]) => sum + (b - a), 0);
+  const gapStart = merged[0][0] - a0;
+  const gapEnd = a1 - merged[merged.length - 1][1];
+  if (covered >= sideLen * 0.5 || (covered > 0.3 && gapStart < 0.3 && gapEnd < 0.3)) {
+    return [[a0, a1]];
+  }
+  return merged;
+}
+
+function addShowerTiles(parent, side, shower, t0, t1, cx, cz, mats) {
+  const length = t1 - t0;
+  if (length < 0.12) return;
+  const proud = 0.004;
+  const thick = 0.012;
+  const along = 0.6;
+  const up = 0.3;
+  const g = 0.004;
+  for (let y0 = g / 2; y0 < SHOWER_TILE_H - 0.02; y0 += up) {
+    const th = Math.min(up - g, SHOWER_TILE_H - y0 - g / 2);
+    if (th < 0.05) continue;
+    for (let t = t0 + g / 2; t < t1 - 0.02; t += along) {
+      const tl = Math.min(along - g, t1 - t - g / 2);
+      if (tl < 0.05) continue;
+      let rect;
+      if (side === "left") rect = { x: shower.x + proud, y: t, w: thick, h: tl };
+      else if (side === "right") rect = { x: shower.x + shower.w - proud - thick, y: t, w: thick, h: tl };
+      else if (side === "top") rect = { x: t, y: shower.y + proud, w: tl, h: thick };
+      else rect = { x: t, y: shower.y + shower.h - proud - thick, w: tl, h: thick };
+      addWorldRectThin(parent, rect, th, y0 + th / 2, mats.wallTile, mats.groutLine, cx, cz);
+    }
+  }
+}
+
+function addShowerGlass(parent, side, shower, t0, t1, cx, cz, mats) {
+  const len = t1 - t0;
+  if (len < 0.2) return;
+  const gt = 0.01;
+  const inset = 0.012;
+  if (side === "left" || side === "right") {
+    const x = side === "left" ? shower.x + inset : shower.x + shower.w - inset - gt;
+    addThinBox(
+      parent,
+      gt,
+      SHOWER_GLASS_H,
+      len,
+      x + gt / 2 - cx,
+      SHOWER_GLASS_H / 2,
+      (t0 + t1) / 2 - cz,
+      mats.glass,
+      mats.softLine
+    );
+  } else {
+    const y = side === "top" ? shower.y + inset : shower.y + shower.h - inset - gt;
+    addThinBox(
+      parent,
+      len,
+      SHOWER_GLASS_H,
+      gt,
+      (t0 + t1) / 2 - cx,
+      SHOWER_GLASS_H / 2,
+      y + gt / 2 - cz,
+      mats.glass,
+      mats.softLine
+    );
+  }
+}
+
+function showerGlassChoice(shower, walls) {
+  const len = Math.min(0.9, shower.rot % 2 === 0 ? shower.w : shower.h);
+  const headAtMax = shower.rot === 2 || shower.rot === 3;
+  const t0 = headAtMax
+    ? (shower.rot % 2 === 0 ? shower.x + shower.w : shower.y + shower.h) - len
+    : shower.rot % 2 === 0
+      ? shower.x
+      : shower.y;
+  const place = (flip) => {
+    const useMin = shower.rot === 0 || shower.rot === 3 ? !flip : flip;
+    if (shower.rot % 2 === 0) {
+      return {
+        side: useMin ? "top" : "bottom",
+        axis: "h",
+        edge: useMin ? shower.y : shower.y + shower.h,
+        t0,
+        t1: t0 + len,
+      };
+    }
+    return {
+      side: useMin ? "left" : "right",
+      axis: "v",
+      edge: useMin ? shower.x : shower.x + shower.w,
+      t0,
+      t1: t0 + len,
+    };
+  };
+  const full0 = shower.rot % 2 === 0 ? shower.x : shower.y;
+  const full1 = shower.rot % 2 === 0 ? shower.x + shower.w : shower.y + shower.h;
+  const overlap = (panel) => {
+    let total = 0;
+    for (const wall of walls || []) {
+      if (panel.axis === "h") {
+        if (wall.axis !== "h" || Math.abs(wall.y - panel.edge) > 0.62) continue;
+      } else if (wall.axis !== "v" || Math.abs(wall.x - panel.edge) > 0.62) continue;
+      const lo = Math.max(full0, Math.min(wall.t0, wall.t1));
+      const hi = Math.min(full1, Math.max(wall.t0, wall.t1));
+      if (hi > lo) total += hi - lo;
+    }
+    return total;
+  };
+  const primary = place(false);
+  const onWall = overlap(primary);
+  if (onWall < 0.2) return primary;
+  const alt = place(true);
+  return overlap(alt) < onWall ? alt : primary;
+}
+
+function addShowerRail(parent, shower, cx, cz, mats) {
+  const into =
+    shower.rot === 0
+      ? { x: 1, z: 0 }
+      : shower.rot === 2
+        ? { x: -1, z: 0 }
+        : shower.rot === 1
+          ? { x: 0, z: 1 }
+          : { x: 0, z: -1 };
+  const wallX = shower.rot === 0 ? shower.x : shower.rot === 2 ? shower.x + shower.w : shower.x + shower.w / 2;
+  const wallZ = shower.rot === 1 ? shower.y : shower.rot === 3 ? shower.y + shower.h : shower.y + shower.h / 2;
+  const stand = 0.055;
+  const group = new THREE.Group();
+  group.position.set(wallX - cx + into.x * (0.014 + stand), 0, wallZ - cz + into.z * (0.014 + stand));
+  group.rotation.y = into.x === 1 ? Math.PI / 2 : into.x === -1 ? -Math.PI / 2 : into.z === -1 ? Math.PI : 0;
+  parent.add(group);
+
+  const chrome = mats.chrome;
+  const railBottom = 1.02;
+  const railTop = 1.86;
+  const railH = railTop - railBottom;
+  const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, railH, 16), chrome);
+  rail.position.y = (railBottom + railTop) / 2;
+  group.add(rail);
+
+  for (const y of [railBottom + 0.06, railTop - 0.06]) {
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.007, 18), chrome);
+    disc.rotation.x = Math.PI / 2;
+    disc.position.set(0, y, -stand + 0.004);
+    group.add(disc);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, stand - 0.012, 8), chrome);
+    arm.rotation.x = Math.PI / 2;
+    arm.position.set(0, y, -stand / 2);
+    group.add(arm);
+  }
+
+  const headY = railTop - 0.2;
+  const slider = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.028, 14), chrome);
+  slider.position.y = headY;
+  group.add(slider);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.05, 10), chrome);
+  neck.rotation.x = Math.PI / 2;
+  neck.position.set(0, headY, 0.038);
+  group.add(neck);
+
+  const faceDir = new THREE.Vector3(0, -0.32, 1).normalize();
+  const rose = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.028, 0.016, 24), chrome);
+  rose.position.set(0, headY - 0.015, 0.082);
+  rose.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), faceDir);
+  group.add(rose);
+  const face = new THREE.Mesh(new THREE.CircleGeometry(0.038, 24), mats.showerFace);
+  face.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), faceDir);
+  face.position.copy(rose.position).add(faceDir.clone().multiplyScalar(0.009));
+  group.add(face);
+
+  const hose = new THREE.Mesh(
+    new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0.01, headY - 0.03, 0.055),
+        new THREE.Vector3(0.055, headY - 0.28, 0.04),
+        new THREE.Vector3(0.08, 0.82, 0.02),
+        new THREE.Vector3(0.045, 1.02, -0.01),
+        new THREE.Vector3(0.028, 1.16, -stand + 0.012),
+      ]),
+      36,
+      0.0055,
+      7,
+      false
+    ),
+    chrome
+  );
+  group.add(hose);
+  const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.012, 14, 12), chrome);
+  elbow.position.set(0.028, 1.16, -stand + 0.012);
+  group.add(elbow);
+}
+
+function showerHeadSide(shower) {
+  if (shower.rot === 0) return "left";
+  if (shower.rot === 2) return "right";
+  if (shower.rot === 1) return "top";
+  return "bottom";
+}
+
+function addBathroomShower(parent, room, walls, cx, cz, mats) {
+  const shower = showerRect3D(room);
+  if (!(shower.w > 0.3) || !(shower.h > 0.3)) return;
+  const panel = showerGlassChoice(shower, walls);
+  addShowerGlass(parent, panel.side, shower, panel.t0, panel.t1, cx, cz, mats);
+  addShowerRail(parent, shower, cx, cz, mats);
+  const headSide = showerHeadSide(shower);
+  const headSpan =
+    headSide === "left" || headSide === "right"
+      ? [shower.y, shower.y + shower.h]
+      : [shower.x, shower.x + shower.w];
+  addShowerTiles(parent, headSide, shower, headSpan[0], headSpan[1], cx, cz, mats);
+  for (const side of ["top", "bottom", "left", "right"]) {
+    if (side === headSide) continue;
+    for (const [t0, t1] of showerSideAgainstInternal(shower, side, walls)) {
+      addShowerTiles(parent, side, shower, t0, t1, cx, cz, mats);
+    }
+  }
+}
+
 function addBathroomFloor(parent, room, cx, cz, mats) {
-  const { tile, grout, groutLine } = mats;
+  const { floorTile, grout, groutLine } = mats;
   const rx = room.x - cx + room.w / 2;
   const rz = room.y - cz + room.h / 2;
   addBox(parent, room.w, 0.04, room.h, rx, 0.02, rz, grout, groutLine);
   for (const rect of bathroomTileRects(room)) {
-    addWorldRect(parent, rect, 0.05, 0.035, tile, groutLine, cx, cz);
+    addWorldRect(parent, rect, 0.05, 0.035, floorTile, groutLine, cx, cz);
   }
 }
 
@@ -1312,10 +1797,10 @@ function makeCarpetTexture() {
   const ctx = canvas.getContext("2d");
   const img = ctx.createImageData(size, size);
   for (let i = 0; i < img.data.length; i += 4) {
-    const n = Math.random();
-    img.data[i] = 186 + n * 28;
-    img.data[i + 1] = 172 + n * 24;
-    img.data[i + 2] = 154 + n * 20;
+    const v = 188 + Math.random() * 22;
+    img.data[i] = v;
+    img.data[i + 1] = v;
+    img.data[i + 2] = v;
     img.data[i + 3] = 255;
   }
   ctx.putImageData(img, 0, 0);
@@ -1346,6 +1831,69 @@ function addCarpetFloor(parent, room, cx, cz, mats) {
 function addHybridPlankStrip(parent, rect, alongX, index, cx, cz, mats) {
   const fill = mats.hybridTones[((index % mats.hybridTones.length) + mats.hybridTones.length) % mats.hybridTones.length];
   addWorldRect(parent, rect, 0.03, 0.015, fill, mats.hybridLine, cx, cz);
+}
+
+function addPorchSteps(parent, rects, cx, cz, mats) {
+  const deckTop = 0.048;
+  const ground = -0.02;
+  const n = rects.length || 1;
+  const rise = (deckTop - ground) / n;
+  const thick = 0.04;
+  rects.forEach((rect, i) => {
+    if (!(rect.w > 0.05) || !(rect.h > 0.05)) return;
+    const top = deckTop - i * rise;
+    addLooseBox(
+      parent,
+      rect.w,
+      thick,
+      rect.h,
+      rect.x - cx + rect.w / 2,
+      top - thick / 2,
+      rect.y - cz + rect.h / 2,
+      mats.deckTones[(i + 1) % mats.deckTones.length],
+      mats.deckLine
+    );
+  });
+}
+
+function addPorchDeck(parent, room, cx, cz, mats) {
+  if (!room || !(room.w > 0.05) || !(room.h > 0.05)) return;
+  addLooseBox(
+    parent,
+    room.w,
+    0.02,
+    room.h,
+    room.x - cx + room.w / 2,
+    0.01,
+    room.y - cz + room.h / 2,
+    mats.deckGap,
+    mats.deckLine
+  );
+  const longIsX = roomLayoutLongIsX(room);
+  const reverse = roomRotation(room) === 180 || roomRotation(room) === 270;
+  const span = longIsX ? room.h : room.w;
+  const n = Math.max(2, Math.round((span + DECK_GAP_M) / (DECK_BOARD_M + DECK_GAP_M)));
+  const board = (span - (n - 1) * DECK_GAP_M) / n;
+  const plankH = 0.028;
+  for (let i = 0; i < n; i += 1) {
+    const slot = reverse ? n - 1 - i : i;
+    const off = slot * (board + DECK_GAP_M);
+    const rect = longIsX
+      ? { x: room.x, y: room.y + off, w: room.w, h: board }
+      : { x: room.x + off, y: room.y, w: board, h: room.h };
+    if (rect.w < 0.012 || rect.h < 0.012) continue;
+    addLooseBox(
+      parent,
+      rect.w,
+      plankH,
+      rect.h,
+      rect.x - cx + rect.w / 2,
+      0.02 + plankH / 2,
+      rect.y - cz + rect.h / 2,
+      mats.deckTones[i % mats.deckTones.length],
+      mats.deckLine
+    );
+  }
 }
 
 function addHybridFloorRect(parent, rect, alongX, cx, cz, mats) {
@@ -1433,7 +1981,920 @@ function addLivingHybridFloor(parent, inner, rooms, alongX, cx, cz, mats) {
   }
 }
 
-function buildFurniture(parent, rooms, cx, cz, mats, alongX) {
+const TABLE_H = 0.52;
+
+function bedLinen(bed, inward) {
+  const fromHead = 0.5;
+  const foldAlong = 0.18;
+  const alongX = Math.abs(inward?.x || 0) >= Math.abs(inward?.y || 0);
+  const sign = alongX ? Math.sign(inward?.x || 1) || 1 : Math.sign(inward?.y || 1) || 1;
+  if (alongX) {
+    return {
+      alongX: true,
+      sheet: {
+        x: sign > 0 ? bed.x : bed.x + bed.w - fromHead,
+        y: bed.y,
+        w: fromHead,
+        h: bed.h,
+      },
+      fold: {
+        x: sign > 0 ? bed.x + fromHead : bed.x + bed.w - fromHead - foldAlong,
+        y: bed.y,
+        w: foldAlong,
+        h: bed.h,
+      },
+    };
+  }
+  return {
+    alongX: false,
+    sheet: {
+      x: bed.x,
+      y: sign > 0 ? bed.y : bed.y + bed.h - fromHead,
+      w: bed.w,
+      h: fromHead,
+    },
+    fold: {
+      x: bed.x,
+      y: sign > 0 ? bed.y + fromHead : bed.y + bed.h - fromHead - foldAlong,
+      w: bed.w,
+      h: foldAlong,
+    },
+  };
+}
+
+function roundedDrapeGeometry(length, topY, thickness, radius, floorY) {
+  const R = radius;
+  const t = Math.min(thickness, R * 0.55);
+  const shape = new THREE.Shape();
+  const cy = topY - R;
+  shape.moveTo(0, floorY);
+  shape.lineTo(0, cy);
+  shape.absarc(R, cy, R, Math.PI, Math.PI / 2, true);
+  shape.lineTo(R, topY - t);
+  shape.absarc(R, cy, Math.max(0.004, R - t), Math.PI / 2, Math.PI, false);
+  shape.lineTo(t, floorY);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: Math.max(0.04, length),
+    bevelEnabled: false,
+    curveSegments: 14,
+  });
+  geo.translate(0, 0, -Math.max(0.04, length) / 2);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function addDrapedLinen(parent, rect, alongX, topH, topY, cx, cz, mats) {
+  if (!rect) return;
+  const overhang = 0.012;
+  const radius = 0.036;
+  const floorY = 0.012;
+  const t = Math.max(0.006, topH);
+  const inset = radius - overhang;
+  const cap = alongX
+    ? { x: rect.x, y: rect.y + inset, w: rect.w, h: Math.max(0.05, rect.h - inset * 2) }
+    : { x: rect.x + inset, y: rect.y, w: Math.max(0.05, rect.w - inset * 2), h: rect.h };
+  addWorldRectThin(parent, cap, t, topY - t / 2, mats.sheet, mats.softLine, cx, cz);
+
+  const length = alongX ? rect.w : rect.h;
+  const place = (geo, x, z, rotY) => {
+    const mesh = new THREE.Mesh(geo, mats.sheet);
+    mesh.position.set(x, 0, z);
+    mesh.rotation.y = rotY;
+    parent.add(mesh);
+  };
+  if (alongX) {
+    const x = rect.x - cx + rect.w / 2;
+    place(roundedDrapeGeometry(length, topY, t, radius, floorY), x, rect.y - overhang - cz, -Math.PI / 2);
+    place(
+      roundedDrapeGeometry(length, topY, t, radius, floorY),
+      x,
+      rect.y + rect.h + overhang - cz,
+      Math.PI / 2
+    );
+  } else {
+    const z = rect.y - cz + rect.h / 2;
+    place(roundedDrapeGeometry(length, topY, t, radius, floorY), rect.x - overhang - cx, z, 0);
+    place(
+      roundedDrapeGeometry(length, topY, t, radius, floorY),
+      rect.x + rect.w + overhang - cx,
+      z,
+      Math.PI
+    );
+  }
+}
+
+function addBedsideTable(parent, ns, inward, cx, cz, mats) {
+  if (!ns || !(ns.w > 0.04) || !(ns.h > 0.04)) return;
+  addWorldRect(parent, ns, TABLE_H, TABLE_H / 2, mats.timber, mats.timberLine, cx, cz);
+  const faceX = Math.abs(inward?.x || 0) >= Math.abs(inward?.y || 0);
+  const sign = faceX ? Math.sign(inward?.x || 1) || 1 : Math.sign(inward?.y || 1) || 1;
+  const nx = ns.x - cx + ns.w / 2;
+  const nz = ns.y - cz + ns.h / 2;
+  const half = faceX ? ns.w / 2 : ns.h / 2;
+  const across = Math.max(0.12, faceX ? ns.h : ns.w);
+  const drawerW = across * 0.78;
+  const faceT = 0.016;
+  const gap = 0.01;
+  const marginY = 0.02;
+  const drawerH = (TABLE_H - marginY * 2 - gap * 2) / 3;
+  const front = half + faceT / 2 + 0.002;
+  for (let i = 0; i < 3; i += 1) {
+    const y = marginY + drawerH / 2 + i * (drawerH + gap);
+    const px = faceX ? nx + sign * front : nx;
+    const pz = faceX ? nz : nz + sign * front;
+    addThinBox(
+      parent,
+      faceX ? faceT : drawerW,
+      drawerH,
+      faceX ? drawerW : faceT,
+      px,
+      y,
+      pz,
+      mats.timber,
+      mats.timberLine
+    );
+    const handleOut = front + faceT / 2 + 0.006;
+    const handleW = Math.min(0.11, drawerW * 0.42);
+    addThinBox(
+      parent,
+      faceX ? 0.01 : handleW,
+      0.012,
+      faceX ? handleW : 0.01,
+      faceX ? nx + sign * handleOut : nx,
+      y,
+      faceX ? nz : nz + sign * handleOut,
+      mats.dark,
+      mats.darkLine
+    );
+  }
+
+  const baseR = 0.05;
+  const base = new THREE.Mesh(new THREE.SphereGeometry(baseR, 22, 16), mats.lampBase);
+  base.position.set(nx, TABLE_H + baseR * 0.96, nz);
+  base.userData.noShadow = true;
+  parent.add(base);
+
+  const shadeH = 0.13;
+  const shade = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.09, shadeH, 24, 1, true),
+    mats.lampShade
+  );
+  const shadeY = TABLE_H + baseR * 1.85 + shadeH / 2;
+  shade.position.set(nx, shadeY, nz);
+  shade.userData.noShadow = true;
+  parent.add(shade);
+
+  const glow = new THREE.PointLight(0xffb45a, 0.85, 2.2, 2);
+  glow.position.set(nx, shadeY - shadeH * 0.15, nz);
+  glow.castShadow = true;
+  glow.shadow.mapSize.set(256, 256);
+  glow.shadow.camera.near = 0.05;
+  glow.shadow.camera.far = 2.2;
+  glow.shadow.bias = -0.005;
+  glow.shadow.normalBias = 0.04;
+  parent.add(glow);
+}
+
+function bathroomVanity3D(room) {
+  const side =
+    room?.vanitySide === "top" ||
+    room?.vanitySide === "right" ||
+    room?.vanitySide === "bottom" ||
+    room?.vanitySide === "left"
+      ? room.vanitySide
+      : room.h >= room.w
+        ? "top"
+        : "right";
+  const frame = roomWallFrame(room, side);
+  const length = Math.min(VANITY_WIDTH_M, Math.max(0.4, frame.wallLen - 0.05));
+  const roomDepth = side === "left" || side === "right" ? room.w : room.h;
+  const depth = Math.min(VANITY_DEPTH_M, Math.max(0.15, roomDepth - 0.05));
+  const maxAlong = Math.max(0, frame.wallLen - length);
+  const storedAlong = Number(room?.vanityAlong);
+  const alongM = Math.max(0, Math.min(maxAlong, Number.isFinite(storedAlong) ? storedAlong : 0));
+  return {
+    rect: wallBoxRect(frame.origin, frame.along, frame.inward, alongM, alongM + length, 0, depth),
+    inward: frame.inward,
+    along: frame.along,
+    origin: frame.origin,
+    alongM,
+    length,
+    depth,
+  };
+}
+
+function addVanityTap(parent, x, z, inward, yTop, cx, cz, chrome) {
+  const group = new THREE.Group();
+  group.position.set(x - cx, yTop, z - cz);
+  const ix = inward?.x || 0;
+  const iz = inward?.y || 0;
+  group.rotation.y = ix > 0.5 ? Math.PI / 2 : ix < -0.5 ? -Math.PI / 2 : iz < -0.5 ? Math.PI : 0;
+  parent.add(group);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.022, 0.012, 18), chrome);
+  base.position.set(0, 0.006, 0);
+  group.add(base);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.055, 14), chrome);
+  stem.position.set(0, 0.038, 0);
+  group.add(stem);
+  const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.11, 12), chrome);
+  spout.rotation.x = Math.PI / 2;
+  spout.position.set(0, 0.062, 0.04);
+  group.add(spout);
+  const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.018, 10), chrome);
+  tip.position.set(0, 0.052, 0.092);
+  group.add(tip);
+  const lever = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.04, 0.008), chrome);
+  lever.position.set(0, 0.086, -0.012);
+  lever.rotation.x = -0.45;
+  group.add(lever);
+}
+
+function addBathroomVanity(parent, room, cx, cz, mats) {
+  const { rect, inward, along, origin, alongM, length, depth } = bathroomVanity3D(room);
+  if (!rect || !(rect.w > 0.08) || !(rect.h > 0.08)) return;
+  const faceX = Math.abs(inward?.x || 0) >= Math.abs(inward?.y || 0);
+  const sign = faceX ? Math.sign(inward?.x || 1) || 1 : Math.sign(inward?.y || 1) || 1;
+  const faceInset = 0.018;
+  const carcass = faceX
+    ? sign > 0
+      ? { x: rect.x, y: rect.y, w: Math.max(0.08, rect.w - faceInset), h: rect.h }
+      : { x: rect.x + faceInset, y: rect.y, w: Math.max(0.08, rect.w - faceInset), h: rect.h }
+    : sign > 0
+      ? { x: rect.x, y: rect.y, w: rect.w, h: Math.max(0.08, rect.h - faceInset) }
+      : { x: rect.x, y: rect.y + faceInset, w: rect.w, h: Math.max(0.08, rect.h - faceInset) };
+  const kick = faceX
+    ? {
+        x: sign > 0 ? rect.x : rect.x + VANITY_KICK_INSET,
+        y: rect.y,
+        w: Math.max(0.08, rect.w - VANITY_KICK_INSET),
+        h: rect.h,
+      }
+    : {
+        x: rect.x,
+        y: sign > 0 ? rect.y : rect.y + VANITY_KICK_INSET,
+        w: rect.w,
+        h: Math.max(0.08, rect.h - VANITY_KICK_INSET),
+      };
+  const bodyH = VANITY_H - VANITY_KICK_H;
+  addWorldRect(parent, kick, VANITY_KICK_H, VANITY_KICK_H / 2, mats.fill, mats.softLine, cx, cz);
+  addWorldRect(parent, carcass, bodyH, VANITY_KICK_H + bodyH / 2, mats.fill, mats.softLine, cx, cz);
+
+  const alongS = faceX ? Math.sign(along?.y || 1) || 1 : Math.sign(along?.x || 1) || 1;
+  const nx = rect.x - cx + rect.w / 2;
+  const nz = rect.y - cz + rect.h / 2;
+  const half = faceX ? rect.w / 2 : rect.h / 2;
+  const across = Math.max(0.28, faceX ? rect.h : rect.w);
+  const faceT = 0.016;
+  const front = half + faceT / 2 + 0.002;
+  const sideM = 0.008;
+  const midGap = 0.008;
+  const colW = (across - sideM * 2 - midGap) / 2;
+  const alongIsRight = (along?.x || 0) * (inward?.y || 0) - (along?.y || 0) * (inward?.x || 0) > 0;
+  const fromStart = (t0) => (t0 === 0 ? sideM + colW / 2 : sideM + colW + midGap + colW / 2);
+  const doorT0 = alongIsRight ? 0 : 0.5;
+  const drawerT0 = alongIsRight ? 0.5 : 0;
+  const drawerOff = (fromStart(drawerT0) - across / 2) * alongS;
+  const doorOff = (fromStart(doorT0) - across / 2) * alongS;
+  const marginY = 0.008;
+  const gapY = 0.008;
+  const drawerH = (bodyH - marginY * 2 - gapY * 2) / 3;
+  const placeFront = (sizeW, sizeH, y, offset) => {
+    addThinBox(
+      parent,
+      faceX ? faceT : sizeW,
+      sizeH,
+      faceX ? sizeW : faceT,
+      faceX ? nx + sign * front : nx + offset,
+      y,
+      faceX ? nz + offset : nz + sign * front,
+      mats.fill,
+      mats.softLine
+    );
+  };
+  for (let i = 0; i < 3; i += 1) {
+    const y = VANITY_KICK_H + marginY + drawerH / 2 + i * (drawerH + gapY);
+    placeFront(colW, drawerH, y, drawerOff);
+  }
+  const doorH = bodyH - marginY * 2;
+  const doorY = VANITY_KICK_H + bodyH / 2;
+  placeFront(colW, doorH, doorY, doorOff);
+
+  const width = length;
+  const back = {
+    x: origin.x + along.x * alongM,
+    y: origin.y + along.y * alongM,
+  };
+  const topT = 0.02;
+  const topY = VANITY_H + topT / 2;
+  const frontDeck = Math.min(0.06, depth * 0.16);
+  const backDeck = Math.min(0.11, depth * 0.3);
+  const basinD = Math.max(0.08, depth - frontDeck - backDeck);
+  const basinW = Math.min(0.5, Math.max(0.2, width * 0.56));
+  const basinAlong0 = (width - basinW) / 2;
+  const basinIn0 = backDeck;
+  const slab = (t0, t1, d0, d1) => {
+    if (t1 - t0 < 0.04 || d1 - d0 < 0.04) return;
+    addWorldRect(
+      parent,
+      wallBoxRect(back, along, inward, t0, t1, d0, d1),
+      topT,
+      topY,
+      mats.fill,
+      mats.softLine,
+      cx,
+      cz
+    );
+  };
+  slab(0, width, 0, basinIn0);
+  slab(0, width, basinIn0 + basinD, depth);
+  slab(0, basinAlong0, basinIn0, basinIn0 + basinD);
+  slab(basinAlong0 + basinW, width, basinIn0, basinIn0 + basinD);
+
+  const lip = 0.01;
+  const bowlH = 0.08;
+  const bowlFloor = wallBoxRect(
+    back,
+    along,
+    inward,
+    basinAlong0 + lip,
+    basinAlong0 + basinW - lip,
+    basinIn0 + lip,
+    basinIn0 + basinD - lip
+  );
+  addWorldRect(parent, bowlFloor, 0.012, VANITY_H - bowlH + 0.006, mats.fill, mats.softLine, cx, cz);
+  const bowlWall = (t0, t1, d0, d1) => {
+    if (t1 - t0 < 0.008 || d1 - d0 < 0.008) return;
+    addWorldRectThin(
+      parent,
+      wallBoxRect(back, along, inward, t0, t1, d0, d1),
+      bowlH,
+      VANITY_H - bowlH / 2,
+      mats.fill,
+      mats.softLine,
+      cx,
+      cz
+    );
+  };
+  bowlWall(basinAlong0, basinAlong0 + lip, basinIn0, basinIn0 + basinD);
+  bowlWall(basinAlong0 + basinW - lip, basinAlong0 + basinW, basinIn0, basinIn0 + basinD);
+  bowlWall(basinAlong0, basinAlong0 + basinW, basinIn0, basinIn0 + lip);
+  bowlWall(basinAlong0, basinAlong0 + basinW, basinIn0 + basinD - lip, basinIn0 + basinD);
+
+  const tap = {
+    x: back.x + along.x * (width / 2) + inward.x * (backDeck * 0.42),
+    y: back.y + along.y * (width / 2) + inward.y * (backDeck * 0.42),
+  };
+  addVanityTap(parent, tap.x, tap.y, inward, VANITY_H + topT, cx, cz, mats.chrome);
+
+  const splashH = 0.2;
+  const splashY = VANITY_H + topT;
+  const tileAlong = 0.3;
+  const g = 0.003;
+  const tileT = 0.01;
+  const proud = 0.008;
+  for (let t = 0; t < width - 0.001; t += tileAlong) {
+    const module = Math.min(tileAlong, width - t);
+    const inset = Math.min(g / 2, module * 0.08);
+    const tl = module - inset * 2;
+    if (tl < 0.04) continue;
+    addWorldRectThin(
+      parent,
+      wallBoxRect(back, along, inward, t + inset, t + inset + tl, proud, proud + tileT),
+      splashH - g,
+      splashY + (splashH - g) / 2 + g / 2,
+      mats.wallTile,
+      mats.groutLine,
+      cx,
+      cz
+    );
+  }
+
+  const mirrorW = width;
+  const mirrorAlong0 = 0;
+  const mirrorH = 1.0;
+  const mirrorY = splashY + splashH;
+  addWorldRectThin(
+    parent,
+    wallBoxRect(
+      back,
+      along,
+      inward,
+      mirrorAlong0,
+      mirrorAlong0 + mirrorW,
+      proud + 0.004,
+      proud + 0.016
+    ),
+    mirrorH,
+    mirrorY + mirrorH / 2,
+    mats.mirror,
+    mats.softLine,
+    cx,
+    cz
+  );
+}
+
+function toiletAlongRange(wallLen, tankAlong) {
+  const extra = Math.max(0, (TOILET_CLEAR_ALONG_M - tankAlong) / 2);
+  const minAlong = extra;
+  const maxAlong = Math.max(minAlong, wallLen - tankAlong - extra);
+  return { minAlong, maxAlong };
+}
+
+function defaultToiletPlacement(room) {
+  const side = room.h >= room.w ? "bottom" : "right";
+  const wallLen = side === "left" || side === "right" ? room.h : room.w;
+  const tankAlong = Math.min(TOILET_TANK_ALONG_M, Math.max(0.2, wallLen - 0.05));
+  const { minAlong, maxAlong } = toiletAlongRange(wallLen, tankAlong);
+  return {
+    side,
+    along: Math.max(minAlong, Math.min(maxAlong, wallLen - tankAlong - 0.04)),
+  };
+}
+
+function bathroomToilet3D(room) {
+  const kind = roomKind(room);
+  if (kind !== "bathroom" && kind !== "powder") return null;
+  const def = defaultToiletPlacement(room);
+  const stored = room?.toiletSide;
+  const toiletSide =
+    stored === "top" || stored === "right" || stored === "bottom" || stored === "left"
+      ? stored
+      : def.side;
+  const frame = roomWallFrame(room, toiletSide);
+  const tankAlong = Math.min(TOILET_TANK_ALONG_M, Math.max(0.2, frame.wallLen - 0.05));
+  const roomDepth = toiletSide === "left" || toiletSide === "right" ? room.w : room.h;
+  const tankDepth = Math.min(TOILET_TANK_DEPTH_M, Math.max(0.1, roomDepth * 0.35));
+  const bowlWidth = Math.min(TOILET_BOWL_WIDTH_M, tankAlong);
+  const bowlLength = Math.min(TOILET_BOWL_LENGTH_M, Math.max(0.25, roomDepth - tankDepth - 0.05));
+  const { minAlong, maxAlong } = toiletAlongRange(frame.wallLen, tankAlong);
+  const storedAlong = Number(room?.toiletAlong);
+  const alongM = Number.isFinite(storedAlong)
+    ? Math.max(minAlong, Math.min(maxAlong, storedAlong))
+    : Math.max(minAlong, Math.min(maxAlong, def.along));
+  const { origin, along, inward } = frame;
+  const tank = wallBoxRect(origin, along, inward, alongM, alongM + tankAlong, 0, tankDepth);
+  const mid = alongM + tankAlong / 2;
+  const overlap = Math.min(0.05, tankDepth * 0.3);
+  const bowlFront = tankDepth - overlap + bowlLength;
+  const bowl = wallBoxRect(
+    origin,
+    along,
+    inward,
+    mid - bowlWidth / 2,
+    mid + bowlWidth / 2,
+    tankDepth - overlap,
+    bowlFront
+  );
+  return { tank, bowl, origin, along, inward, alongM, tankAlong, tankDepth, bowlWidth, bowlFront };
+}
+
+function toiletDShape(width, z0, z1) {
+  const hw = width / 2;
+  const yBack = -z0;
+  const yFront = -z1;
+  const radius = Math.min(hw * 0.98, Math.max(0.05, (z1 - z0) * 0.72));
+  const straight = yFront + radius;
+  const shape = new THREE.Shape();
+  shape.moveTo(-hw, yBack);
+  shape.lineTo(hw, yBack);
+  shape.lineTo(hw, straight);
+  shape.absarc(0, straight, radius, 0, Math.PI, true);
+  shape.closePath();
+  return shape;
+}
+
+function addToiletPrism(parent, width, z0, z1, y0, height, bevel, material, taper = 0) {
+  const b = Math.min(bevel, height * 0.35, width * 0.2);
+  const geo = new THREE.ExtrudeGeometry(toiletDShape(width, z0, z1), {
+    depth: Math.max(0.012, height - b * 2),
+    bevelEnabled: b > 0.004,
+    bevelThickness: b,
+    bevelSize: b,
+    bevelSegments: 3,
+    curveSegments: 20,
+  });
+  geo.rotateX(-Math.PI / 2);
+  if (taper > 0) {
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
+    const pos = geo.attributes.position;
+    const ySpan = Math.max(0.001, bb.max.y - bb.min.y);
+    const zSpan = Math.max(0.001, bb.max.z - bb.min.z);
+    for (let i = 0; i < pos.count; i += 1) {
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      const heightT = (y - bb.min.y) / ySpan;
+      const frontT = (z - bb.min.z) / zSpan;
+      pos.setZ(i, z - (1 - heightT) * frontT * taper);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  }
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.position.y = y0;
+  parent.add(mesh);
+  return mesh;
+}
+
+function addBathroomToilet(parent, room, cx, cz, mats) {
+  const t = bathroomToilet3D(room);
+  if (!t) return;
+  const group = new THREE.Group();
+  const hx = t.origin.x + t.along.x * (t.alongM + t.tankAlong / 2);
+  const hz = t.origin.y + t.along.y * (t.alongM + t.tankAlong / 2);
+  group.position.set(hx - cx, 0, hz - cz);
+  const ix = t.inward.x;
+  const iz = t.inward.y;
+  group.rotation.y = ix > 0.5 ? Math.PI / 2 : ix < -0.5 ? -Math.PI / 2 : iz < -0.5 ? Math.PI : 0;
+  parent.add(group);
+
+  const cisternW = Math.min(0.38, t.tankAlong);
+  const radius = Math.min(0.022, t.tankDepth / 2 - 0.008, cisternW / 2 - 0.008);
+  const cisternH = 0.8;
+  const cistern = new THREE.Mesh(
+    new RoundedBoxGeometry(cisternW, cisternH, t.tankDepth, 4, Math.max(0.012, radius)),
+    mats.ceramic
+  );
+  cistern.position.set(0, cisternH / 2, t.tankDepth / 2);
+  group.add(cistern);
+
+  const button = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.008, 20), mats.chrome);
+  button.position.set(0, cisternH + 0.004, t.tankDepth * 0.58);
+  group.add(button);
+
+  const panZ0 = t.tankDepth * 0.42;
+  const panZ1 = Math.max(panZ0 + 0.28, t.bowlFront);
+  const panW = t.bowlWidth;
+  addToiletPrism(group, panW, panZ0, panZ1, 0.015, 0.34, 0.016, mats.ceramic, 0.2);
+  addToiletPrism(group, panW * 0.9, panZ0 + 0.03, panZ1 - 0.02, 0.355, 0.045, 0.014, mats.ceramic);
+}
+
+function addTvLogo(parent, rect, inward, cx, cz, material) {
+  if (!rect || !inward) return;
+  const faceX = Math.abs(inward.x) >= Math.abs(inward.y);
+  const depth = faceX ? rect.w : rect.h;
+  const across = faceX ? rect.h : rect.w;
+  const sign = faceX ? Math.sign(inward.x || 1) || 1 : Math.sign(inward.y || 1) || 1;
+  const aspect = 1467 / 825;
+  const maxW = Math.max(0.4, across - 0.08);
+  const maxH = 0.66;
+  let screenW = maxW;
+  let screenH = screenW / aspect;
+  if (screenH > maxH) {
+    screenH = maxH;
+    screenW = screenH * aspect;
+  }
+  const nx = rect.x - cx + rect.w / 2;
+  const nz = rect.y - cz + rect.h / 2;
+  const proud = depth / 2 + 0.004;
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(screenW, screenH), material);
+  plane.position.set(faceX ? nx + sign * proud : nx, 0.825, faceX ? nz : nz + sign * proud);
+  if (faceX) plane.rotation.y = sign > 0 ? Math.PI / 2 : -Math.PI / 2;
+  else if (sign < 0) plane.rotation.y = Math.PI;
+  parent.add(plane);
+}
+
+function addCoffeeTable(parent, rect, cx, cz, timber, line) {
+  if (!rect || !(rect.w > 0.2) || !(rect.h > 0.2)) return;
+  const tableH = 0.4;
+  const topT = 0.028;
+  addWorldRectThin(parent, rect, topT, tableH - topT / 2, timber, line, cx, cz);
+  const leg = 0.04;
+  const inset = 0.08;
+  const legH = tableH - topT;
+  const xs = [rect.x + inset, rect.x + rect.w - inset];
+  const zs = [rect.y + inset, rect.y + rect.h - inset];
+  for (const x of xs) {
+    for (const z of zs) {
+      addThinBox(parent, leg, legH, leg, x - cx, legH / 2, z - cz, timber, line);
+    }
+  }
+}
+
+function addTvUnit(parent, rect, inward, cx, cz, timber, line) {
+  if (!rect || !inward || !(rect.w > 0.2) || !(rect.h > 0.2)) return;
+  const faceX = Math.abs(inward.x) >= Math.abs(inward.y);
+  const sign = faceX ? Math.sign(inward.x || 1) || 1 : Math.sign(inward.y || 1) || 1;
+  const depth = Math.max(0.2, faceX ? rect.w : rect.h);
+  const across = Math.max(0.6, faceX ? rect.h : rect.w);
+  const nx = rect.x - cx + rect.w / 2;
+  const nz = rect.y - cz + rect.h / 2;
+  const H = 0.45;
+  const panel = 0.018;
+  const topT = 0.02;
+  const botT = 0.018;
+  const backT = 0.012;
+  const put = (su, sv, sh, u, y, v) => {
+    addThinBox(
+      parent,
+      faceX ? sv : su,
+      sh,
+      faceX ? su : sv,
+      nx + (faceX ? sign * v : u),
+      y,
+      nz + (faceX ? u : sign * v),
+      timber,
+      line
+    );
+  };
+
+  const sideU = across / 2 - panel / 2;
+  put(panel, depth, H, -sideU, H / 2, 0);
+  put(panel, depth, H, sideU, H / 2, 0);
+  put(across, depth, topT, 0, H - topT / 2, 0);
+  put(across, depth, botT, 0, botT / 2, 0);
+
+  const innerH = H - topT - botT;
+  const innerY = botT + innerH / 2;
+  const innerAcross = across - panel * 2;
+  put(innerAcross, backT, innerH, 0, innerY, -depth / 2 + backT / 2);
+
+  const bayW = (innerAcross - panel * 2) / 3;
+  const leftInner = -innerAcross / 2;
+  const bayCenter = (i) => leftInner + i * (bayW + panel) + bayW / 2;
+  const divDepth = depth - backT;
+  for (const i of [0, 1]) {
+    put(panel, divDepth, innerH, leftInner + (i + 1) * bayW + panel / 2 + i * panel, innerY, backT / 2);
+  }
+
+  const shelfT = 0.016;
+  const shelfDepth = Math.max(0.08, depth - backT - 0.02);
+  const shelfV = (backT - 0.02) / 2;
+  const shelf = (i, y) => put(Math.max(0.08, bayW - 0.006), shelfDepth, shelfT, bayCenter(i), y, shelfV);
+  shelf(0, botT + innerH * 0.5);
+  shelf(2, botT + innerH * 0.5);
+  shelf(1, botT + innerH * 0.34);
+  shelf(1, botT + innerH * 0.67);
+
+  const doorT = 0.016;
+  const gap = 0.008;
+  const doorW = Math.max(0.12, bayW - gap * 2);
+  const doorH = Math.max(0.12, innerH - gap * 2);
+  const doorV = depth / 2 + doorT / 2 + 0.001;
+  for (const i of [0, 2]) {
+    put(doorW, doorT, doorH, bayCenter(i), innerY, doorV);
+  }
+}
+
+function sinkPartsM(alongLen, acrossLen, mirror) {
+  const sx = alongLen / 1.155;
+  const sy = acrossLen / 0.495;
+  const rimL = 0.02 * sx;
+  const rimR = 0.02 * sx;
+  const rear = 0.058 * sy;
+  const bowlW = 0.34 * sx;
+  const bowl1W = bowlW * 0.75;
+  const bowl2W = bowlW;
+  const bowlH = 0.4 * sy;
+  const bowlY = Math.max(0.02 * sy, acrossLen - bowlH - rear);
+  const divider = 0.035 * sx;
+  const gap = 0.045 * sx;
+  const drainW = Math.max(0.02 * sx, alongLen - rimL - rimR - gap - bowl1W - divider - bowl2W);
+  const bowlShift = -0.03 * sx;
+  let bowl1X = rimL + drainW + gap + bowlShift;
+  let bowl2X = bowl1X + bowl1W + divider;
+  let grooveX0 = rimL + 0.055 * sx;
+  let grooveX1 = rimL + drainW - 0.055 * sx;
+  const grooveY0 = 0.09 * sy;
+  const grooveY1 = acrossLen - 0.09 * sy;
+  if (mirror) {
+    const flip = (x, w) => alongLen - x - w;
+    const g0 = alongLen - grooveX1;
+    grooveX1 = alongLen - grooveX0;
+    grooveX0 = g0;
+    const b1 = flip(bowl1X, bowl1W);
+    const b2 = flip(bowl2X, bowl2W);
+    bowl1X = b1;
+    bowl2X = b2;
+  }
+  const n = Math.max(2, Math.round((grooveY1 - grooveY0) / (0.035 * sy)) + 1);
+  const grooves = [];
+  for (let i = 0; i < n; i += 1) {
+    const t = n === 1 ? 0.5 : i / (n - 1);
+    grooves.push(grooveY0 + (grooveY1 - grooveY0) * t);
+  }
+  return {
+    alongLen,
+    acrossLen,
+    bowl1X,
+    bowl1W,
+    bowl2X,
+    bowl2W,
+    bowlY,
+    bowlH,
+    grooveX0,
+    grooveX1,
+    grooves,
+  };
+}
+
+function addKitchenSink(parent, room, cx, cz, mats) {
+  const placed = resolveKitchenAppliance(room, "sink");
+  if (!placed) return;
+  const rect = sinkRectOnBench(placed.bench, placed.along);
+  let frame;
+  if (placed.bench.alongAxis === "x" && placed.bench.wall === "min") {
+    frame = {
+      origin: { x: rect.x, y: rect.y + rect.h },
+      along: { x: rect.w, y: 0 },
+      across: { x: 0, y: -rect.h },
+    };
+  } else if (placed.bench.alongAxis === "x") {
+    frame = {
+      origin: { x: rect.x, y: rect.y },
+      along: { x: rect.w, y: 0 },
+      across: { x: 0, y: rect.h },
+    };
+  } else if (placed.bench.wall === "min") {
+    frame = {
+      origin: { x: rect.x + rect.w, y: rect.y },
+      along: { x: 0, y: rect.h },
+      across: { x: -rect.w, y: 0 },
+    };
+  } else {
+    frame = {
+      origin: { x: rect.x, y: rect.y },
+      along: { x: 0, y: rect.h },
+      across: { x: rect.w, y: 0 },
+    };
+  }
+  const origin = rotatedLocalPoint(room, frame.origin);
+  const along = rotatedLocalVec(room, frame.along);
+  const across = rotatedLocalVec(room, frame.across);
+  const alongLen = Math.hypot(along.x, along.y) || 1;
+  const acrossLen = Math.hypot(across.x, across.y) || 1;
+  const au = { x: along.x / alongLen, y: along.y / alongLen };
+  const av = { x: across.x / acrossLen, y: across.y / acrossLen };
+  const group = new THREE.Group();
+  group.position.set(origin.x - cx, 0, origin.y - cz);
+  group.rotation.y = Math.atan2(-au.y, au.x);
+  const ccw = -au.y * av.x + au.x * av.y;
+  if (ccw < 0) group.scale.z = -1;
+  parent.add(group);
+
+  const parts = sinkPartsM(alongLen, acrossLen, Boolean(room?.sinkMirror));
+  const deckT = 0.0035;
+  const deckBase = BENCH_HEIGHT_M + 0.001;
+  const deckY = deckBase + deckT / 2;
+  const steel = mats.steel;
+  const lineMat = mats.softLine;
+  const sheet = (u0, v0, u1, v1, y, h, mat, lined) => {
+    const su = u1 - u0;
+    const sv = v1 - v0;
+    if (su < 0.004 || sv < 0.004 || h < 0.001) return;
+    const geo = new THREE.BoxGeometry(su, h, sv);
+    if (lined) {
+      addOutlined(group, geo, mat, lineMat, (u0 + u1) / 2, y, (v0 + v1) / 2);
+      return;
+    }
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((u0 + u1) / 2, y, (v0 + v1) / 2);
+    group.add(mesh);
+  };
+  const bowls = [
+    { u0: parts.bowl1X, u1: parts.bowl1X + parts.bowl1W },
+    { u0: parts.bowl2X, u1: parts.bowl2X + parts.bowl2W },
+  ].sort((a, b) => a.u0 - b.u0);
+  const left = bowls[0];
+  const right = bowls[1];
+  const v0 = parts.bowlY;
+  const v1 = parts.bowlY + parts.bowlH;
+  sheet(left.u0, 0, right.u1, v0, deckY, deckT, steel, true);
+  sheet(left.u0, v1, right.u1, acrossLen, deckY, deckT, steel, true);
+  sheet(left.u1, v0, right.u0, v1, deckY, deckT, steel, true);
+
+  const gu0 = Math.min(parts.grooveX0, parts.grooveX1);
+  const gu1 = Math.max(parts.grooveX0, parts.grooveX1);
+  const slotHalf = 0.003;
+  const deckWithGrooves = (u0, v0s, u1, v1s) => {
+    const band0 = Math.max(u0, gu0);
+    const band1 = Math.min(u1, gu1);
+    if (!(band1 - band0 > 0.01) || !parts.grooves.length) {
+      sheet(u0, v0s, u1, v1s, deckY, deckT, steel, true);
+      return;
+    }
+    if (band0 - u0 > 0.004) sheet(u0, v0s, band0, v1s, deckY, deckT, steel, true);
+    if (u1 - band1 > 0.004) sheet(band1, v0s, u1, v1s, deckY, deckT, steel, true);
+    let cursor = v0s;
+    for (const gv of parts.grooves) {
+      const a = Math.max(v0s, gv - slotHalf);
+      const b = Math.min(v1s, gv + slotHalf);
+      if (b - a < 0.002) continue;
+      if (a - cursor > 0.004) sheet(band0, cursor, band1, a, deckY, deckT, steel, true);
+      const chH = 0.008;
+      const chTop = deckBase + deckT + 0.0015;
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(band1 - band0, chH, b - a), mats.groove);
+      mesh.position.set((band0 + band1) / 2, chTop - chH / 2, (a + b) / 2);
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 3;
+      group.add(mesh);
+      cursor = b;
+    }
+    if (v1s - cursor > 0.004) sheet(band0, cursor, band1, v1s, deckY, deckT, steel, true);
+  };
+  deckWithGrooves(0, 0, left.u0, acrossLen);
+  deckWithGrooves(right.u1, 0, alongLen, acrossLen);
+
+  const bowlDepth = 0.14;
+  const floorT = 0.0035;
+  const wallT = 0.004;
+  const floorY = deckBase - bowlDepth + floorT / 2;
+  const wallH = bowlDepth - floorT;
+  const wallY = deckBase - wallH / 2;
+  for (const b of bowls) {
+    sheet(b.u0, v0, b.u1, v1, floorY, floorT, steel, true);
+    sheet(b.u0, v0, b.u0 + wallT, v1, wallY, wallH, steel, false);
+    sheet(b.u1 - wallT, v0, b.u1, v1, wallY, wallH, steel, false);
+    sheet(b.u0 + wallT, v0, b.u1 - wallT, v0 + wallT, wallY, wallH, steel, false);
+    sheet(b.u0 + wallT, v1 - wallT, b.u1 - wallT, v1, wallY, wallH, steel, false);
+    const drain = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.003, 18), mats.chrome);
+    drain.position.set((b.u0 + b.u1) / 2, floorY + floorT / 2 + 0.001, v0 + (v1 - v0) * 0.58);
+    group.add(drain);
+  }
+}
+
+function addCooktop(parent, cook, cx, cz, mats) {
+  if (!cook || !(cook.w > 0.05) || !(cook.h > 0.05)) return;
+  const cookT = 0.005;
+  addOutlined(
+    parent,
+    new THREE.BoxGeometry(cook.w, cookT, cook.h),
+    mats.dark,
+    mats.darkLine,
+    cook.x - cx + cook.w / 2,
+    BENCH_HEIGHT_M + cookT / 2,
+    cook.y - cz + cook.h / 2
+  );
+  const radius = Math.min(cook.w, cook.h) * 0.1;
+  const band = 0.028;
+  const inner = Math.max(0.02, radius - band / 2);
+  const outer = radius + band / 2;
+  const top = BENCH_HEIGHT_M + cookT + 0.001;
+  for (const fx of [0.3, 0.7]) {
+    for (const fy of [0.3, 0.7]) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 48), mats.cookRing);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(cook.x - cx + cook.w * fx, top, cook.y - cz + cook.h * fy);
+      parent.add(ring);
+    }
+  }
+}
+
+function addPantryCabinet(parent, room, cx, cz, mats) {
+  const rect = kitchenPantryRect(room);
+  const placed = resolveKitchenAppliance(room, "pantry");
+  const px = rect.x - cx + rect.w / 2;
+  const pz = rect.y - cz + rect.h / 2;
+  addBox(parent, rect.w, PANTRY_H_M, rect.h, px, PANTRY_H_M / 2, pz, mats.fill, mats.line);
+  if (!placed) return;
+  let front =
+    placed.bench.alongAxis === "x"
+      ? { x: 0, y: placed.bench.wall === "min" ? 1 : -1 }
+      : { x: placed.bench.wall === "min" ? 1 : -1, y: 0 };
+  front = rotatedLocalVec(room, front);
+  const fl = Math.hypot(front.x, front.y) || 1;
+  front = { x: front.x / fl, y: front.y / fl };
+  const faceX = Math.abs(front.x) >= Math.abs(front.y);
+  const sign = faceX ? Math.sign(front.x) || 1 : Math.sign(front.y) || 1;
+  const across = faceX ? rect.h : rect.w;
+  const depth = faceX ? rect.w : rect.h;
+  const doorT = 0.016;
+  const doorAcross = Math.max(0.2, across - 0.028);
+  const doorH = PANTRY_H_M - 0.04;
+  const out = depth / 2 + doorT / 2 + 0.001;
+  const doorX = px + (faceX ? sign * out : 0);
+  const doorZ = pz + (faceX ? 0 : sign * out);
+  addThinBox(
+    parent,
+    faceX ? doorT : doorAcross,
+    doorH,
+    faceX ? doorAcross : doorT,
+    doorX,
+    0.02 + doorH / 2,
+    doorZ,
+    mats.fill,
+    mats.softLine
+  );
+  const handleLen = 0.3125;
+  const handleT = 0.014;
+  const handleW = 0.022;
+  const shift = doorAcross / 2 - 0.08;
+  const proud = doorT / 2 + handleT / 2 + 0.001;
+  addThinBox(
+    parent,
+    faceX ? handleT : handleW,
+    handleLen,
+    faceX ? handleW : handleT,
+    doorX + (faceX ? sign * proud : shift),
+    1.15,
+    doorZ + (faceX ? shift : sign * proud),
+    mats.chrome,
+    mats.softLine
+  );
+}
+
+function buildFurniture(parent, rooms, walls, cx, cz, mats, alongX) {
   const { fill, dark, glass, line, timber, couch } = mats;
   for (const room of rooms || []) {
     const kind = roomKind(room);
@@ -1441,37 +2902,46 @@ function buildFurniture(parent, rooms, cx, cz, mats, alongX) {
     const rz = room.y - cz + room.h / 2;
     if (kind === "bedroom") {
       addCarpetFloor(parent, room, cx, cz, mats);
-      const { bed, rug, nightstands } = bedroomBedGroup(room);
-      addWorldRect(parent, rug, 0.02, 0.026, mats.rug, line, cx, cz);
+      const { bed, nightstands, pillows, inward } = bedroomBedGroup(room);
       for (const ns of nightstands) {
-        addWorldRect(parent, ns, 0.52, 0.26, timber, line, cx, cz);
+        addBedsideTable(parent, ns, inward, cx, cz, mats);
       }
-      addWorldRect(parent, bed, 0.42, 0.21, fill, line, cx, cz);
+      const mattressH = 0.42;
+      addRoundedWorldRect(parent, bed, mattressH, mattressH / 2, 0.1, mats.bed, line, cx, cz);
+      const linen = bedLinen(bed, inward);
+      const sheetH = 0.008;
+      const sheetTop = mattressH + sheetH + 0.001;
+      addDrapedLinen(parent, linen.sheet, linen.alongX, sheetH, sheetTop, cx, cz, mats);
+      const foldH = 0.01;
+      const foldTop = sheetTop + foldH - 0.002;
+      addDrapedLinen(parent, linen.fold, linen.alongX, foldH, foldTop, cx, cz, mats);
+      const pillowH = 0.14;
+      for (const pillow of pillows) {
+        addRoundedWorldRect(
+          parent,
+          pillow,
+          pillowH,
+          sheetTop + pillowH / 2 - 0.01,
+          0.06,
+          mats.pillow,
+          line,
+          cx,
+          cz
+        );
+      }
       const robe = robeGeom3D(room);
       for (const nib of robe.nibs) {
-        addWorldRect(parent, nib, WALL_H, WALL_H / 2, mats.wall, line, cx, cz);
+        addWorldRect(parent, nib, WALL_H, WALL_H / 2, mats.wall, mats.softLine, cx, cz);
       }
-      addWorldRect(parent, robe.rect, ROBE_H_M, ROBE_H_M / 2, fill, line, cx, cz);
+      addWorldRect(parent, robe.rect, ROBE_H_M, ROBE_H_M / 2, fill, mats.softLine, cx, cz);
       for (const door of robe.doors) {
-        addWorldRectThin(parent, door, ROBE_DOOR_H_M, ROBE_DOOR_H_M / 2, fill, line, cx, cz);
+        addWorldRectThin(parent, door, ROBE_DOOR_H_M, ROBE_DOOR_H_M / 2, mats.mirror, mats.softLine, cx, cz);
       }
     } else if (kind === "bathroom") {
       addBathroomFloor(parent, room, cx, cz, mats);
-      const sw = Math.min(0.95, room.w * 0.48);
-      const sd = Math.min(0.95, room.h * 0.48);
-      const sx = rx - room.w / 2 + sw / 2 + 0.08;
-      const sz = rz - room.h / 2 + sd / 2 + 0.08;
-      addBox(parent, sw, 2.05, 0.04, sx, 1.02, sz - sd / 2 + 0.02, glass, line);
-      addBox(parent, 0.04, 2.05, sd, sx - sw / 2 + 0.02, 1.02, sz, glass, line);
-      addBox(parent, 0.38, 0.42, 0.52, rx + room.w / 2 - 0.38, 0.21, rz, fill, line);
-      addBox(parent, 0.32, 0.16, 0.42, rx + room.w / 2 - 0.38, 0.42, rz + 0.22, fill, line);
-      const vanityAlong = room.h >= room.w ? room.h : room.w;
-      const vanityLen = Math.min(0.9, Math.max(0.4, vanityAlong * 0.35));
-      if (room.h >= room.w) {
-        addBox(parent, 0.4, 0.85, vanityLen, rx + room.w / 2 - 0.2, 0.42, rz, fill, line);
-      } else {
-        addBox(parent, vanityLen, 0.85, 0.4, rx, 0.42, rz + room.h / 2 - 0.2, fill, line);
-      }
+      addBathroomShower(parent, room, walls, cx, cz, mats);
+      addBathroomToilet(parent, room, cx, cz, mats);
+      addBathroomVanity(parent, room, cx, cz, mats);
     } else if (kind === "laundry") {
       addHybridFloorRect(parent, room, alongX, cx, cz, mats);
       const rot = roomRotation(room);
@@ -1482,78 +2952,59 @@ function buildFurniture(parent, rooms, cx, cz, mats, alongX) {
       addWorldRect(parent, trough, 0.04, 0.88, mats.steel, line, cx, cz);
     } else if (kind === "powder") {
       addHybridFloorRect(parent, room, alongX, cx, cz, mats);
+      addBathroomToilet(parent, room, cx, cz, mats);
       if (room.h >= room.w) {
-        addBox(parent, 0.38, 0.42, 0.52, rx, 0.21, rz + room.h / 2 - 0.26, fill, line);
-        addBox(parent, 0.32, 0.16, 0.42, rx, 0.42, rz + room.h / 2 - 0.52, fill, line);
         addBox(parent, 0.25, 0.85, 0.6, rx - room.w / 2 + 0.125, 0.42, rz, fill, line);
       } else {
-        addBox(parent, 0.52, 0.42, 0.38, rx + room.w / 2 - 0.26, 0.21, rz, fill, line);
-        addBox(parent, 0.42, 0.16, 0.32, rx + room.w / 2 - 0.52, 0.42, rz, fill, line);
         addBox(parent, 0.6, 0.85, 0.25, rx, 0.42, rz - room.h / 2 + 0.125, fill, line);
       }
     } else if (kind === "kitchen") {
-      addHybridFloorRect(parent, room, alongX, cx, cz, mats);
       const benches = kitchenBenchPieces(room);
       const hasAppliances = Boolean(resolveKitchenAppliance(room, "cook"));
       const cook = kitchenCookRect(room);
       const sink = kitchenSinkRect(room);
-      const pantry = kitchenPantryRect(room);
       const fridge = kitchenFridgeRect(room);
+      const shrink = BENCH_DEPTH_M - BENCH_CARCASS_M;
+      const carcassH = BENCH_HEIGHT_M - BENCH_TOP_M;
       for (const bench of benches) {
-        const cx0 = bench.x - cx + bench.w / 2;
-        const cz0 = bench.y - cz + bench.h / 2;
-        // 20mm overhang on the front edge only: carcass 580 under a 600 top.
         const longIsX = bench.w >= bench.h;
-        const carcassW = longIsX ? bench.w : Math.max(0.04, bench.w - (BENCH_DEPTH_M - BENCH_CARCASS_M));
-        const carcassD = longIsX ? Math.max(0.04, bench.h - (BENCH_DEPTH_M - BENCH_CARCASS_M)) : bench.h;
-        const shift = (BENCH_DEPTH_M - BENCH_CARCASS_M) / 2;
-        addBox(
-          parent,
-          carcassW,
-          BENCH_HEIGHT_M - BENCH_TOP_M,
-          carcassD,
-          cx0 + (longIsX ? 0 : shift),
-          (BENCH_HEIGHT_M - BENCH_TOP_M) / 2,
-          cz0 - (longIsX ? shift : 0),
-          fill,
-          line
-        );
-        addBox(parent, bench.w, BENCH_TOP_M, bench.h, cx0, BENCH_HEIGHT_M - BENCH_TOP_M / 2, cz0, timber, line);
+        const carcass = longIsX
+          ? { x: bench.x, y: bench.y, w: bench.w, h: Math.max(0.02, bench.h - shrink) }
+          : { x: bench.x + shrink, y: bench.y, w: Math.max(0.02, bench.w - shrink), h: bench.h };
+        const carcassPieces = hasAppliances ? subtractRect(carcass, sink) : [carcass];
+        const topPieces = hasAppliances ? subtractRect(bench, sink) : [bench];
+        for (const piece of carcassPieces) {
+          if (piece.w < 0.012 || piece.h < 0.012) continue;
+          addLooseBox(
+            parent,
+            piece.w,
+            carcassH,
+            piece.h,
+            piece.x - cx + piece.w / 2,
+            carcassH / 2,
+            piece.y - cz + piece.h / 2,
+            fill,
+            line
+          );
+        }
+        for (const piece of topPieces) {
+          if (piece.w < 0.012 || piece.h < 0.012) continue;
+          addStoneTop(
+            parent,
+            piece.w,
+            piece.h,
+            piece.x - cx + piece.w / 2,
+            BENCH_HEIGHT_M - BENCH_TOP_M / 2,
+            piece.y - cz + piece.h / 2,
+            mats.marble,
+            mats.marbleLine
+          );
+        }
       }
       if (!hasAppliances) continue;
-      addBox(
-        parent,
-        cook.w,
-        0.04,
-        cook.h,
-        cook.x - cx + cook.w / 2,
-        BENCH_HEIGHT_M + 0.02,
-        cook.y - cz + cook.h / 2,
-        dark,
-        line
-      );
-      addBox(
-        parent,
-        sink.w,
-        0.06,
-        sink.h,
-        sink.x - cx + sink.w / 2,
-        BENCH_HEIGHT_M + 0.03,
-        sink.y - cz + sink.h / 2,
-        mats.steel,
-        line
-      );
-      addBox(
-        parent,
-        pantry.w,
-        PANTRY_H_M,
-        pantry.h,
-        pantry.x - cx + pantry.w / 2,
-        PANTRY_H_M / 2,
-        pantry.y - cz + pantry.h / 2,
-        fill,
-        line
-      );
+      addCooktop(parent, cook, cx, cz, mats);
+      addKitchenSink(parent, room, cx, cz, mats);
+      addPantryCabinet(parent, room, cx, cz, mats);
       addBox(
         parent,
         fridge.w,
@@ -1566,22 +3017,200 @@ function buildFurniture(parent, rooms, cx, cz, mats, alongX) {
         line
       );
     } else if (kind === "porch") {
-      addBox(parent, room.w, 0.04, room.h, rx, 0.02, rz, timber, line);
+      const parts = room.porchParts?.length ? room.porchParts : [room];
+      for (const part of parts) {
+        addPorchDeck(parent, { ...part, layoutLongIsX: part.w >= part.h, rot: 0 }, cx, cz, mats);
+      }
+      if (room.porchStepRects?.length) addPorchSteps(parent, room.porchStepRects, cx, cz, mats);
     } else if (kind === "living") {
       const g = livingSetGeom3D(room);
-      addWorldRect(parent, g.tvUnit, 0.45, 0.225, timber, line, cx, cz);
-      addWorldRect(parent, g.tv, 0.75, 0.45 + 0.375, dark, line, cx, cz);
-      addWorldRect(parent, g.table, 0.4, 0.2, timber, line, cx, cz);
-      for (const seat of g.seats) addWorldRect(parent, seat, 0.42, 0.21, couch, line, cx, cz);
-      for (const back of g.backs) addWorldRect(parent, back, 0.8, 0.4, couch, line, cx, cz);
-      for (const arm of g.arms) addWorldRect(parent, arm, 0.6, 0.3, couch, line, cx, cz);
+      addTvUnit(parent, g.tvUnit, g.inward, cx, cz, timber, mats.timberLine);
+      addWorldRect(parent, g.tv, 0.75, 0.45 + 0.375, dark, mats.darkLine, cx, cz);
+      addTvLogo(parent, g.tv, g.inward, cx, cz, mats.logo);
+      addCoffeeTable(parent, g.table, cx, cz, timber, mats.timberLine);
+      const seatTop = 0.42;
+      const cushionH = 0.14;
+      const baseH = seatTop - cushionH;
+      for (const seat of g.seats) {
+        addRoundedWorldRect(parent, seat, baseH, baseH / 2, 0.05, couch, line, cx, cz);
+      }
+      for (const cushion of g.cushions) {
+        addRoundedWorldRect(parent, cushion, cushionH, baseH + cushionH / 2, 0.09, mats.bed, line, cx, cz);
+      }
+      for (const back of g.backs) addRoundedWorldRect(parent, back, 0.8, 0.4, 0.05, couch, line, cx, cz);
+      for (const arm of g.arms) addRoundedWorldRect(parent, arm, 0.6, 0.3, 0.04, couch, line, cx, cz);
     }
   }
+}
+
+function makeShowerFaceTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#8b949a";
+  ctx.beginPath();
+  ctx.arc(64, 64, 63, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3e464c";
+  const rings = [0, 16, 30, 44, 56];
+  const counts = [1, 6, 12, 16, 20];
+  for (let i = 0; i < rings.length; i += 1) {
+    for (let k = 0; k < counts[i]; k += 1) {
+      const a = (k / counts[i]) * Math.PI * 2 + (i % 2) * 0.2;
+      ctx.beginPath();
+      ctx.arc(64 + Math.cos(a) * rings[i], 64 + Math.sin(a) * rings[i], i === 0 ? 2.4 : 2.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.userData.shared = true;
+  return tex;
+}
+
+function makeSgfLogoTexture() {
+  const tex = new THREE.Texture();
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.userData.shared = true;
+  const img = new Image();
+  img.onload = () => {
+    const src = document.createElement("canvas");
+    src.width = img.width;
+    src.height = img.height;
+    const sctx = src.getContext("2d");
+    if (!sctx) return;
+    sctx.drawImage(img, 0, 0);
+    const image = sctx.getImageData(0, 0, src.width, src.height);
+    const d = image.data;
+    let minX = src.width;
+    let minY = src.height;
+    let maxX = 0;
+    let maxY = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const sat = max - min;
+      const lum = (r + g + b) / 3;
+      if (sat < 36) {
+        if (lum > 150) {
+          d[i] = d[i + 1] = d[i + 2] = 0;
+        } else {
+          d[i] = d[i + 1] = d[i + 2] = 255;
+        }
+      }
+      const pr = d[i];
+      const pg = d[i + 1];
+      const pb = d[i + 2];
+      if (pr + pg + pb > 24) {
+        const px = (i / 4) % src.width;
+        const py = Math.floor(i / 4 / src.width);
+        if (px < minX) minX = px;
+        if (py < minY) minY = py;
+        if (px > maxX) maxX = px;
+        if (py > maxY) maxY = py;
+      }
+    }
+    sctx.putImageData(image, 0, 0);
+    if (maxX < minX) {
+      minX = 0;
+      minY = 0;
+      maxX = src.width - 1;
+      maxY = src.height - 1;
+    }
+    const cw = Math.max(1, maxX - minX + 1);
+    const ch = Math.max(1, maxY - minY + 1);
+    const canvas = document.createElement("canvas");
+    canvas.width = 1467;
+    canvas.height = 825;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const availW = canvas.width * 0.84;
+    const availH = canvas.height * 0.72;
+    const scale = Math.min(availW / cw, availH / ch);
+    const dw = cw * scale;
+    const dh = ch * scale;
+    ctx.drawImage(src, minX, minY, cw, ch, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
+    tex.image = canvas;
+    tex.needsUpdate = true;
+  };
+  img.src = sgfLogoUrl;
+  return tex;
+}
+
+function makeMarbleTexture() {
+  const size = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+  let seed = 0x5a17c3;
+  const rand = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  ctx.fillStyle = "#f4f2ee";
+  ctx.fillRect(0, 0, size, size);
+  const image = ctx.getImageData(0, 0, size, size);
+  const px = image.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const n = (rand() - 0.5) * 16;
+    px[i] = Math.max(220, Math.min(255, px[i] + n));
+    px[i + 1] = Math.max(218, Math.min(255, px[i + 1] + n));
+    px[i + 2] = Math.max(210, Math.min(255, px[i + 2] + n * 0.85));
+  }
+  ctx.putImageData(image, 0, 0);
+  const vein = (color, width, count) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (let v = 0; v < count; v += 1) {
+      ctx.globalAlpha = 0.35 + rand() * 0.45;
+      ctx.beginPath();
+      let x = rand() * size;
+      let y = rand() * size;
+      ctx.moveTo(x, y);
+      const steps = 4 + Math.floor(rand() * 5);
+      for (let s = 0; s < steps; s += 1) {
+        const cx = x + (rand() - 0.45) * 180;
+        const cy = y + (rand() - 0.35) * 140;
+        x = Math.max(-40, Math.min(size + 40, cx + (rand() - 0.5) * 160));
+        y = Math.max(-40, Math.min(size + 40, cy + (rand() - 0.25) * 120));
+        ctx.quadraticCurveTo(cx, cy, x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  };
+  vein("#c8c8c6", 8, 4);
+  vein("#9a9c9e", 2.4, 8);
+  vein("#dededc", 3.5, 5);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 8;
+  tex.userData.shared = true;
+  return tex;
 }
 
 function makeMats() {
   const line = new THREE.LineBasicMaterial({ color: LINE });
   line.userData.shared = true;
+  const darkLine = new THREE.LineBasicMaterial({ color: 0x6e6e6e });
+  darkLine.userData.shared = true;
+  const softLine = new THREE.LineBasicMaterial({ color: 0x9a9a9a });
+  softLine.userData.shared = true;
   const wall = new THREE.MeshLambertMaterial({
     color: 0xf5f2ec,
     side: THREE.DoubleSide,
@@ -1594,6 +3223,13 @@ function makeMats() {
   fill.userData.shared = true;
   const timber = new THREE.MeshLambertMaterial({ color: 0xd2ae76, side: THREE.DoubleSide });
   timber.userData.shared = true;
+  const timberLine = new THREE.LineBasicMaterial({ color: 0xc2a06e });
+  timberLine.userData.shared = true;
+  const marbleTex = makeMarbleTexture();
+  const marble = new THREE.MeshLambertMaterial({ map: marbleTex, color: 0xffffff, side: THREE.DoubleSide });
+  marble.userData.shared = true;
+  const marbleLine = new THREE.LineBasicMaterial({ color: 0xc9c7c2 });
+  marbleLine.userData.shared = true;
   const couch = new THREE.MeshLambertMaterial({ color: 0xf2efe9, side: THREE.DoubleSide });
   couch.userData.shared = true;
   const rug = new THREE.MeshLambertMaterial({ color: 0xd4c4a4, side: THREE.DoubleSide });
@@ -1614,8 +3250,22 @@ function makeMats() {
     side: THREE.DoubleSide,
   });
   glass.userData.shared = true;
+  const doorGlass = new THREE.MeshPhongMaterial({
+    color: 0x9ec9d8,
+    transparent: true,
+    opacity: 0.38,
+    shininess: 80,
+    specular: 0xffffff,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  doorGlass.userData.shared = true;
   const dark = new THREE.MeshLambertMaterial({ color: 0x2a2a2a, side: THREE.DoubleSide });
   dark.userData.shared = true;
+  const cookRing = new THREE.MeshBasicMaterial({ color: 0x6e747a, side: THREE.DoubleSide });
+  cookRing.userData.shared = true;
+  const groove = new THREE.MeshBasicMaterial({ color: 0x7e868e, side: THREE.DoubleSide });
+  groove.userData.shared = true;
   const steel = new THREE.MeshPhongMaterial({
     color: 0xc4cad0,
     specular: 0xffffff,
@@ -1623,11 +3273,63 @@ function makeMats() {
     side: THREE.DoubleSide,
   });
   steel.userData.shared = true;
-  const tile = new THREE.MeshLambertMaterial({ color: 0xc5c5c5, side: THREE.DoubleSide });
-  tile.userData.shared = true;
-  const grout = new THREE.MeshLambertMaterial({ color: 0x4a4a4a, side: THREE.DoubleSide });
+  const chrome = new THREE.MeshPhongMaterial({
+    color: 0x7e868c,
+    specular: 0xc5ccd1,
+    shininess: 90,
+    side: THREE.DoubleSide,
+  });
+  chrome.userData.shared = true;
+  const showerFace = new THREE.MeshPhongMaterial({
+    map: makeShowerFaceTexture(),
+    color: 0x9aa3a8,
+    specular: 0xb7c0c6,
+    shininess: 70,
+    side: THREE.DoubleSide,
+  });
+  showerFace.userData.shared = true;
+  const doorPanel = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+  doorPanel.userData.shared = true;
+  const pillow = new THREE.MeshLambertMaterial({ color: 0xfffdf8, side: THREE.DoubleSide });
+  pillow.userData.shared = true;
+  const lampBase = new THREE.MeshLambertMaterial({ color: 0xf4f0e8, side: THREE.DoubleSide });
+  lampBase.userData.shared = true;
+  const lampShade = new THREE.MeshLambertMaterial({
+    color: 0xfff3d6,
+    emissive: 0xffb14a,
+    emissiveIntensity: 1.15,
+    side: THREE.DoubleSide,
+  });
+  lampShade.userData.shared = true;
+  const mirror = new THREE.MeshPhongMaterial({
+    color: 0xc5ccd4,
+    specular: 0xf2f4f7,
+    shininess: 80,
+    side: THREE.DoubleSide,
+  });
+  mirror.userData.shared = true;
+  const bed = new THREE.MeshLambertMaterial({ color: 0x8d939a, side: THREE.DoubleSide });
+  bed.userData.shared = true;
+  const sheet = new THREE.MeshLambertMaterial({ color: 0xf6f3ec, side: THREE.DoubleSide });
+  sheet.userData.shared = true;
+  const ceramic = new THREE.MeshPhongMaterial({
+    color: 0xf4f6f7,
+    specular: 0xd5d8dc,
+    shininess: 55,
+    side: THREE.DoubleSide,
+  });
+  ceramic.userData.shared = true;
+  const logoTex = makeSgfLogoTexture();
+  const logo = new THREE.MeshBasicMaterial({ map: logoTex, color: 0xffffff, side: THREE.DoubleSide });
+  logo.toneMapped = false;
+  logo.userData.shared = true;
+  const floorTile = new THREE.MeshLambertMaterial({ color: 0xc8c8c8, side: THREE.DoubleSide });
+  floorTile.userData.shared = true;
+  const wallTile = new THREE.MeshLambertMaterial({ color: 0xf0f0f0, side: THREE.DoubleSide });
+  wallTile.userData.shared = true;
+  const grout = new THREE.MeshLambertMaterial({ color: 0xb4b4b4, side: THREE.DoubleSide });
   grout.userData.shared = true;
-  const groutLine = new THREE.LineBasicMaterial({ color: 0x4a4a4a });
+  const groutLine = new THREE.LineBasicMaterial({ color: 0xb4b4b4 });
   groutLine.userData.shared = true;
   const hybridTones = HYBRID_TONE_HEX.map((color) => {
     const m = new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
@@ -1638,27 +3340,61 @@ function makeMats() {
   hybridGap.userData.shared = true;
   const hybridLine = new THREE.LineBasicMaterial({ color: 0x8a7354 });
   hybridLine.userData.shared = true;
+  const deckTones = DECK_TONE_HEX.map((color) => {
+    const m = new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
+    m.userData.shared = true;
+    return m;
+  });
+  const deckGap = new THREE.MeshLambertMaterial({ color: 0x3a2618, side: THREE.DoubleSide });
+  deckGap.userData.shared = true;
+  const deckLine = new THREE.LineBasicMaterial({ color: 0x4a301c });
+  deckLine.userData.shared = true;
   const carpetTex = makeCarpetTexture();
   carpetTex.userData.shared = true;
   const carpet = new THREE.MeshLambertMaterial({ map: carpetTex, side: THREE.DoubleSide });
   carpet.userData.shared = true;
   return {
     line,
+    darkLine,
+    softLine,
     wall,
     fill,
     timber,
+    timberLine,
+    marble,
+    marbleTex,
+    marbleLine,
     couch,
     rug,
     ghost,
     glass,
+    doorGlass,
     dark,
+    cookRing,
+    groove,
     steel,
-    tile,
+    chrome,
+    ceramic,
+    logo,
+    logoTex,
+    showerFace,
+    doorPanel,
+    pillow,
+    lampBase,
+    lampShade,
+    mirror,
+    bed,
+    sheet,
+    floorTile,
+    wallTile,
     grout,
     groutLine,
     hybridTones,
     hybridGap,
     hybridLine,
+    deckTones,
+    deckGap,
+    deckLine,
     carpet,
     carpetTex,
   };
@@ -1698,6 +3434,9 @@ export default function QuickConcept3DPreview({
     const onMove = { current: null };
     const onUp = { current: null };
     const onWheel = { current: null };
+    const onKeyDown = { current: null };
+    const onKeyUp = { current: null };
+    const onBlur = { current: null };
 
     try {
       const bounds = ringBounds(outer);
@@ -1707,7 +3446,7 @@ export default function QuickConcept3DPreview({
 
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0xffffff);
-      camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 2000);
+      camera = new THREE.PerspectiveCamera(PERSPECTIVE_FOV, 1, 0.02, 4000);
       camera.up.set(0, 1, 0);
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
       renderer.setClearColor(0xffffff, 1);
@@ -1768,7 +3507,7 @@ export default function QuickConcept3DPreview({
       }
       const alongX = hybridPlankAlongX(outer);
       addLivingHybridFloor(group, innerMetres?.length >= 3 ? innerMetres : outer, rooms, alongX, cx, cz, mats);
-      buildFurniture(group, rooms, cx, cz, mats, alongX);
+      buildFurniture(group, rooms, walls, cx, cz, mats, alongX);
       cleanWallJoins(group);
 
       const box = new THREE.Box3().setFromObject(group);
@@ -1802,88 +3541,94 @@ export default function QuickConcept3DPreview({
         if (!o.isMesh) return;
         o.receiveShadow = true;
         // Transparent faces (glass, ghosted walls) must not cast solid shadows.
-        o.castShadow = !o.material?.transparent;
+        o.castShadow = !o.material?.transparent && !o.userData.noShadow;
       });
       const saved = orbitRef.current;
-      let azimuth = Number.isFinite(saved?.azimuth) ? saved.azimuth : ISO_AZIMUTH;
+      let azimuth = Number.isFinite(saved?.azimuth) ? saved.azimuth : frontDoorAzimuth(planDoors);
       let elevation = Number.isFinite(saved?.elevation) ? saved.elevation : ISO_ELEVATION;
-      let zoom = 1;
-      const camDist = span * 4;
+      const eye = new THREE.Vector3();
+      const houseSphere = box.getBoundingSphere(new THREE.Sphere());
+      const houseRadius = Math.max(
+        Number.isFinite(houseSphere.radius) ? houseSphere.radius : 0,
+        span * 0.35,
+        2
+      );
+      let baseDist = houseRadius * 4;
+
+      const fitDistanceForAspect = (aspect) => {
+        const v = THREE.MathUtils.degToRad(camera.fov) / 2;
+        const h = Math.atan(Math.tan(v) * Math.max(0.35, aspect));
+        const tanV = Math.tan(v);
+        const tanH = Math.tan(h);
+        const forward = lookVector().normalize();
+        const zAxis = forward.clone().negate();
+        const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), zAxis);
+        if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+        right.normalize();
+        const camUp = new THREE.Vector3().crossVectors(zAxis, right).normalize();
+        const xs = [box.min.x, box.max.x];
+        const ys = [box.min.y, box.max.y];
+        const zs = [box.min.z, box.max.z];
+        let dist = 0;
+        for (const x of xs) {
+          for (const y of ys) {
+            for (const z of zs) {
+              const rel = new THREE.Vector3(x, y, z).sub(target);
+              const hx = Math.abs(rel.dot(right));
+              const hy = Math.abs(rel.dot(camUp));
+              const fz = rel.dot(forward);
+              dist = Math.max(dist, hx / tanH - fz, hy / tanV - fz);
+            }
+          }
+        }
+        return Math.max(0.8, dist) * 1.05;
+      };
 
       const emitOrbit = () => {
         onOrbitChangeRef.current?.({ azimuth, elevation });
       };
 
+      const lookVector = () => {
+        const ce = Math.cos(elevation);
+        return new THREE.Vector3(-ce * Math.sin(azimuth), -Math.sin(elevation), -ce * Math.cos(azimuth));
+      };
+
+      const placeEyeOnOrbit = (dist) => {
+        const ce = Math.cos(elevation);
+        eye.set(
+          target.x + dist * ce * Math.sin(azimuth),
+          target.y + dist * Math.sin(elevation),
+          target.z + dist * ce * Math.cos(azimuth)
+        );
+      };
+
       const updateGhostWalls = () => {
-        const camDirX = Math.cos(elevation) * Math.sin(azimuth);
-        const camDirZ = Math.cos(elevation) * Math.cos(azimuth);
+        const dx = eye.x - target.x;
+        const dz = eye.z - target.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const camDirX = dx / len;
+        const camDirZ = dz / len;
         for (const mesh of wallMeshes) {
           const o = mesh.userData.outward;
           if (!o) continue;
-          const ghosted = o.x * camDirX + o.z * camDirZ > 0.18;
-          mesh.material = ghosted ? mats.ghost : mats.wall;
-          // A ghosted wall must not cast a solid shadow either.
-          mesh.castShadow = !ghosted;
-          // A ghosted wall keeps only its faint face; its dark outlines would hang in mid-air
-          // and read as bent geometry, so hide them while ghosted.
-          mesh.children.forEach((c) => {
-            if (c.isLineSegments) c.visible = !ghosted;
-          });
+          // A high view keeps the front wall. Near eye level the wall facing the camera is removed.
+          const hidden = elevation < EYE_LEVEL_ELEVATION && o.x * camDirX + o.z * camDirZ > 0.18;
+          mesh.visible = !hidden;
+          mesh.material = mats.wall;
+          mesh.castShadow = !hidden;
+          for (const door of mesh.userData.frontDoors || []) {
+            door.visible = !hidden;
+            door.castShadow = !hidden;
+          }
         }
       };
 
       const placeCamera = () => {
         camera.up.set(0, 1, 0);
-        camera.position.set(
-          target.x + camDist * Math.cos(elevation) * Math.sin(azimuth),
-          target.y + camDist * Math.sin(elevation),
-          target.z + camDist * Math.cos(elevation) * Math.cos(azimuth)
-        );
-        camera.lookAt(target);
+        camera.position.copy(eye);
+        const look = lookVector();
+        camera.lookAt(eye.x + look.x, eye.y + look.y, eye.z + look.z);
         camera.updateMatrixWorld(true);
-      };
-
-      // Fit once for the whole spin: measure the projected bounds at sample
-      // angles right around the full circle (low to near top-down, since
-      // rotation is unrestricted) and keep the largest, so rotating never
-      // rescales the model.
-      let spinFit = null;
-      const computeSpinFit = () => {
-        const saveA = azimuth;
-        const saveE = elevation;
-        let maxW = 0.01;
-        let maxH = 0.01;
-        const elevations = [0.02, 0.5, elevation, 1.0, 1.45];
-        for (const e of elevations) {
-          elevation = e;
-          for (let i = 0; i < 16; i += 1) {
-            azimuth = (i / 16) * Math.PI * 2;
-            placeCamera();
-            const b = projectedOrthoBounds(camera, group);
-            if (!b) continue;
-            if (b.width > maxW) maxW = b.width;
-            if (b.height > maxH) maxH = b.height;
-          }
-        }
-        azimuth = saveA;
-        elevation = saveE;
-        placeCamera();
-        // Centre the locked frustum on the orbit target (it stays dead-centre
-        // on screen at every angle) with room for the largest spin bounds.
-        const tc = target.clone().applyMatrix4(camera.matrixWorldInverse);
-        spinFit = { width: maxW, height: maxH, cx: tc.x, cy: tc.y };
-      };
-
-      const applySpinFit = () => {
-        if (!spinFit) return;
-        const w = Math.max(1, mount.clientWidth);
-        const h = Math.max(1, mount.clientHeight);
-        applyOrthoBounds(
-          camera,
-          { width: spinFit.width * zoom, height: spinFit.height * zoom, cx: spinFit.cx, cy: spinFit.cy },
-          w / Math.max(1, h),
-          0.02
-        );
       };
 
       const updateCamera = () => {
@@ -1891,15 +3636,21 @@ export default function QuickConcept3DPreview({
         updateGhostWalls();
       };
 
+      let framed = false;
       const setSize = () => {
         const w = Math.max(1, mount.clientWidth);
         const h = Math.max(1, mount.clientHeight);
         renderer.setSize(w, h, false);
-        applySpinFit();
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        if (!framed) {
+          baseDist = fitDistanceForAspect(camera.aspect);
+          placeEyeOnOrbit(baseDist);
+          framed = true;
+        }
+        updateCamera();
       };
 
-      computeSpinFit();
-      updateCamera();
       setSize();
 
       let dragging = false;
@@ -1915,16 +3666,17 @@ export default function QuickConcept3DPreview({
       onMove.current = (e) => {
         if (!dragging) return;
         azimuth -= (e.clientX - lastX) * 0.008;
-        // Free tilt, but never below the floor line so the underside stays hidden.
-        elevation = Math.max(0.02, elevation + (e.clientY - lastY) * 0.006);
+        elevation = Math.max(-1.35, Math.min(1.48, elevation + (e.clientY - lastY) * 0.006));
         lastX = e.clientX;
         lastY = e.clientY;
         updateCamera();
       };
       onWheel.current = (e) => {
         e.preventDefault();
-        zoom = Math.max(0.25, Math.min(5, zoom * Math.exp(e.deltaY * 0.001)));
-        applySpinFit();
+        const look = lookVector();
+        const dist = Math.max(0.3, eye.distanceTo(target));
+        eye.addScaledVector(look, -e.deltaY * 0.0018 * dist);
+        updateCamera();
       };
       onUp.current = () => {
         dragging = false;
@@ -1940,18 +3692,39 @@ export default function QuickConcept3DPreview({
       ro.observe(mount);
 
       if (captureRef) {
-        captureRef.current = (outW = 2200) => {
-          const bounds = projectedOrthoBounds(camera, group);
-          applyOrthoBounds(camera, bounds, 0, 0.03);
-          const imgAspect = bounds ? bounds.width / bounds.height : 1.6;
-          const w = Math.max(2, Math.round(outW));
-          const h = Math.max(2, Math.round(w / Math.max(0.2, imgAspect)));
+        captureRef.current = (outW = 2200, options = {}) => {
+          const prevEye = eye.clone();
+          const prevTarget = target.clone();
+          const prevAz = azimuth;
+          const prevEl = elevation;
           try {
+            if (options.defaultView) {
+              azimuth = frontDoorAzimuth(planDoors);
+              elevation = ISO_ELEVATION;
+            } else {
+              const shot = new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere());
+              target.copy(shot.center);
+            }
+            const imgAspect =
+              options.aspect > 0
+                ? options.aspect
+                : Math.max(0.4, mount.clientWidth / Math.max(1, mount.clientHeight));
+            placeEyeOnOrbit(fitDistanceForAspect(imgAspect));
+            camera.aspect = imgAspect;
+            camera.updateProjectionMatrix();
+            updateCamera();
+            const w = Math.max(2, Math.round(outW));
+            const h = Math.max(2, Math.round(w / imgAspect));
             renderer.setPixelRatio(1);
             renderer.setSize(w, h, false);
             renderer.render(scene, camera);
-            return cropCanvasWhitespace(renderer.domElement).toDataURL("image/png");
+            const shotCanvas = options.crop === false ? renderer.domElement : cropCanvasWhitespace(renderer.domElement);
+            return shotCanvas.toDataURL("image/png");
           } finally {
+            azimuth = prevAz;
+            elevation = prevEl;
+            eye.copy(prevEye);
+            target.copy(prevTarget);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
             setSize();
             renderer.render(scene, camera);
@@ -1959,7 +3732,50 @@ export default function QuickConcept3DPreview({
         };
       }
 
+      const keys = new Set();
+      const typingTarget = (el) => {
+        const tag = el?.tagName;
+        return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || Boolean(el?.isContentEditable);
+      };
+      onKeyDown.current = (e) => {
+        if (typingTarget(e.target)) return;
+        const k = String(e.key || "").toLowerCase();
+        if (k !== "w" && k !== "a" && k !== "s" && k !== "d" && k !== "e" && k !== "c") return;
+        keys.add(k);
+        e.preventDefault();
+      };
+      onKeyUp.current = (e) => {
+        const k = String(e.key || "").toLowerCase();
+        if (!keys.delete(k)) return;
+        emitOrbit();
+      };
+      onBlur.current = () => keys.clear();
+      window.addEventListener("keydown", onKeyDown.current);
+      window.addEventListener("keyup", onKeyUp.current);
+      window.addEventListener("blur", onBlur.current);
+
+      let lastNav = performance.now();
       const tick = () => {
+        const now = performance.now();
+        const dt = Math.min(0.05, (now - lastNav) / 1000);
+        lastNav = now;
+        if (keys.size) {
+          const forward = new THREE.Vector3(-Math.sin(azimuth), 0, -Math.cos(azimuth));
+          const right = new THREE.Vector3(Math.cos(azimuth), 0, -Math.sin(azimuth));
+          const move = new THREE.Vector3();
+          if (keys.has("w")) move.add(forward);
+          if (keys.has("s")) move.sub(forward);
+          if (keys.has("d")) move.add(right);
+          if (keys.has("a")) move.sub(right);
+          if (keys.has("e")) move.y += 1;
+          if (keys.has("c")) move.y -= 1;
+          if (move.lengthSq() > 0) {
+            move.normalize();
+            const speed = Math.max(2.6, eye.distanceTo(target) * 0.55);
+            eye.addScaledVector(move, speed * dt);
+            updateCamera();
+          }
+        }
         renderer.render(scene, camera);
         raf = requestAnimationFrame(tick);
       };
@@ -1975,6 +3791,9 @@ export default function QuickConcept3DPreview({
       if (canvas && onMove.current) canvas.removeEventListener("pointermove", onMove.current);
       if (canvas && onWheel.current) canvas.removeEventListener("wheel", onWheel.current);
       if (onUp.current) window.removeEventListener("pointerup", onUp.current);
+      if (onKeyDown.current) window.removeEventListener("keydown", onKeyDown.current);
+      if (onKeyUp.current) window.removeEventListener("keyup", onKeyUp.current);
+      if (onBlur.current) window.removeEventListener("blur", onBlur.current);
       if (captureRef && captureRef.current) captureRef.current = null;
       if (group) disposeObject(group);
       ground?.geometry?.dispose();

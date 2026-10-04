@@ -1,8 +1,22 @@
 import { isConstructionPhaseStatus } from "./projectStatus";
+import {
+  ANNUAL_LEAVE_PROJECT_VALUE,
+  OFFICE_PROJECT_VALUE,
+  PUBLIC_HOLIDAY_PROJECT_VALUE,
+  SICK_LEAVE_PROJECT_VALUE,
+} from "./timeSheetTime";
 
 const API_URL = "";
 
 export const OFFICE_PROJECT_LABEL = "Office";
+
+/** Project choices that stay in the timesheet list ahead of live jobs. */
+export const FIXED_TIMESHEET_PROJECTS = [
+  { value: OFFICE_PROJECT_VALUE, label: OFFICE_PROJECT_LABEL },
+  { value: ANNUAL_LEAVE_PROJECT_VALUE, label: "Annual Leave" },
+  { value: PUBLIC_HOLIDAY_PROJECT_VALUE, label: "Public Holiday" },
+  { value: SICK_LEAVE_PROJECT_VALUE, label: "Sick Leave" },
+];
 
 export function formatConstructionProjectLabel(project) {
   const suburb = (project.suburb || "").trim();

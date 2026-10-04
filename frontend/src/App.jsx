@@ -8,6 +8,7 @@ import MobilePreviewPage from "./pages/MobilePreviewPage";
 import ApplyFields from "./pages/ApplyFields";
 import Planner from "./pages/Planner";
 import QuickConcept from "./pages/QuickConcept";
+import ArchicadViewer from "./pages/ArchicadViewer";
 import FinishedProjects from "./pages/FinishedProjects";
 import PreEngagementPhase from "./pages/PreEngagementPhase";
 import PermitPhase from "./pages/PermitPhase";
@@ -119,6 +120,7 @@ export default function App() {
             <Route path="/apply-fields" element={<Auth><AdminAccessRoute><ApplyFields /></AdminAccessRoute></Auth>} />
             <Route path="/planner" element={<Auth><AdminAccessRoute><Planner /></AdminAccessRoute></Auth>} />
             <Route path="/quick-concept" element={<Auth><AdminAccessRoute><QuickConcept /></AdminAccessRoute></Auth>} />
+            <Route path="/archicad-viewer" element={<Auth><AdminAccessRoute><ArchicadViewer /></AdminAccessRoute></Auth>} />
             <Route path="/finished-projects" element={<Auth><FinishedProjects /></Auth>} />
             <Route path="/pre-engagement-phase" element={<Auth><PreEngagementPhase /></Auth>} />
             <Route path="/permit-phase" element={<Auth><PermitPhase /></Auth>} />

@@ -3,7 +3,7 @@ import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import TracePlanModal from "../components/TracePlanModal";
 import Building3DModal from "../components/Building3DModal.jsx";
 import BuildingElementVisibilityPanel from "../components/BuildingElementVisibilityPanel.jsx";
-import BuildingElevations from "../components/BuildingElevations.jsx";
+import ModelViewport from "../components/archicad/ModelViewport";
 import FlooringPlanPreview from "../components/FlooringPlanPreview.jsx";
 import PolytecKitchenCube from "../components/PolytecKitchenCube.jsx";
 import AuthedImg from "../components/AuthedImg";
@@ -26,11 +26,8 @@ import {
   colourOptionEntriesFromCatalogue,
   normalizeColourSectionRanges,
 } from "../constants/colourSectionRanges";
-import {
-  COLOURS_ROOF_STYLE_OPTIONS,
-  normalizeRoofStyle,
-} from "../constants/roofStyles.js";
-import { unitFinishHex } from "../utils/buildingUnitFinishes.js";
+import { normalizeRoofStyle } from "../constants/roofStyles.js";
+import { unitFinishCssHex, unitFinishHex } from "../utils/buildingUnitFinishes.js";
 import {
   DEFAULT_BUILDING_3D,
   normalizeBuilding3dDefaults,
@@ -62,10 +59,10 @@ function mergeColoursButtonStyle(styleId, fallback) {
 }
 
 const COLOURS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
+const SHOW_COLOURS_PLAN_TOOLS = false;
 const NOTHING_SELECTED = "Nothing selected";
 const UNWIRED_COLOUR_OPTIONS = [NOTHING_SELECTED];
 const COLORBOND_COLOUR_OPTIONS = [NOTHING_SELECTED, ...COLORBOND_COLOURS.map((c) => c.name)];
-const ROOF_STYLE_OPTIONS = COLOURS_ROOF_STYLE_OPTIONS;
 const COLOUR_PAGE_CATEGORIES = ["External", "Flooring", "Kitchen", "Bathroom", "Bedrooms"];
 const COMPLETE_LIST_CATEGORY = "Complete List";
 const COLOUR_TAB_LABELS = [...COLOUR_PAGE_CATEGORIES, COMPLETE_LIST_CATEGORY];
@@ -117,6 +114,20 @@ const COLOURS_FIELD_SELECT_STYLE = {
   minHeight: "42px",
 };
 
+function selectedFinishHex(value) {
+  const name = String(value || "").trim();
+  if (!name || name === NOTHING_SELECTED || /^select$/i.test(name)) return "";
+  return unitFinishCssHex(name);
+}
+
+function cssHexFromMeta(meta, value) {
+  const name = String(value || "").trim();
+  if (!name || name === NOTHING_SELECTED || /^select$/i.test(name)) return "";
+  const packed = meta?.[name]?.colorHex;
+  if (Number.isInteger(packed) && packed >= 0) return `#${packed.toString(16).padStart(6, "0")}`;
+  return selectedFinishHex(name);
+}
+
 function colourOrSelect(value) {
   const v = value && String(value).trim() ? String(value).trim() : "";
   if (!v || v === "Select" || v === NOTHING_SELECTED) return NOTHING_SELECTED;
@@ -163,6 +174,8 @@ export default function Colours({ project, onUpdate }) {
     colourOrSelect(project?.door_colour ?? project?.front_door_colour)
   );
   const [externalColourOptions, setExternalColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
+  const [externalColourMeta, setExternalColourMeta] = useState({});
+  const [windowsColourMeta, setWindowsColourMeta] = useState({});
   const [claddingMaterialOptions, setCladdingMaterialOptions] = useState(UNWIRED_COLOUR_OPTIONS);
   const [windowsColourOptions, setWindowsColourOptions] = useState(UNWIRED_COLOUR_OPTIONS);
   const [hybridAffordableColourOptions, setHybridAffordableColourOptions] =
@@ -204,6 +217,14 @@ export default function Colours({ project, onUpdate }) {
     parseRoofType(null)
   );
   const [isAdmin, setIsAdmin] = useState(false);
+  const [plnModel, setPlnModel] = useState(null);
+  const [showPlnImport, setShowPlnImport] = useState(false);
+  const [plnFile, setPlnFile] = useState(null);
+  const [plnManual, setPlnManual] = useState(false);
+  const [plnBusy, setPlnBusy] = useState(false);
+  const [plnNotice, setPlnNotice] = useState("");
+  const plnViewerRef = useRef(null);
+  const plnPickRef = useRef(false);
   const [building3dDefaults, setBuilding3dDefaults] = useState(() => DEFAULT_BUILDING_3D);
   const [building3dDefaultsReady, setBuilding3dDefaultsReady] = useState(false);
   const planTrace = useMemo(
@@ -386,7 +407,9 @@ export default function Colours({ project, onUpdate }) {
         if (cancelled) return;
 
         setExternalColourOptions(externalResult.options);
+        setExternalColourMeta(externalResult.metaByLabel || {});
         setWindowsColourOptions(windowsResult.options);
+        setWindowsColourMeta(windowsResult.metaByLabel || {});
         if (affordableSpecs) {
           setHybridSuperiorColourOptions(hybridSecondaryResult.options);
           setHybridSuperiorImageByLabel(hybridSecondaryResult.imageByLabel || {});
@@ -490,15 +513,6 @@ export default function Colours({ project, onUpdate }) {
     windowSurroundsColour,
     doorColour,
   ]);
-
-  const claddingMaterialFieldOptions = useMemo(() => {
-    const base = claddingMaterialOptions.length ? claddingMaterialOptions : UNWIRED_COLOUR_OPTIONS;
-    const current = colourOrSelect(claddingMaterial);
-    if (current && current !== NOTHING_SELECTED && !base.includes(current)) {
-      return [...base, current];
-    }
-    return base;
-  }, [claddingMaterialOptions, claddingMaterial]);
 
   const windowFramesFieldOptions = useMemo(() => {
     const base = windowsColourOptions.length ? windowsColourOptions : UNWIRED_COLOUR_OPTIONS;
@@ -750,6 +764,83 @@ export default function Colours({ project, onUpdate }) {
   useEffect(() => {
     (async () => setIsAdmin(await isUserAdmin()))();
   }, []);
+
+  const plnFinishColors = useMemo(
+    () => ({
+      roof: cssHexFromMeta(externalColourMeta, roofColour),
+      cladding: cssHexFromMeta(externalColourMeta, claddingColour),
+      baseboards: cssHexFromMeta(externalColourMeta, baseboardsColour),
+      windows: cssHexFromMeta(windowsColourMeta, windowFramesColour),
+      doors: cssHexFromMeta(externalColourMeta, doorColour),
+    }),
+    [
+      externalColourMeta,
+      windowsColourMeta,
+      roofColour,
+      claddingColour,
+      baseboardsColour,
+      windowFramesColour,
+      doorColour,
+    ]
+  );
+
+  useEffect(() => {
+    if (!isAdmin || !project?.id) return undefined;
+    let stop = false;
+    const load = () => {
+      fetch(`/api/projects/${project.id}/pln-model`, { headers: getApiHeaders() })
+        .then(async (res) => {
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body.error || "Could not load the model.");
+          return body;
+        })
+        .then((body) => {
+          if (!stop) setPlnModel(body.model || null);
+        })
+        .catch((error) => {
+          if (!stop) setPlnNotice(error.message || "Could not load the model.");
+        });
+    };
+    load();
+    return () => {
+      stop = true;
+    };
+  }, [isAdmin, project?.id]);
+
+  useEffect(() => {
+    const status = plnModel?.status;
+    if (!isAdmin || !project?.id) return undefined;
+    if (!["UPLOADING", "QUEUED", "PROCESSING", "OPTIMISING"].includes(status)) return undefined;
+    let stop = false;
+    const timer = setInterval(() => {
+      fetch(`/api/projects/${project.id}/pln-model`, { headers: getApiHeaders() })
+        .then(async (res) => {
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body.error || "Could not load the model.");
+          return body;
+        })
+        .then((body) => {
+          if (!stop) setPlnModel(body.model || null);
+        })
+        .catch((error) => {
+          if (!stop) setPlnNotice(error.message || "Could not load the model.");
+        });
+    }, 2000);
+    return () => {
+      stop = true;
+      clearInterval(timer);
+    };
+  }, [isAdmin, project?.id, plnModel?.status]);
+
+  useEffect(() => {
+    const api = plnViewerRef.current;
+    if (!api || !plnModel?.hasModel) return;
+    api.setRoofColor?.(plnFinishColors.roof);
+    api.setCladdingColor?.(plnFinishColors.cladding);
+    api.setBaseboardColor?.(plnFinishColors.baseboards);
+    api.setWindowColor?.(plnFinishColors.windows);
+    api.setDoorColor?.(plnFinishColors.doors);
+  }, [plnFinishColors, plnModel?.hasModel, plnModel?.updatedAt]);
 
   useEffect(() => {
     return () => {
@@ -1692,102 +1783,47 @@ export default function Colours({ project, onUpdate }) {
   });
   const visualiser3DUsesSavedStyle = Boolean(buildSavedButtonStyle(VISUALISER_3D_BUTTON_ID, true));
 
-  const externalColourFieldGrid = [
-    [
-      {
-        label: "Weatherboards Colour",
-        value: claddingColour,
-        onChange: handleCladdingColourChange,
-        options: externalFieldOptions,
-      },
-      {
-        label: "Weatherboards Material",
-        value: claddingMaterial,
-        onChange: handleCladdingMaterialChange,
-        options: claddingMaterialFieldOptions,
-      },
-    ],
-    [
-      {
-        label: "Baseboards Colour",
-        value: baseboardsColour,
-        onChange: handleBaseboardsColourChange,
-        options: externalFieldOptions,
-      },
-      null,
-    ],
-    [
-      {
-        label: "Roof Colour",
-        value: roofColour,
-        onChange: handleRoofColourChange,
-        options: externalFieldOptions,
-      },
-      {
-        label: "Roof style",
-        value: roofStyle,
-        onChange: handleRoofStyleChange,
-        options: ROOF_STYLE_OPTIONS,
-      },
-    ],
-    [
-      {
-        label: "Window Frames",
-        value: windowFramesColour,
-        onChange: handleWindowFramesColourChange,
-        options: windowFramesFieldOptions,
-      },
-      {
-        label: "Window Surrounds",
-        value: windowSurroundsColour,
-        onChange: handleWindowSurroundsColourChange,
-        options: externalFieldOptions,
-      },
-    ],
-    [
-      {
-        label: "Door",
-        value: doorColour,
-        onChange: handleDoorColourChange,
-        options: externalFieldOptions,
-      },
-      null,
-    ],
+  const externalColourFields = [
+    {
+      label: "Weatherboards Colour",
+      value: claddingColour,
+      onChange: handleCladdingColourChange,
+      options: externalFieldOptions,
+    },
+    {
+      label: "Baseboards Colour",
+      value: baseboardsColour,
+      onChange: handleBaseboardsColourChange,
+      options: externalFieldOptions,
+    },
+    {
+      label: "Roof Colour",
+      value: roofColour,
+      onChange: handleRoofColourChange,
+      options: externalFieldOptions,
+    },
+    {
+      label: "Window Frames",
+      value: windowFramesColour,
+      onChange: handleWindowFramesColourChange,
+      options: windowFramesFieldOptions,
+    },
+    {
+      label: "Window Surrounds",
+      value: windowSurroundsColour,
+      onChange: handleWindowSurroundsColourChange,
+      options: externalFieldOptions,
+    },
+    {
+      label: "Door",
+      value: doorColour,
+      onChange: handleDoorColourChange,
+      options: externalFieldOptions,
+    },
   ];
 
-  const externalSelectFitCh = useMemo(() => {
-    const labels = [
-      "Weatherboards Colour",
-      "Weatherboards Material",
-      "Baseboards Colour",
-      "Roof Colour",
-      "Roof style",
-      "Window Frames",
-      "Window Surrounds",
-      "Door",
-      "Status",
-    ];
-    const pools = [
-      labels,
-      COLOURS_STATUS_OPTIONS,
-      ROOF_STYLE_OPTIONS,
-      externalFieldOptions,
-      claddingMaterialFieldOptions,
-      windowFramesFieldOptions,
-    ];
-    let maxLen = 1;
-    for (const pool of pools) {
-      for (const item of pool || []) {
-        const len = String(item || "").length;
-        if (len > maxLen) maxLen = len;
-      }
-    }
-    return maxLen;
-  }, [externalFieldOptions, claddingMaterialFieldOptions, windowFramesFieldOptions]);
-
-  const externalSelectWidth = `calc(${externalSelectFitCh}ch + 40px)`;
-  const EXTERNAL_FIELD_GAP = 12;
-  const externalLeftPanelWidth = `calc(2 * (${externalSelectFitCh}ch + 40px) + ${EXTERNAL_FIELD_GAP}px)`;
+  const externalSelectWidth = "168px";
+  const externalLeftPanelWidth = externalSelectWidth;
   const externalSelectStyle = {
     ...COLOURS_FIELD_SELECT_STYLE,
     width: externalSelectWidth,
@@ -1836,6 +1872,74 @@ export default function Colours({ project, onUpdate }) {
       onPlanScaleChange: setCarpetPlanScale,
     },
   ];
+
+  async function chooseProjectPln() {
+    if (!project?.id || plnPickRef.current) return;
+    plnPickRef.current = true;
+    setPlnFile(null);
+    setPlnManual(false);
+    setShowPlnImport(true);
+    setPlnBusy(true);
+    setPlnNotice("The file window is opening in this project's folder.");
+    try {
+      const res = await fetch(`/api/projects/${project.id}/pln-model/from-folder`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.cancelled) {
+        setPlnNotice("No file was chosen.");
+        return;
+      }
+      if (!res.ok) {
+        if (
+          data.code === "PROJECT_FOLDER_NOT_FOUND" ||
+          data.code === "NO_ROOT" ||
+          data.code === "MISSING_ADDRESS" ||
+          data.code === "MISSING_STATE"
+        ) {
+          setPlnManual(true);
+        }
+        throw new Error(data.error || "The PLN could not be imported.");
+      }
+      setPlnModel(data);
+      setPlnNotice("");
+      setShowPlnImport(false);
+    } catch (error) {
+      setPlnNotice(error.message || "The PLN could not be imported.");
+    } finally {
+      plnPickRef.current = false;
+      setPlnBusy(false);
+    }
+  }
+
+  async function submitPlnImport() {
+    if (!plnFile || !project?.id || plnBusy) return;
+    setPlnBusy(true);
+    setPlnNotice("Uploading the PLN…");
+    try {
+      const headers = getApiHeaders();
+      delete headers["Content-Type"];
+      const body = new FormData();
+      body.append("file", plnFile);
+      const res = await fetch(`/api/projects/${project.id}/pln-model`, {
+        method: "POST",
+        headers,
+        body,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "The PLN could not be imported.");
+      setPlnModel(data);
+      setPlnNotice("");
+      setPlnFile(null);
+      setShowPlnImport(false);
+    } catch (error) {
+      setPlnNotice(error.message || "The PLN could not be imported.");
+    } finally {
+      setPlnBusy(false);
+    }
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
@@ -1952,54 +2056,49 @@ export default function Colours({ project, onUpdate }) {
 
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                  columnGap: `${EXTERNAL_FIELD_GAP}px`,
-                  rowGap: "12px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
                   alignContent: "start",
+                  width: externalSelectWidth,
                   minWidth: 0,
                   overflow: "hidden",
                 }}
               >
-                {externalColourFieldGrid.flatMap((row, rowIndex) =>
-                  row.map((field, colIndex) => {
-                    const key = field?.label || `blank-${rowIndex}-${colIndex}`;
-                    if (!field) return <div key={key} aria-hidden />;
-                    return (
-                      <label
-                        key={key}
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "6px",
-                          minWidth: 0,
-                          width: "100%",
-                        }}
-                      >
-                        <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>{field.label}</span>
-                        <select
-                          value={field.value}
-                          onChange={field.onChange}
-                          style={{
-                            ...COLOURS_FIELD_SELECT_STYLE,
-                            width: "100%",
-                            minWidth: 0,
-                            maxWidth: "100%",
-                            boxSizing: "border-box",
-                          }}
-                        >
-                          {field.options.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    );
-                  })
-                )}
+                {externalColourFields.map((field) => (
+                  <label
+                    key={field.label}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
+                      minWidth: 0,
+                      width: "100%",
+                    }}
+                  >
+                    <span style={{ fontSize: "0.9rem", color: UI.textMuted }}>{field.label}</span>
+                    <select
+                      value={field.value}
+                      onChange={field.onChange}
+                      style={{
+                        ...COLOURS_FIELD_SELECT_STYLE,
+                        width: "100%",
+                        minWidth: 0,
+                        maxWidth: "100%",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      {field.options.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
               </div>
 
+              {isAdmin && (
               <div
                 style={{
                   position: "relative",
@@ -2012,29 +2111,20 @@ export default function Colours({ project, onUpdate }) {
                   overflow: "hidden",
                 }}
               >
-                <div style={{ position: "absolute", inset: 8 }}>
-                  {building3dDefaultsReady && projectColoursHydrated ? (
-                  <BuildingElevations
-                    widthM={building3dDefaults.widthM}
-                    depthM={building3dDefaults.depthM}
-                    footprintPoints={planTraceFootprintPoints}
-                    roofPoints={planTraceRoofPoints}
-                    roofPivotLine={planTraceRoofPivotLine}
-                    decks={planTraceDecks}
-                    windows={planTraceWindows}
-                    doors={planTraceDoors}
-                    slidingDoors={planTraceSlidingDoors}
-                    calibration={planTraceCalibration}
-                    finishes={{
-                      claddingColour,
-                      baseboardsColour,
-                      roofColour,
-                      roofStyle,
-                      windowFramesColour,
-                      windowSurroundsColour,
-                      doorColour,
-                    }}
-                  />
+                <div style={{ position: "absolute", inset: 0 }}>
+                  {plnModel?.hasModel ? (
+                    <ModelViewport
+                      key={`${plnModel.id}-${plnModel.updatedAt || ""}`}
+                      modelUrl={`/api/projects/${project.id}/pln-model/model.glb?v=${encodeURIComponent(plnModel.updatedAt || "")}`}
+                      requestHeaders={(() => {
+                        const headers = getApiHeaders();
+                        delete headers["Content-Type"];
+                        return headers;
+                      })()}
+                      apiRef={plnViewerRef}
+                      finishColors={plnFinishColors}
+                      onError={(message) => setPlnNotice(message || "")}
+                    />
                   ) : (
                     <div
                       style={{
@@ -2043,15 +2133,21 @@ export default function Colours({ project, onUpdate }) {
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
+                        padding: 24,
+                        textAlign: "center",
                         color: UI.textMuted,
                         fontSize: "1rem",
                       }}
                     >
-                      Loading elevations…
+                      {plnModel?.errorDetail ||
+                        plnModel?.statusMessage ||
+                        plnNotice ||
+                        "Import a PLN to show this building."}
                     </div>
                   )}
                 </div>
               </div>
+              )}
             </div>
           ) : (
             <>
@@ -2492,7 +2588,7 @@ export default function Colours({ project, onUpdate }) {
             paddingBottom: "4px",
           }}
         >
-          {isAdmin && project?.drawings_pdf_location && (
+          {SHOW_COLOURS_PLAN_TOOLS && isAdmin && project?.drawings_pdf_location && (
             <button
               type="button"
               onClick={handleOpenTracePlan}
@@ -2515,7 +2611,7 @@ export default function Colours({ project, onUpdate }) {
               Trace<br />Plan
             </button>
           )}
-          {isAdmin && (
+          {SHOW_COLOURS_PLAN_TOOLS && isAdmin && (
             <button
               type="button"
               onClick={handleOpen3DVisualiser}
@@ -2559,6 +2655,29 @@ export default function Colours({ project, onUpdate }) {
           >
             Email Client
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={chooseProjectPln}
+              style={emailClientButtonStyle}
+              onMouseEnter={
+                emailClientUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = streamColorHover(MENU.purple);
+                    }
+              }
+              onMouseLeave={
+                emailClientUsesSavedStyle
+                  ? undefined
+                  : (e) => {
+                      e.currentTarget.style.background = MENU.purple;
+                    }
+              }
+            >
+              Import PLN
+            </button>
+          )}
         </div>
         </div>
       )}
@@ -2684,6 +2803,92 @@ export default function Colours({ project, onUpdate }) {
           kitchenFinishes={kitchenFinishes}
           onClose={() => setShowBuilding3DModal(false)}
         />
+      )}
+
+      {isAdmin && showPlnImport && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              background: WHITE,
+              borderRadius: "12px",
+              padding: "24px",
+              width: "90%",
+              maxWidth: "480px",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+            }}
+          >
+            <h2 style={{ margin: "0 0 8px", fontSize: "1.25rem", color: MONUMENT }}>Import PLN</h2>
+            <p style={{ margin: "0 0 16px", color: UI.textMuted, fontSize: "0.95rem", lineHeight: 1.45 }}>
+              The file window opens in this project's folder. A copy is imported, so the original PLN stays where it is. Import again if the drawings change.
+            </p>
+            {plnManual ? (
+              <input
+                type="file"
+                accept=".pln,application/octet-stream"
+                disabled={plnBusy}
+                onChange={(e) => setPlnFile(e.target.files?.[0] || null)}
+                style={{ display: "block", width: "100%", marginBottom: 12 }}
+              />
+            ) : null}
+            {plnNotice ? (
+              <p
+                style={{
+                  margin: "0 0 12px",
+                  color: plnBusy || plnNotice === "No file was chosen." ? UI.textMuted : "#8a2a2a",
+                  fontSize: "0.95rem",
+                }}
+              >
+                {plnNotice}
+              </p>
+            ) : null}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setShowPlnImport(false)}
+                style={{ ...emailClientButtonStyle, background: WHITE, color: MONUMENT }}
+              >
+                Close
+              </button>
+              {plnManual ? (
+                <button
+                  type="button"
+                  disabled={plnBusy || !plnFile}
+                  onClick={submitPlnImport}
+                  style={{
+                    ...emailClientButtonStyle,
+                    opacity: plnBusy || !plnFile ? 0.6 : 1,
+                    cursor: plnBusy || !plnFile ? "default" : "pointer",
+                  }}
+                >
+                  {plnBusy ? "Importing…" : "Import"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={plnBusy}
+                  onClick={chooseProjectPln}
+                  style={{
+                    ...emailClientButtonStyle,
+                    opacity: plnBusy ? 0.6 : 1,
+                    cursor: plnBusy ? "default" : "pointer",
+                  }}
+                >
+                  {plnBusy ? "Waiting…" : "Choose PLN"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Send Colours Modal */}

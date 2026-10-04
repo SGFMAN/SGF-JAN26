@@ -9,17 +9,13 @@ import {
   PAY_RATE,
   buildCollatedTimesheetTxt,
   clampPayHours,
+  enteredTimesheetUsers,
   formatHourOptionLabel,
-  submittedTimesheetUsers,
   timesheetTickedUsers,
   submittedTimesheetUserIds,
 } from "../utils/timeSheetCollate";
-import {
-  formatPeriodRange,
-  getPayCycleWednesdayForDate,
-  getPayPeriodBounds,
-  getPayPeriodDays,
-} from "../utils/timeSheetPayCycle";
+import { formatPeriodRange, getPayPeriodBounds, payCycleFromParts } from "../utils/timeSheetPayCycle";
+import { fetchOpenPayCycle } from "../utils/timeSheetExport";
 import { UI, INDICATOR, outlineBorder } from "../utils/uiThemeTokens.js";
 
 const MONUMENT = UI.textPrimary;
@@ -150,10 +146,12 @@ export default function TimesheetSettings() {
   const baseHourlyHoursRef = useRef(baseHourlyHours);
   const overtime15HoursRef = useRef(overtime15Hours);
 
-  const cycleWednesday = useMemo(() => getPayCycleWednesdayForDate(), []);
-  const periodDays = useMemo(() => getPayPeriodDays(cycleWednesday), [cycleWednesday]);
-  const cycleKey = cycleWednesday.toISOString().slice(0, 10);
+  const [openCycle, setOpenCycle] = useState(null);
+  const cycleWednesday = openCycle?.cycleWednesday || null;
+  const periodDays = openCycle?.periodDays || [];
+  const cycleKey = openCycle?.cycleKey || "";
   const periodLabel = useMemo(() => {
+    if (!cycleWednesday) return "";
     const { periodStart, periodEnd } = getPayPeriodBounds(cycleWednesday);
     return formatPeriodRange(periodStart, periodEnd);
   }, [cycleWednesday]);
@@ -205,6 +203,29 @@ export default function TimesheetSettings() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+    const loadCycle = () => {
+      fetchOpenPayCycle()
+        .then((next) => {
+          if (cancelled) return;
+          setOpenCycle((prev) => (prev?.cycleKey === next.cycleKey ? prev : next));
+        })
+        .catch((error) => {
+          console.error("Time sheet cycle:", error);
+        });
+    };
+    loadCycle();
+    const timer = setInterval(loadCycle, 15000);
+    window.addEventListener("sgf-timesheet-cycle-changed", loadCycle);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener("sgf-timesheet-cycle-changed", loadCycle);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!cycleKey) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -364,10 +385,10 @@ export default function TimesheetSettings() {
   }
 
   async function handleExport() {
-    if (exporting) return;
-    const included = submittedTimesheetUsers(users, sheets);
+    if (exporting || !cycleKey) return;
+    const included = enteredTimesheetUsers(users, sheets);
     if (included.length === 0) {
-      alert("No one has sent a time sheet for this pay cycle yet.");
+      alert("No hours have been entered for this pay cycle yet.");
       return;
     }
     const from = String(fromEmail || "").trim();
@@ -393,9 +414,9 @@ export default function TimesheetSettings() {
         }
 
         const cycleSheets = Array.isArray(sheetsData.sheets) ? sheetsData.sheets : [];
-        const sentUsers = submittedTimesheetUsers(users, cycleSheets);
-        if (sentUsers.length === 0) {
-          throw new Error("No one has sent a time sheet for this pay cycle yet.");
+        const enteredUsers = enteredTimesheetUsers(users, cycleSheets);
+        if (enteredUsers.length === 0) {
+          throw new Error("No hours have been entered for this pay cycle yet.");
         }
 
         const txt = buildCollatedTimesheetTxt({
@@ -434,7 +455,10 @@ export default function TimesheetSettings() {
         });
         const resetData = await resetRes.json().catch(() => ({}));
         if (!resetRes.ok) {
-          throw new Error(resetData.error || `Exported, but failed to reset sent status (${resetRes.status})`);
+          throw new Error(resetData.error || `Exported, but failed to open the next pay cycle (${resetRes.status})`);
+        }
+        if (resetData.openCycle) {
+          setOpenCycle(payCycleFromParts(resetData.openCycle));
         }
       });
       await loadSheets();
@@ -486,7 +510,7 @@ export default function TimesheetSettings() {
             Timesheet
           </h2>
           <p style={{ margin: "8px 0 0 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.4 }}>
-            Export the current pay cycle ({periodLabel}) for users who have clicked Send this cycle.
+            Email saved hours for {periodLabel || "this pay cycle"}. The fortnight just finished stays open until Export. Export is the cutoff: it sends the email, clears those hours, and opens the next fortnight.
           </p>
         </div>
         <button

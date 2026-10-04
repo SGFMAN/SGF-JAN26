@@ -96,7 +96,8 @@ const { startQuoteReminderScheduler, previewQuoteReminder1, sendQuoteReminder1Ma
 const { parseManagerSettingsColumn } = require("./managerSettings");
 const { parseReminderSettingsColumn } = require("./reminderSettings");
 const { parseTimesheetSettingsColumn } = require("./timesheetSettings");
-const { ensureTimesheetsTable, ensureUserTimesheetColumns, upsertTimesheet, listTimesheets, clearTimesheetSubmissions } = require("./timesheets");
+const { ensureTimesheetsTable, ensureUserTimesheetColumns, upsertTimesheet, upsertTimesheetDraft, getTimesheetForUser, listTimesheets } = require("./timesheets");
+const { ensureTimesheetOpenCycleColumn, getOpenTimesheetCycle, advanceOpenTimesheetCycle, publicCycle } = require("./timesheetCycle");
 const {
   listQuoteCallbackLists,
   setQuoteCallbackItemCalled,
@@ -2159,6 +2160,13 @@ async function ensureSchema() {
   } catch (e) {
     if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
       console.log(`Error adding column timesheet_settings_json:`, e.message);
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS timesheet_open_cycle_date TEXT`);
+  } catch (e) {
+    if (!e.message.includes("already exists") && !e.message.includes("duplicate column")) {
+      console.log(`Error adding column timesheet_open_cycle_date:`, e.message);
     }
   }
   try {
@@ -4328,6 +4336,100 @@ app.post("/api/projects/:id/verify-drawings-job-folder", async (req, res) => {
   }
 });
 
+async function resolveProjectJobFolder(pool, projectId) {
+  const id = Number(projectId);
+  if (!Number.isFinite(id)) {
+    return { ok: false, status: 400, body: { error: "invalid id", code: "INVALID_ID" } };
+  }
+  const pr = await pool.query(
+    "SELECT id, name, suburb, street, state, year FROM projects WHERE id = $1",
+    [id]
+  );
+  if (pr.rows.length === 0) {
+    return { ok: false, status: 404, body: { error: "Project not found", code: "NOT_FOUND" } };
+  }
+  const row = pr.rows[0];
+  const stateUpper = String(row.state || "").trim().toUpperCase();
+  if (!stateUpper) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "Project state is required", code: "MISSING_STATE" },
+    };
+  }
+  const suburb = String(row.suburb || "").trim();
+  const street = String(row.street || "").trim();
+  if (!suburb || !street) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: "Project suburb and street are required to locate the job folder",
+        code: "MISSING_ADDRESS",
+      },
+    };
+  }
+  const sr = await pool.query(
+    "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
+  );
+  const rootDir = resolveRootDirForProjectDrawings(sr.rows[0] || {}, stateUpper);
+  if (!rootDir) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: "Root directory is not set in File Settings for this state",
+        code: "NO_ROOT",
+      },
+    };
+  }
+  const yearSeg = getProjectYearFolderSegment(row.year);
+  const folderLeaf = buildJobProjectFolderName(row.suburb, row.street);
+  const expectedFolderAbs = path.resolve(path.join(rootDir, yearSeg, stateUpper, folderLeaf));
+  let folderAbs = "";
+  if (await pathExistsAsDirectory(expectedFolderAbs)) {
+    folderAbs = expectedFolderAbs;
+  } else {
+    const lenient = await findBestProjectFolderPathLenient(
+      rootDir,
+      yearSeg,
+      stateUpper,
+      row.suburb,
+      row.street
+    );
+    if (lenient && (await pathExistsAsDirectory(lenient))) {
+      folderAbs = path.resolve(lenient);
+    }
+  }
+  if (!folderAbs) {
+    return {
+      ok: false,
+      status: 404,
+      body: {
+        ok: false,
+        code: "PROJECT_FOLDER_NOT_FOUND",
+        error: `Project folder not found at ${expectedFolderAbs}`,
+        expectedPath: expectedFolderAbs,
+      },
+    };
+  }
+  const rootResolved = path.resolve(rootDir);
+  if (
+    folderAbs !== rootResolved &&
+    !folderAbs.toLowerCase().startsWith(rootResolved.toLowerCase() + path.sep)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: "Resolved folder is outside the configured root directory",
+        code: "PATH_OUTSIDE_ROOT",
+      },
+    };
+  }
+  return { ok: true, folderAbs, row };
+}
+
 /** Open the project's job folder in a new Windows Explorer window (server-side path only). */
 function openFolderInWindowsExplorer(folderAbsPath) {
   const { execFile } = require("child_process");
@@ -4411,88 +4513,63 @@ app.post("/api/projects/:id/open-project-folder", async (req, res) => {
     return res.status(400).json({ error: "invalid id", code: "INVALID_ID" });
   }
   try {
-    const pr = await pool.query(
-      "SELECT id, name, suburb, street, state, year FROM projects WHERE id = $1",
-      [id]
-    );
-    if (pr.rows.length === 0) {
-      return res.status(404).json({ error: "Project not found", code: "NOT_FOUND" });
-    }
-    const row = pr.rows[0];
-    const stateUpper = String(row.state || "").trim().toUpperCase();
-    if (!stateUpper) {
-      return res.status(400).json({
-        error: "Project state is required",
-        code: "MISSING_STATE",
-      });
-    }
-    const suburb = String(row.suburb || "").trim();
-    const street = String(row.street || "").trim();
-    if (!suburb || !street) {
-      return res.status(400).json({
-        error: "Project suburb and street are required to locate the job folder",
-        code: "MISSING_ADDRESS",
-      });
-    }
-
-    const sr = await pool.query(
-      "SELECT root_directory, root_directory_qld FROM settings WHERE id = 1"
-    );
-    const settingsRow = sr.rows[0] || {};
-    const rootDir = resolveRootDirForProjectDrawings(settingsRow, stateUpper);
-    if (!rootDir) {
-      return res.status(400).json({
-        error: "Root directory is not set in File Settings for this state",
-        code: "NO_ROOT",
-      });
-    }
-
-    const yearSeg = getProjectYearFolderSegment(row.year);
-    const folderLeaf = buildJobProjectFolderName(row.suburb, row.street);
-    const expectedFolderAbs = path.resolve(path.join(rootDir, yearSeg, stateUpper, folderLeaf));
-    let folderAbs = "";
-    if (await pathExistsAsDirectory(expectedFolderAbs)) {
-      folderAbs = expectedFolderAbs;
-    } else {
-      const lenient = await findBestProjectFolderPathLenient(
-        rootDir,
-        yearSeg,
-        stateUpper,
-        row.suburb,
-        row.street
-      );
-      if (lenient && (await pathExistsAsDirectory(lenient))) {
-        folderAbs = path.resolve(lenient);
-      }
-    }
-
-    if (!folderAbs) {
-      return res.status(404).json({
-        ok: false,
-        code: "PROJECT_FOLDER_NOT_FOUND",
-        error: `Project folder not found at ${expectedFolderAbs}`,
-        expectedPath: expectedFolderAbs,
-      });
-    }
-
-    // Safety: only open folders under the configured root.
-    const rootResolved = path.resolve(rootDir);
-    if (
-      folderAbs !== rootResolved &&
-      !folderAbs.toLowerCase().startsWith(rootResolved.toLowerCase() + path.sep)
-    ) {
-      return res.status(400).json({
-        error: "Resolved folder is outside the configured root directory",
-        code: "PATH_OUTSIDE_ROOT",
-      });
-    }
-
+    const located = await resolveProjectJobFolder(pool, id);
+    if (!located.ok) return res.status(located.status).json(located.body);
+    const folderAbs = located.folderAbs;
     await openFolderInWindowsExplorer(folderAbs);
     console.log(`open-project-folder: opened ${folderAbs} for project ${id}`);
     return res.json({ ok: true, path: folderAbs });
   } catch (e) {
     console.error("open-project-folder:", e);
     return res.status(500).json({ error: e.message || "Failed to open project folder" });
+  }
+});
+
+app.post("/api/projects/:id/pln-model/from-folder", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  const os = require("os");
+  const { pickPlnFile } = require("./archicad/windowsPlnDialog");
+  const archicad = require("./archicad/service");
+  let tempPath = "";
+  try {
+    const located = await resolveProjectJobFolder(pool, id);
+    if (!located.ok) return res.status(located.status).json(located.body);
+    const picked = await pickPlnFile(located.folderAbs);
+    if (!picked) return res.json({ cancelled: true });
+    const selected = path.resolve(picked);
+    if (path.extname(selected).toLowerCase() !== ".pln") {
+      return res.status(400).json({ error: "Choose an Archicad PLN file." });
+    }
+    const stat = await fs.stat(selected);
+    if (!stat.isFile()) {
+      return res.status(400).json({ error: "Choose an Archicad PLN file." });
+    }
+    tempPath = path.join(
+      os.tmpdir(),
+      `sgf-pln-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.pln`
+    );
+    await fs.copyFile(selected, tempPath);
+    await archicad.init(pool);
+    const userId = getStaffUserIdFromRequest(req);
+    const model = await archicad.importProjectPln({
+      projectId: id,
+      tempPath,
+      originalName: path.basename(selected),
+      userId,
+    });
+    tempPath = "";
+    return res.status(201).json(model);
+  } catch (error) {
+    if (tempPath) await fs.unlink(tempPath).catch(() => {});
+    console.error("pln-model/from-folder:", error);
+    return res.status(error.statusCode || 500).json({
+      error: error.message || "The PLN could not be imported.",
+    });
   }
 });
 
@@ -6439,6 +6516,85 @@ app.put("/api/timesheet-settings", async (req, res) => {
   }
 });
 
+app.get("/api/timesheets/open-cycle", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const requestUserId = getStaffUserIdFromRequest(req);
+    if (!Number.isFinite(requestUserId)) {
+      return res.status(401).json({ error: "Login required" });
+    }
+    await ensureTimesheetOpenCycleColumn(pool);
+    const open = await getOpenTimesheetCycle(pool);
+    return res.json({ openCycle: publicCycle(open) });
+  } catch (e) {
+    console.error("Time sheet open cycle:", e);
+    return res.status(500).json({ error: e.message || "Failed to load the time sheet cycle" });
+  }
+});
+
+app.get("/api/timesheets/mine", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const requestUserId = getStaffUserIdFromRequest(req);
+    if (!Number.isFinite(requestUserId)) {
+      return res.status(401).json({ error: "Login required" });
+    }
+    const key = String(req.query?.cycleKey || "").trim();
+    if (!key) {
+      return res.status(400).json({ error: "cycleKey is required" });
+    }
+    await ensureTimesheetsTable(pool);
+    const sheet = await getTimesheetForUser(pool, requestUserId, key);
+    return res.json({ sheet });
+  } catch (e) {
+    console.error("Time sheet load:", e);
+    return res.status(500).json({ error: e.message || "Failed to load time sheet" });
+  }
+});
+
+app.post("/api/timesheets/draft", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  try {
+    const requestUserId = getStaffUserIdFromRequest(req);
+    if (!Number.isFinite(requestUserId)) {
+      return res.status(401).json({ error: "Login required" });
+    }
+
+    const { userId, userName, cycleKey, periodDays, dayEntries } = req.body || {};
+    const saveUserId = Number(userId);
+    if (!Number.isFinite(saveUserId) || saveUserId !== requestUserId) {
+      return res.status(403).json({ error: "You can only save your own time sheet" });
+    }
+
+    const key = String(cycleKey || "").trim();
+    if (!key) {
+      return res.status(400).json({ error: "cycleKey is required" });
+    }
+
+    const open = await getOpenTimesheetCycle(pool);
+    if (key !== open.cycleKey) {
+      return res.status(409).json({
+        error: "That pay cycle is closed.",
+        openCycle: publicCycle(open),
+      });
+    }
+
+    await ensureTimesheetsTable(pool);
+    await upsertTimesheetDraft(pool, {
+      userId: saveUserId,
+      cycleKey: key,
+      userName: String(userName || "").trim() || "User",
+      periodDays,
+      dayEntries,
+    });
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("Time sheet draft save:", e);
+    return res.status(500).json({ error: e.message || "Failed to save time sheet" });
+  }
+});
+
 app.post("/api/timesheets", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   try {
@@ -6456,6 +6612,14 @@ app.post("/api/timesheets", async (req, res) => {
     const key = String(cycleKey || "").trim();
     if (!key) {
       return res.status(400).json({ error: "cycleKey is required" });
+    }
+
+    const open = await getOpenTimesheetCycle(pool);
+    if (key !== open.cycleKey) {
+      return res.status(409).json({
+        error: "That pay cycle is closed.",
+        openCycle: publicCycle(open),
+      });
     }
 
     await ensureTimesheetsTable(pool);
@@ -6502,11 +6666,15 @@ app.post("/api/timesheets/reset-submissions", async (req, res) => {
       return res.status(400).json({ error: "cycleKey is required" });
     }
     await ensureTimesheetsTable(pool);
-    await clearTimesheetSubmissions(pool, key);
-    return res.json({ success: true });
+    const next = await advanceOpenTimesheetCycle(pool, key);
+    return res.json({ success: true, openCycle: publicCycle(next) });
   } catch (e) {
     console.error("Time sheet reset submissions:", e);
-    return res.status(500).json({ error: e.message || "Failed to reset time sheet submissions" });
+    const status = Number(e.status) || 500;
+    return res.status(status).json({
+      error: e.message || "Failed to reset time sheet submissions",
+      openCycle: e.openCycle || null,
+    });
   }
 });
 
@@ -11543,6 +11711,7 @@ require("./clientPortalRoutes")(app, pool, {
   getSmtpCredentialsForFromAddress,
   getDefaultSystemSmtpFrom,
 });
+require("./archicad/routes").register(app, () => pool);
 
 // Serve colours PDF
 app.get("/api/files/colours/:id", async (req, res) => {
@@ -16119,6 +16288,11 @@ const { attachSandpitRaceWebSocket } = require("./sandpitRaceRoom");
     const t0 = Date.now();
     await ensureSchema();
     console.log(`ensureSchema: ${Date.now() - t0}ms`);
+    try {
+      await require("./archicad/routes").ensureReady(pool);
+    } catch (archicadError) {
+      console.error("Archicad viewer setup:", archicadError?.message || archicadError);
+    }
     if (await shouldRunPlanningJfScrub(pool)) {
       const t1 = Date.now();
       await scrubPlanningJfPathsNotReceived(pool);
@@ -16127,6 +16301,14 @@ const { attachSandpitRaceWebSocket } = require("./sandpitRaceRoom");
     }
     serverReady = true;
     console.log(`✅ Server ready (total ${Date.now() - t0}ms)`);
+    if (pool) {
+      try {
+        const openCycle = await getOpenTimesheetCycle(pool);
+        console.log(`Timesheet open cycle ${openCycle.localDate}`);
+      } catch (cycleError) {
+        console.error("Timesheet open cycle:", cycleError?.message || cycleError);
+      }
+    }
     startQuoteReminderScheduler({
       getPool: () => pool,
       getSmtpCredentialsForFromAddress,

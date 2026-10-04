@@ -1,19 +1,42 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import TimeSheetSettingsContent from "./TimeSheetSettingsContent";
 import { UI, TEXT } from "../utils/uiThemeTokens";
 import { TIMESHEET_GAP } from "../utils/timesheetLayout";
-import {
-  formatPeriodRange,
-  getPayCycleWednesdayForDate,
-  getPayPeriodBounds,
-} from "../utils/timeSheetPayCycle";
+import { formatPeriodRange, getPayPeriodBounds } from "../utils/timeSheetPayCycle";
+import { fetchOpenPayCycle } from "../utils/timeSheetExport";
 
 export default function TimeSheetModal({ open, onClose }) {
-  const title = useMemo(() => {
-    const cycleWednesday = getPayCycleWednesdayForDate();
-    const { periodStart, periodEnd } = getPayPeriodBounds(cycleWednesday);
-    return `Time Sheet - ${formatPeriodRange(periodStart, periodEnd)}`;
-  }, []);
+  const [cycle, setCycle] = useState(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    const load = () => {
+      fetchOpenPayCycle()
+        .then((next) => {
+          if (cancelled) return;
+          setCycle((prev) => (prev?.cycleKey === next.cycleKey ? prev : next));
+        })
+        .catch((error) => {
+          console.error("Time sheet cycle:", error);
+        });
+    };
+    load();
+    const timer = setInterval(load, 15000);
+    window.addEventListener("sgf-timesheet-cycle-changed", load);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener("sgf-timesheet-cycle-changed", load);
+    };
+  }, [open]);
+
+  const title = cycle
+    ? `Time Sheet - ${formatPeriodRange(
+        getPayPeriodBounds(cycle.cycleWednesday).periodStart,
+        getPayPeriodBounds(cycle.cycleWednesday).periodEnd
+      )}`
+    : "Time Sheet";
 
   if (!open) {
     return null;
@@ -97,7 +120,7 @@ export default function TimeSheetModal({ open, onClose }) {
           </button>
         </div>
 
-        <TimeSheetSettingsContent />
+        {cycle ? <TimeSheetSettingsContent cycle={cycle} /> : null}
       </div>
     </div>
   );

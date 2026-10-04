@@ -1,3 +1,5 @@
+import { PAY_PERIOD_WEEKDAY_ORDER } from "./timeSheetPayCycle";
+
 export const TIME_STEP_MINUTES = 30;
 export const DEFAULT_WORK_HOURS_MINUTES = 8 * 60;
 export const DEFAULT_BREAK_MINUTES = 0;
@@ -5,7 +7,10 @@ export const DEFAULT_OVERTIME_MINUTES = 0;
 export const SELECT_PROJECT_VALUE = "";
 export const SELECT_PROJECT_LABEL = "Select...";
 export const OFFICE_PROJECT_VALUE = "office";
-export const DEFAULT_PROJECT_VALUE = SELECT_PROJECT_VALUE;
+export const ANNUAL_LEAVE_PROJECT_VALUE = "annual-leave";
+export const PUBLIC_HOLIDAY_PROJECT_VALUE = "public-holiday";
+export const SICK_LEAVE_PROJECT_VALUE = "sick-leave";
+export const DEFAULT_PROJECT_VALUE = OFFICE_PROJECT_VALUE;
 export const MAX_WORK_HOURS_MINUTES = 8 * 60;
 export const MAX_BREAK_MINUTES = 60;
 export const MAX_OVERTIME_MINUTES = 8 * 60;
@@ -67,8 +72,16 @@ export function createDefaultDayEntry() {
   };
 }
 
+function isSaturdayIndex(index) {
+  return PAY_PERIOD_WEEKDAY_ORDER[index] === "Saturday";
+}
+
 export function createDefaultDayEntries(count = PAY_PERIOD_DAY_COUNT) {
-  return Array.from({ length: count }, () => createDefaultDayEntry());
+  return Array.from({ length: count }, (_, index) => {
+    const entry = createDefaultDayEntry();
+    if (isSaturdayIndex(index)) entry.workMinutes = 0;
+    return entry;
+  });
 }
 
 export function stepWorkMinutes(minutes, direction) {
@@ -138,19 +151,24 @@ function normalizeTemplateEntry(entry) {
       WORK_HOUR_OPTIONS,
       DEFAULT_OVERTIME_MINUTES
     ),
-    projectId: entry.projectId ?? DEFAULT_PROJECT_VALUE,
+    projectId: entry.projectId || DEFAULT_PROJECT_VALUE,
   };
 }
 
+export function normalizeDayEntries(entries) {
+  if (!Array.isArray(entries) || entries.length !== PAY_PERIOD_DAY_COUNT) return null;
+  return entries.map(normalizeTemplateEntry);
+}
+
 export function loadUserTemplate(userId) {
+  migrateStoredSaturdayDefaults();
   try {
     const raw = localStorage.getItem(TEMPLATE_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const key = templateStorageKey(userId);
     const entries = parsed?.[key] ?? parsed?.[Number(userId)];
-    if (!Array.isArray(entries) || entries.length !== PAY_PERIOD_DAY_COUNT) return null;
-    return entries.map(normalizeTemplateEntry);
+    return normalizeDayEntries(entries);
   } catch {
     return null;
   }
@@ -173,15 +191,45 @@ function payCycleStorageKey(userId, cycleKey) {
   return `${templateStorageKey(userId)}:${cycleKey}`;
 }
 
+const SATURDAY_NONE_MIGRATION_KEY = "sgf_time_sheet_saturday_none_v1";
+
+/** Sheets saved before Saturday defaulted to None still have 8 hours there. Update those once. */
+function migrateStoredSaturdayDefaults() {
+  try {
+    if (localStorage.getItem(SATURDAY_NONE_MIGRATION_KEY) === "1") return;
+    for (const storageKey of [TEMPLATE_STORAGE_KEY, PAY_CYCLE_STORAGE_KEY]) {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      let changed = false;
+      for (const key of Object.keys(parsed)) {
+        const entries = parsed[key];
+        if (!Array.isArray(entries)) continue;
+        parsed[key] = entries.map((entry, index) => {
+          if (!isSaturdayIndex(index) || !entry || typeof entry !== "object") return entry;
+          if (Number(entry.workMinutes) !== DEFAULT_WORK_HOURS_MINUTES) return entry;
+          changed = true;
+          return { ...entry, workMinutes: 0 };
+        });
+      }
+      if (changed) localStorage.setItem(storageKey, JSON.stringify(parsed));
+    }
+    localStorage.setItem(SATURDAY_NONE_MIGRATION_KEY, "1");
+  } catch (e) {
+    console.error("migrateStoredSaturdayDefaults:", e);
+  }
+}
+
 export function loadPayCycleSheet(userId, cycleKey) {
   if (!userId || !cycleKey) return null;
+  migrateStoredSaturdayDefaults();
   try {
     const raw = localStorage.getItem(PAY_CYCLE_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const entries = parsed?.[payCycleStorageKey(userId, cycleKey)];
-    if (!Array.isArray(entries) || entries.length !== PAY_PERIOD_DAY_COUNT) return null;
-    return entries.map(normalizeTemplateEntry);
+    return normalizeDayEntries(entries);
   } catch {
     return null;
   }

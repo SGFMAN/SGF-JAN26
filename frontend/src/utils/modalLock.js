@@ -35,6 +35,7 @@ export function useModalBodyLock(active = true) {
         pageContainerEl.inert = true;
       }
       if (rootEl) {
+        rootEl.style.pointerEvents = "none";
         rootEl.inert = true;
       }
     }
