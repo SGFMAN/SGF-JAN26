@@ -4,6 +4,9 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import sgfLogoUrl from "../images/SGF Homes.png";
 
 const WALL_H = 2.55;
+const WINDOW_W_M = 1.5;
+const WINDOW_H_M = 0.9;
+const WINDOW_SILL_M = 0.9;
 const WALL_T = 0.1;
 const LINE = 0xb8b8b8;
 const PLAN_DOOR_W = 0.87;
@@ -32,6 +35,22 @@ const VANITY_KICK_H = 0.15;
 const VANITY_KICK_INSET = 0.05;
 const SHOWER_LONG_M = 1.8;
 const SHOWER_SHORT_M = 0.9;
+const SHOWER_LEN_MIN_M = 0.9;
+const SHOWER_LEN_MAX_M = 2.1;
+const SHOWER_LEN_STEP_M = 0.1;
+
+function showerLength3D(room, span) {
+  const roomMax = Number.isFinite(span) && span > 0.05 ? span : SHOWER_LEN_MAX_M;
+  const maxM = Math.min(SHOWER_LEN_MAX_M, roomMax);
+  const minM = Math.min(SHOWER_LEN_MIN_M, maxM);
+  const step = Math.round(SHOWER_LEN_STEP_M * 1000);
+  const max = Math.floor(Math.floor(maxM * 1000 + 1e-6) / step) * step;
+  let min = Math.ceil(Math.ceil(minM * 1000 - 1e-6) / step) * step;
+  if (min > max) min = max;
+  const raw = Number(room?.showerLen);
+  const baseMm = Math.round(((raw > 0 ? raw : SHOWER_LONG_M) * 1000) / step) * step;
+  return Math.max(min, Math.min(max, baseMm)) / 1000;
+}
 const SHOWER_GLASS_H = 2.1;
 const SHOWER_TILE_H = 2.4;
 const TOILET_TANK_ALONG_M = 0.5;
@@ -56,6 +75,12 @@ const DECK_TONE_HEX = [0x7a5232, 0x684428, 0x57381f, 0x73502e, 0x4a301a, 0x8a5e3
 const DECK_BOARD_M = 0.09;
 const DECK_GAP_M = 0.008;
 const ISO_AZIMUTH = Math.PI / 4;
+const WALK_EYE_HEIGHT_M = 1.5;
+const WALK_DOOR_DISTANCE_M = 10;
+const WALK_MOVE_MS = 1100;
+const WALK_PAUSE_MS = 2000;
+const WALK_SPEED_MPS = 1.2;
+const WALK_FOV = 76;
 // 90° is straight down. 80° sits just off that, tilted back toward the front.
 const ISO_ELEVATION = (80 * Math.PI) / 180;
 const EYE_LEVEL_ELEVATION = (45 * Math.PI) / 180;
@@ -84,6 +109,7 @@ function roomKind(room) {
   if (room?.kind === "bathroom") return "bathroom";
   if (room?.kind === "powder") return "powder";
   if (room?.kind === "laundry") return "laundry";
+  if (room?.kind === "laundryRoom") return "laundryRoom";
   if (room?.kind === "kitchen") return "kitchen";
   if (room?.kind === "porch") return "porch";
   if (room?.kind === "living") return "living";
@@ -194,14 +220,90 @@ function livingSetGeom3D(room) {
   };
 }
 
-function frontDoorAzimuth(doors) {
-  const door = (doors || []).find((d) => d.external && d.inward);
-  if (!door) return ISO_AZIMUTH;
-  const ox = -(door.inward.x || 0);
-  const oz = -(door.inward.y || 0);
+function externalFrontDoor(doors) {
+  return (doors || []).find((d) => d.external && d.inward && d.hinge && d.closed) || null;
+}
+
+function frontDoorOutward(door) {
+  const ox = -(door?.inward?.x || 0);
+  const oz = -(door?.inward?.y || 0);
   const len = Math.hypot(ox, oz);
-  if (len < 1e-6) return ISO_AZIMUTH;
-  return Math.atan2(ox / len, oz / len);
+  if (len < 1e-6) return null;
+  return { x: ox / len, z: oz / len };
+}
+
+function frontDoorAzimuth(doors) {
+  const outward = frontDoorOutward(externalFrontDoor(doors));
+  if (!outward) return ISO_AZIMUTH;
+  return Math.atan2(outward.x, outward.z);
+}
+
+// Yaw that puts the building's longer plan axis left-to-right in the picture,
+// so the walls run horizontal (rotate the image 90° and they run vertical).
+function planCardinalAzimuth(metres) {
+  const pts = metres || [];
+  if (pts.length < 2) return 0;
+  let bestLen = 0;
+  let dx = 1;
+  let dy = 0;
+  for (let i = 0; i < pts.length; i += 1) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const len = Math.hypot(ex, ey);
+    if (len > bestLen) {
+      bestLen = len;
+      dx = ex;
+      dy = ey;
+    }
+  }
+  const edge = Math.hypot(dx, dy) || 1;
+  const ux = dx / edge;
+  const uy = dy / edge;
+  const px = -uy;
+  const py = ux;
+  let minU = Infinity;
+  let maxU = -Infinity;
+  let minP = Infinity;
+  let maxP = -Infinity;
+  for (const p of pts) {
+    const u = p.x * ux + p.y * uy;
+    const v = p.x * px + p.y * py;
+    if (u < minU) minU = u;
+    if (u > maxU) maxU = u;
+    if (v < minP) minP = v;
+    if (v > maxP) maxP = v;
+  }
+  const hx = maxU - minU >= maxP - minP ? ux : px;
+  const hy = maxU - minU >= maxP - minP ? uy : py;
+  return Math.atan2(-hy, hx);
+}
+
+function wrapAngle(delta) {
+  let d = delta;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+// Parameter along the camera path (0–1) where it crosses the door opening.
+function pathCrossDoor(fromX, fromZ, toX, toZ, hingeX, hingeZ, closedX, closedZ) {
+  const rx = closedX - hingeX;
+  const rz = closedZ - hingeZ;
+  const sx = toX - fromX;
+  const sz = toZ - fromZ;
+  const rxs = rx * sz - rz * sx;
+  if (Math.abs(rxs) < 1e-8) return null;
+  const qpx = fromX - hingeX;
+  const qpz = fromZ - hingeZ;
+  const t = (qpx * sz - qpz * sx) / rxs;
+  const u = (qpx * rz - qpz * rx) / rxs;
+  const doorLen = Math.hypot(rx, rz) || 1;
+  const slack = 0.3 / doorLen;
+  if (t < -slack || t > 1 + slack) return null;
+  if (u < -0.01 || u > 1.01) return null;
+  return Math.max(0, Math.min(1, u));
 }
 
 function ringBounds(pts) {
@@ -327,11 +429,14 @@ function addWallRun(parent, x0, z0, x1, z1, thickness, openings, fill, lineMat) 
     const lo = Math.max(0, Math.min(o.lo, o.hi));
     const hi = Math.min(len, Math.max(o.lo, o.hi));
     if (hi - lo < 0.05) continue;
+    const y0 = Number.isFinite(o.y0) ? o.y0 : 0;
+    const y1 = Number.isFinite(o.y1) ? o.y1 : PLAN_DOOR_H;
+    if (y1 - y0 < 0.05) continue;
     const hole = new THREE.Path();
-    hole.moveTo(lo, 0);
-    hole.lineTo(hi, 0);
-    hole.lineTo(hi, PLAN_DOOR_H);
-    hole.lineTo(lo, PLAN_DOOR_H);
+    hole.moveTo(lo, y0);
+    hole.lineTo(hi, y0);
+    hole.lineTo(hi, y1);
+    hole.lineTo(lo, y1);
     hole.closePath();
     shape.holes.push(hole);
     holes.push({ lo, hi });
@@ -874,6 +979,173 @@ function kitchenCookRect(room) {
   return rotatedLocalRect(room, cookLocalOnBench(placed.bench, placed.along));
 }
 
+function sinkWallSpec(room) {
+  const placed = resolveKitchenAppliance(room, "sink");
+  if (!placed?.bench) return null;
+  const bench = placed.bench;
+  const rect = sinkRectOnBench(bench, placed.along);
+  const scx = rect.x + rect.w / 2;
+  const scy = rect.y + rect.h / 2;
+  let point;
+  let along;
+  let outward;
+  if (bench.alongAxis === "x") {
+    const y = bench.wall === "min" ? bench.y : bench.y + bench.h;
+    point = { x: scx, y };
+    along = { x: 1, y: 0 };
+    outward = { x: 0, y: bench.wall === "min" ? -1 : 1 };
+  } else {
+    const x = bench.wall === "min" ? bench.x : bench.x + bench.w;
+    point = { x, y: scy };
+    along = { x: 0, y: 1 };
+    outward = { x: bench.wall === "min" ? -1 : 1, y: 0 };
+  }
+  return {
+    point: rotatedLocalPoint(room, point),
+    along: rotatedLocalVec(room, along),
+    outward: rotatedLocalVec(room, outward),
+  };
+}
+
+function nearestSinkWallEdge(pts, point, along, outward) {
+  const al = Math.hypot(along.x, along.y) || 1;
+  const ax = along.x / al;
+  const ay = along.y / al;
+  const ol = Math.hypot(outward.x, outward.y) || 1;
+  const ox = outward.x / ol;
+  const oy = outward.y / ol;
+  let best = null;
+  const n = pts?.length || 0;
+  for (let i = 0; i < n; i += 1) {
+    const a = pts[i];
+    const b = pts[(i + 1) % n];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.4) continue;
+    const ux = dx / len;
+    const uy = dy / len;
+    if (Math.abs(ux * ax + uy * ay) < 0.85) continue;
+    const rawT = (point.x - a.x) * ux + (point.y - a.y) * uy;
+    const t = Math.max(0, Math.min(len, rawT));
+    const px = a.x + ux * t;
+    const py = a.y + uy * t;
+    const vx = px - point.x;
+    const vy = py - point.y;
+    if (vx * ox + vy * oy < -0.15) continue;
+    const dist = Math.hypot(vx, vy);
+    if (!best || dist < best.dist) best = { index: i, t, len, dist };
+  }
+  if (!best || best.dist > 1.2) return null;
+  return best;
+}
+
+function windowSpanOnEdge(len, centerT, blocked) {
+  const margin = 0.05;
+  if (len < margin * 2 + 0.4) return null;
+  const width = Math.min(WINDOW_W_M, len - margin * 2);
+  let lo = centerT - width / 2;
+  let hi = centerT + width / 2;
+  if (lo < margin) {
+    lo = margin;
+    hi = lo + width;
+  }
+  if (hi > len - margin) {
+    hi = len - margin;
+    lo = hi - width;
+  }
+  for (const block of blocked || []) {
+    if (hi <= block.lo + 0.02 || lo >= block.hi - 0.02) continue;
+    const before = block.lo - margin;
+    const after = len - margin - block.hi;
+    if (after >= width) {
+      lo = block.hi + 0.04;
+      hi = lo + width;
+    } else if (before >= width) {
+      hi = block.lo - 0.04;
+      lo = hi - width;
+    } else {
+      return null;
+    }
+  }
+  if (lo < margin - 0.001 || hi > len - margin + 0.001 || hi - lo < width - 0.02) return null;
+  return { lo, hi, y0: WINDOW_SILL_M, y1: WINDOW_SILL_M + WINDOW_H_M, window: true };
+}
+
+function sinkWindowsForEdge(rooms, outer, edgeIndex, blocked) {
+  const out = [];
+  for (const room of rooms || []) {
+    if (roomKind(room) !== "kitchen") continue;
+    const spec = sinkWallSpec(room);
+    if (!spec) continue;
+    const edge = nearestSinkWallEdge(outer, spec.point, spec.along, spec.outward);
+    if (!edge || edge.index !== edgeIndex) continue;
+    const span = windowSpanOnEdge(edge.len, edge.t, blocked);
+    if (span) out.push(span);
+  }
+  return out;
+}
+
+function addWindowUnit(parent, x0, z0, x1, z1, opening, mats) {
+  const dx = x1 - x0;
+  const dz = z1 - z0;
+  const len = Math.hypot(dx, dz) || 1;
+  const ux = dx / len;
+  const uz = dz / len;
+  const mid = (opening.lo + opening.hi) / 2;
+  const width = opening.hi - opening.lo;
+  const height = opening.y1 - opening.y0;
+  const group = new THREE.Group();
+  group.position.set(x0 + ux * mid, (opening.y0 + opening.y1) / 2, z0 + uz * mid);
+  group.rotation.y = Math.atan2(-dz, dx);
+  parent.add(group);
+  const frame = 0.045;
+  const depth = Math.min(0.07, WALL_T * 0.7);
+  const glass = new THREE.Mesh(
+    new THREE.BoxGeometry(Math.max(0.08, width - frame * 2), Math.max(0.08, height - frame * 2), 0.012),
+    mats.doorGlass
+  );
+  glass.castShadow = false;
+  glass.userData.noShadow = true;
+  group.add(glass);
+  addOutlined(
+    group,
+    new THREE.BoxGeometry(width, frame, depth),
+    mats.wall,
+    mats.softLine,
+    0,
+    height / 2 - frame / 2,
+    0
+  );
+  addOutlined(
+    group,
+    new THREE.BoxGeometry(width, frame, depth),
+    mats.wall,
+    mats.softLine,
+    0,
+    -height / 2 + frame / 2,
+    0
+  );
+  addOutlined(
+    group,
+    new THREE.BoxGeometry(frame, Math.max(0.04, height - frame * 2), depth),
+    mats.wall,
+    mats.softLine,
+    -width / 2 + frame / 2,
+    0,
+    0
+  );
+  addOutlined(
+    group,
+    new THREE.BoxGeometry(frame, Math.max(0.04, height - frame * 2), depth),
+    mats.wall,
+    mats.softLine,
+    width / 2 - frame / 2,
+    0,
+    0
+  );
+}
+
 function kitchenSinkRect(room) {
   const placed = resolveKitchenAppliance(room, "sink");
   if (!placed) return { x: room.x, y: room.y, w: SINK_ALONG_M, h: SINK_ACROSS_M };
@@ -938,17 +1210,21 @@ function doorOnEdge(door, a, b) {
   return door?.hinge && door?.closed && pointOnSeg(door.hinge, a, b) && pointOnSeg(door.closed, a, b);
 }
 
-// One white 4-panel internal door leaf, 50% open, hinged at the design hinge
-// and swinging into the room. The four panels are solid white, set back in the
-// frame so the door reads as panelled rather than glazed.
+// Swing leaves are shown half open. A cavity slider sits in the wall, with about
+// 100mm of the leaf in the opening. Panels are solid white, set back in the frame.
 function addDoorLeaf(parent, door, cx, cz, mats) {
   if (!door?.hinge || !door?.open) return;
   const width = Math.max(0.2, door.doorWidth || PLAN_DOOR_W);
-  const hx = door.hinge.x - cx;
-  const hz = door.hinge.y - cz;
-  let dx = door.open.x - door.hinge.x;
-  let dz = door.open.y - door.hinge.y;
-  if (door.closed) {
+  const sliding = !door.external && door.sliding && door.slideTail && door.slideLead;
+  let hx = (sliding ? door.slideTail.x : door.hinge.x) - cx;
+  let hz = (sliding ? door.slideTail.y : door.hinge.y) - cz;
+  if (sliding && door.inward) {
+    hx -= door.inward.x * (WALL_T / 2);
+    hz -= door.inward.y * (WALL_T / 2);
+  }
+  let dx = sliding ? door.slideLead.x - door.slideTail.x : door.open.x - door.hinge.x;
+  let dz = sliding ? door.slideLead.y - door.slideTail.y : door.open.y - door.hinge.y;
+  if (!sliding && door.closed) {
     const lo = Math.hypot(dx, dz);
     const cdx = door.closed.x - door.hinge.x;
     const cdz = door.closed.y - door.hinge.y;
@@ -972,7 +1248,7 @@ function addDoorLeaf(parent, door, cx, cz, mats) {
   const rotY = Math.atan2(-uz, ux);
   if (door.external) {
     const t = 0.04;
-    const glassCount = 5;
+    const glassCount = 4;
     const glassH = 0.1;
     const side = 0.1;
     const bottom = 0.3;
@@ -1004,6 +1280,24 @@ function addDoorLeaf(parent, door, cx, cz, mats) {
     const mesh = addOutlined(parent, geo, mats.doorPanel, mats.softLine, hx, 0, hz, rotY);
     if (!mesh) return null;
     mesh.userData.doorLeaf = true;
+    if (door.closed && door.open) {
+      const cdx = door.closed.x - door.hinge.x;
+      const cdz = door.closed.y - door.hinge.y;
+      const odx = door.open.x - door.hinge.x;
+      const odz = door.open.y - door.hinge.y;
+      const lc = Math.hypot(cdx, cdz);
+      const lo = Math.hypot(odx, odz);
+      if (lc > 1e-6 && lo > 1e-6) {
+        const closedRot = Math.atan2(-cdz / lc, cdx / lc);
+        const openRot = Math.atan2(-odz / lo, odx / lo);
+        let delta = wrapAngle(openRot - closedRot);
+        const mid = closedRot + delta * 0.5;
+        if (Math.abs(wrapAngle(rotY - mid)) > 0.45) {
+          delta += delta >= 0 ? -Math.PI * 2 : Math.PI * 2;
+        }
+        mesh.userData.swing = { closedRot, restRot: rotY, delta };
+      }
+    }
     for (const y0 of panes) {
       const pane = new THREE.Mesh(new THREE.BoxGeometry(glassW, glassH, 0.006), mats.doorGlass);
       pane.position.set(x0 + glassW / 2, y0 + glassH / 2, 0);
@@ -1056,7 +1350,7 @@ function addDoorLeaf(parent, door, cx, cz, mats) {
   return mesh;
 }
 
-function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats) {
+function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats, rooms, outer, edgeIndex) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len = Math.hypot(dx, dy);
@@ -1078,17 +1372,28 @@ function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats) {
     px = -px;
     pz = -pz;
   }
+  const x0 = a.x - cx + px * (WALL_T / 2);
+  const z0 = a.y - cz + pz * (WALL_T / 2);
+  const x1 = b.x - cx + px * (WALL_T / 2);
+  const z1 = b.y - cz + pz * (WALL_T / 2);
+  const windows = sinkWindowsForEdge(
+    rooms,
+    outer,
+    edgeIndex,
+    hits.map((hit) => ({ lo: hit.lo, hi: hit.hi }))
+  );
   const mesh = addWallRun(
     parent,
-    a.x - cx + px * (WALL_T / 2),
-    a.y - cz + pz * (WALL_T / 2),
-    b.x - cx + px * (WALL_T / 2),
-    b.y - cz + pz * (WALL_T / 2),
+    x0,
+    z0,
+    x1,
+    z1,
     WALL_T,
-    hits,
+    [...hits, ...windows],
     mats.wall,
     mats.softLine
   );
+  for (const win of windows) addWindowUnit(parent, x0, z0, x1, z1, win, mats);
   const frontDoors = [];
   for (const hit of hits) {
     const leaf = addDoorLeaf(parent, hit.door, cx, cz, mats);
@@ -1511,8 +1816,10 @@ function showerRect3D(room) {
             ? 1
             : 0;
   const longIsX = rot % 2 === 0;
-  const w = Math.min(longIsX ? SHOWER_LONG_M : SHOWER_SHORT_M, room.w);
-  const h = Math.min(longIsX ? SHOWER_SHORT_M : SHOWER_LONG_M, room.h);
+  const len = showerLength3D(room, longIsX ? room.w : room.h);
+  const wide = Math.min(SHOWER_SHORT_M, longIsX ? room.h : room.w);
+  const w = longIsX ? len : wide;
+  const h = longIsX ? wide : len;
   const lx = Number(room?.showerX);
   const ly = Number(room?.showerY);
   const x = room.x + (Number.isFinite(lx) ? lx : 0);
@@ -2950,6 +3257,63 @@ function buildFurniture(parent, rooms, walls, cx, cz, mats, alongX) {
       const trough = wallBoxRect(f.origin, f.along, f.inward, f.wallLen - 0.45, f.wallLen, 0, 0.6);
       addWorldRect(parent, trough, 0.86, 0.43, fill, line, cx, cz);
       addWorldRect(parent, trough, 0.04, 0.88, mats.steel, line, cx, cz);
+    } else if (kind === "laundryRoom") {
+      addHybridFloorRect(parent, room, alongX, cx, cz, mats);
+      const side = ["top", "right", "bottom", "left"].includes(room.benchSide)
+        ? room.benchSide
+        : room.h >= room.w
+          ? "bottom"
+          : "right";
+      const frame = roomWallFrame(room, side);
+      let t0 = 0;
+      let t1 = frame.wallLen;
+      if (room.doorSide === side) {
+        const width = Math.min(0.87, Math.max(0.2, frame.wallLen - 0.05));
+        const open0 = Math.max(0, Math.min(Math.max(0, frame.wallLen - width), Number(room.doorAlong) || 0));
+        const before = open0;
+        const after = frame.wallLen - (open0 + width);
+        if (after >= before) {
+          t0 = open0 + width;
+          t1 = frame.wallLen;
+        } else {
+          t0 = 0;
+          t1 = open0;
+        }
+      }
+      const length = Math.max(0.05, t1 - t0);
+      const roomDepth = side === "left" || side === "right" ? room.w : room.h;
+      const depth = Math.min(0.6, Math.max(0.15, roomDepth - 0.05));
+      const origin = {
+        x: frame.origin.x + frame.along.x * t0,
+        y: frame.origin.y + frame.along.y * t0,
+      };
+      const bench = wallBoxRect(origin, frame.along, frame.inward, 0, length, 0, depth);
+      addWorldRect(parent, bench, 0.82, 0.41, fill, line, cx, cz);
+      addWorldRect(parent, bench, 0.04, 0.86, mats.doorPanel, line, cx, cz);
+      const wmAlong = Math.max(0, Math.min(Math.max(0, length - 0.6), Number(room.wmAlong) || 0.075));
+      const wm = wallBoxRect(
+        origin,
+        frame.along,
+        frame.inward,
+        wmAlong,
+        wmAlong + Math.min(0.6, length),
+        0,
+        Math.min(0.6, depth)
+      );
+      addWorldRect(parent, wm, 0.85, 0.42, mats.doorPanel, line, cx, cz);
+      const sinkSize = Math.min(0.45, depth);
+      const sinkAlong = Math.max(0, Math.min(Math.max(0, length - sinkSize), Number(room.sinkAlong) || 0.75));
+      const sinkD0 = Math.max(0, (depth - sinkSize) / 2);
+      const sink = wallBoxRect(
+        origin,
+        frame.along,
+        frame.inward,
+        sinkAlong,
+        sinkAlong + sinkSize,
+        sinkD0,
+        sinkD0 + sinkSize
+      );
+      addWorldRect(parent, sink, 0.02, 0.87, mats.steel, line, cx, cz);
     } else if (kind === "powder") {
       addHybridFloorRect(parent, room, alongX, cx, cz, mats);
       addBathroomToilet(parent, room, cx, cz, mats);
@@ -3409,12 +3773,16 @@ export default function QuickConcept3DPreview({
   orbit = null,
   onOrbitChange,
   captureRef,
+  walkRef,
+  walkRoute = null,
 }) {
   const mountRef = useRef(null);
   const orbitRef = useRef(orbit);
   const onOrbitChangeRef = useRef(onOrbitChange);
+  const walkRouteRef = useRef(walkRoute);
   orbitRef.current = orbit;
   onOrbitChangeRef.current = onOrbitChange;
+  walkRouteRef.current = walkRoute;
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -3437,6 +3805,7 @@ export default function QuickConcept3DPreview({
     const onKeyDown = { current: null };
     const onKeyUp = { current: null };
     const onBlur = { current: null };
+    let beginWalkThrough = null;
 
     try {
       const bounds = ringBounds(outer);
@@ -3466,8 +3835,9 @@ export default function QuickConcept3DPreview({
 
       // Realistic daylight rig: bright sky/ground bounce so white walls read
       // white, a warm-ish sun key with soft shadows, and a cool fill.
-      scene.add(new THREE.HemisphereLight(0xffffff, 0xcfc4b4, 1.0));
-      const key = new THREE.DirectionalLight(0xfff6e8, 0.85);
+      scene.add(new THREE.HemisphereLight(0xffffff, 0xb7aa9a, 0.55));
+      scene.add(new THREE.AmbientLight(0xfff8f0, 0.22));
+      const key = new THREE.DirectionalLight(0xfff1dc, 1.35);
       key.position.set(8, 14, 6);
       key.castShadow = true;
       key.shadow.mapSize.set(2048, 2048);
@@ -3480,8 +3850,8 @@ export default function QuickConcept3DPreview({
       key.shadow.bias = -0.0002;
       key.shadow.normalBias = 0.03;
       scene.add(key);
-      const fillL = new THREE.DirectionalLight(0xe8f0ff, 0.3);
-      fillL.position.set(-6, 8, -4);
+      const fillL = new THREE.DirectionalLight(0xdfe8f6, 0.55);
+      fillL.position.set(-14, 10, -8);
       scene.add(fillL);
 
       group = new THREE.Group();
@@ -3492,10 +3862,17 @@ export default function QuickConcept3DPreview({
         const a = outer[i];
         const b = outer[(i + 1) % outer.length];
         const { nx, ny } = inwardNormal(a, b, outer);
-        const meshes = addOuterEdge(group, a, b, planDoors, cx, cz, nx, ny, mats) || [];
+        const meshes = addOuterEdge(group, a, b, planDoors, cx, cz, nx, ny, mats, rooms, outer, i) || [];
         for (const mesh of meshes) {
           mesh.userData.outward = { x: -nx, z: -ny };
           wallMeshes.push(mesh);
+        }
+      }
+
+      const frontDoorLeaves = [];
+      for (const mesh of wallMeshes) {
+        for (const leaf of mesh.userData.frontDoors || []) {
+          if (leaf.userData.swing) frontDoorLeaves.push(leaf);
         }
       }
 
@@ -3527,6 +3904,12 @@ export default function QuickConcept3DPreview({
       key.position.set(target.x + 20, target.y + 30, target.z + 15);
       key.target.position.copy(target);
       scene.add(key.target);
+      fillL.position.set(target.x - 16, target.y + 8, target.z - 12);
+      fillL.target.position.copy(target);
+      scene.add(fillL.target);
+      const roomLight = new THREE.PointLight(0xfff3e4, 14, 0, 2);
+      roomLight.position.set(target.x, 2.35, target.z);
+      scene.add(roomLight);
       // Invisible shadow-catcher ground so the house sits in the scene instead
       // of floating on white. Same white as the background, shows shadows only.
       ground = new THREE.Mesh(
@@ -3547,6 +3930,9 @@ export default function QuickConcept3DPreview({
       let azimuth = Number.isFinite(saved?.azimuth) ? saved.azimuth : frontDoorAzimuth(planDoors);
       let elevation = Number.isFinite(saved?.elevation) ? saved.elevation : ISO_ELEVATION;
       const eye = new THREE.Vector3();
+      let walkRun = null;
+      let walkKeepsWalls = false;
+      let showExteriorShell = false;
       const houseSphere = box.getBoundingSphere(new THREE.Sphere());
       const houseRadius = Math.max(
         Number.isFinite(houseSphere.radius) ? houseSphere.radius : 0,
@@ -3602,7 +3988,27 @@ export default function QuickConcept3DPreview({
         );
       };
 
+      const setWalkLens = (on) => {
+        camera.fov = on ? WALK_FOV : PERSPECTIVE_FOV;
+        camera.updateProjectionMatrix();
+      };
+
       const updateGhostWalls = () => {
+        if (walkKeepsWalls) {
+          for (const mesh of wallMeshes) {
+            mesh.visible = true;
+            mesh.material = mats.wall;
+            mesh.castShadow = true;
+            for (const door of mesh.userData.frontDoors || []) {
+              door.visible = true;
+              door.castShadow = true;
+            }
+          }
+          return;
+        }
+        if (showExteriorShell && pointInPolygon({ x: eye.x + cx, y: eye.z + cz }, outer)) {
+          showExteriorShell = false;
+        }
         const dx = eye.x - target.x;
         const dz = eye.z - target.z;
         const len = Math.hypot(dx, dz) || 1;
@@ -3612,7 +4018,9 @@ export default function QuickConcept3DPreview({
           const o = mesh.userData.outward;
           if (!o) continue;
           // A high view keeps the front wall. Near eye level the wall facing the camera is removed.
-          const hidden = elevation < EYE_LEVEL_ELEVATION && o.x * camDirX + o.z * camDirZ > 0.18;
+          // Walk-through stands outside, so the front door stays solid until the camera goes inside.
+          const hidden =
+            !showExteriorShell && elevation < EYE_LEVEL_ELEVATION && o.x * camDirX + o.z * camDirZ > 0.18;
           mesh.visible = !hidden;
           mesh.material = mats.wall;
           mesh.castShadow = !hidden;
@@ -3656,7 +4064,265 @@ export default function QuickConcept3DPreview({
       let dragging = false;
       let lastX = 0;
       let lastY = 0;
+      let doorSwung = false;
+      const frontDoorForWalk = () => {
+        const door = externalFrontDoor(planDoors);
+        if (!door?.hinge) return [];
+        const hx = door.hinge.x - cx;
+        const hz = door.hinge.y - cz;
+        return frontDoorLeaves.filter((leaf) => Math.hypot(leaf.position.x - hx, leaf.position.z - hz) < 0.08);
+      };
+      const setFrontDoorOpen = (amount) => {
+        const leaves = walkRun?.doorLeaves;
+        if (!leaves?.length) return;
+        doorSwung = true;
+        const t = Math.max(0, Math.min(1, amount));
+        const eased = t * t * (3 - 2 * t);
+        for (const leaf of leaves) {
+          const swing = leaf.userData.swing;
+          if (!swing) continue;
+          leaf.rotation.y = swing.closedRot + swing.delta * eased;
+        }
+      };
+      const resetFrontDoor = () => {
+        if (!doorSwung) return;
+        doorSwung = false;
+        for (const leaf of frontDoorLeaves) {
+          const swing = leaf.userData.swing;
+          if (swing) leaf.rotation.y = swing.restRot;
+        }
+      };
+      const cancelWalk = () => {
+        const wasWalking = Boolean(walkRun) || walkKeepsWalls;
+        walkRun = null;
+        walkKeepsWalls = false;
+        resetFrontDoor();
+        if (wasWalking) {
+          setWalkLens(false);
+          updateCamera();
+        }
+      };
+
+      const travelAzimuth = (from, to) => {
+        const dx = to.x - from.x;
+        const dz = to.z - from.z;
+        if (Math.hypot(dx, dz) < 0.05) return null;
+        return Math.atan2(-dx, -dz);
+      };
+
+      const beginWalkPhase = (now) => {
+        if (!walkRun) return;
+        while (walkRun.index < walkRun.script.length) {
+          const step = walkRun.script[walkRun.index];
+          if (step.op === "pause") {
+            walkRun.phase = {
+              kind: "pause",
+              until: now + WALK_PAUSE_MS,
+              eye: eye.clone(),
+              az: azimuth,
+            };
+            return;
+          }
+          if (step.op === "face" || step.op === "face-point") {
+            const toAz =
+              step.op === "face" ? step.az() : travelAzimuth(eye, step.to) ?? azimuth;
+            const dAz = wrapAngle(toAz - azimuth);
+            if (Math.abs(dAz) < 0.03) {
+              walkRun.index += 1;
+              continue;
+            }
+            walkRun.phase = {
+              kind: "turn",
+              fromAz: azimuth,
+              dAz,
+              fromEl: elevation,
+              toEl: 0,
+              start: now,
+              ms: step.slow
+                ? Math.max(1400, (Math.abs(dAz) / Math.PI) * 2400)
+                : Math.max(420, (Math.abs(dAz) / Math.PI) * 1000),
+            };
+            return;
+          }
+          const toEye = step.to;
+          const dist = Math.hypot(toEye.x - eye.x, toEye.y - eye.y, toEye.z - eye.z);
+          if (step.op === "walk" && dist < 0.05) {
+            walkRun.index += 1;
+            continue;
+          }
+          const ms =
+            step.op === "pan"
+              ? Math.max(WALK_MOVE_MS, Math.min(2400, (dist / 8) * 1000))
+              : Math.max(500, (Math.max(dist, 0.05) / WALK_SPEED_MPS) * 1000);
+          const toAz = step.op === "pan" && step.az ? step.az() : azimuth;
+          walkRun.phase = {
+            kind: "move",
+            fromEye: eye.clone(),
+            toEye,
+            fromAz: azimuth,
+            dAz: wrapAngle(toAz - azimuth),
+            fromEl: elevation,
+            toEl: 0,
+            start: now,
+            ms,
+          };
+          return;
+        }
+        if (walkRun?.doorAnim) setFrontDoorOpen(1);
+        walkRun = null;
+        walkKeepsWalls = false;
+        setWalkLens(false);
+        updateCamera();
+        emitOrbit();
+      };
+
+      const updateWalkDoor = (now) => {
+        const anim = walkRun?.doorAnim;
+        if (!anim) return;
+        if (anim.mode === "time") {
+          if (walkRun.index <= 0) {
+            setFrontDoorOpen(0);
+            return;
+          }
+          if (anim.start == null) anim.start = now;
+          setFrontDoorOpen((now - anim.start) / anim.ms);
+          return;
+        }
+        const step = walkRun.script[walkRun.index];
+        let dist = step?.routeFrom || 0;
+        const phase = walkRun.phase;
+        if (phase?.kind === "move" && step?.routeLen > 0) {
+          const t = Math.min(1, (now - phase.start) / Math.max(1, phase.ms));
+          const ease = t * t * (3 - 2 * t);
+          dist = (step.routeFrom || 0) + ease * step.routeLen;
+        }
+        const span = Math.max(0.05, anim.to - anim.from);
+        setFrontDoorOpen((dist - anim.from) / span);
+      };
+
+      beginWalkThrough = () => {
+        const door = externalFrontDoor(planDoors);
+        const outward = frontDoorOutward(door);
+        const route = walkRouteRef.current || {};
+        let doorX = target.x;
+        let doorZ = target.z;
+        if (door) {
+          doorX = (door.hinge.x + door.closed.x) / 2 - cx;
+          doorZ = (door.hinge.y + door.closed.y) / 2 - cz;
+        }
+        const planPoint = (p) =>
+          p && Number.isFinite(p.x) && Number.isFinite(p.y)
+            ? new THREE.Vector3(p.x - cx, WALK_EYE_HEIGHT_M, p.y - cz)
+            : null;
+        let start = planPoint(route.start);
+        if (!start && door && outward) {
+          start = new THREE.Vector3(
+            doorX + outward.x * WALK_DOOR_DISTANCE_M,
+            WALK_EYE_HEIGHT_M,
+            doorZ + outward.z * WALK_DOOR_DISTANCE_M
+          );
+        }
+        if (!start) return;
+        const stops = (Array.isArray(route.stops) ? route.stops : [])
+          .map((stop) => {
+            const to = planPoint(stop);
+            if (!to) return null;
+            return { to, kind: stop.kind === "point" ? "point" : "location" };
+          })
+          .filter(Boolean);
+        const finish = planPoint(route.finish);
+        const faceBuilding = () => {
+          if (outward) return Math.atan2(outward.x, outward.z);
+          const lookX = doorX - eye.x;
+          const lookZ = doorZ - eye.z;
+          if (Math.hypot(lookX, lookZ) > 0.05) return Math.atan2(-lookX, -lookZ);
+          return azimuth;
+        };
+        const script = [
+          { op: "pan", to: start, az: faceBuilding },
+          { op: "pause" },
+        ];
+        const chain = [...stops];
+        if (finish) chain.push({ to: finish, kind: "finish" });
+        let cameFromPoint = false;
+        for (const leg of chain) {
+          script.push({ op: "face-point", to: leg.to, slow: cameFromPoint });
+          script.push({ op: "walk", to: leg.to });
+          if (leg.kind === "location") script.push({ op: "pause" });
+          cameFromPoint = leg.kind === "point";
+        }
+        script.push({ op: "face", az: faceBuilding, slow: cameFromPoint });
+        const doorLeaves = frontDoorForWalk();
+        let doorCross = null;
+        if (door && doorLeaves.length) {
+          let cursor = eye.clone();
+          let travelled = 0;
+          let onFoot = false;
+          for (const step of script) {
+            if (step.to && (step.op === "walk" || step.op === "pan")) {
+              const foot =
+                Math.abs(cursor.y - WALK_EYE_HEIGHT_M) < 0.8 &&
+                Math.abs(step.to.y - WALK_EYE_HEIGHT_M) < 0.8;
+              const segLen = Math.hypot(step.to.x - cursor.x, step.to.z - cursor.z);
+              if (foot && segLen >= 0.05) {
+                if (!onFoot) {
+                  travelled = 0;
+                  onFoot = true;
+                }
+                step.routeFrom = travelled;
+                step.routeLen = segLen;
+                if (!doorCross) {
+                  const u = pathCrossDoor(
+                    cursor.x,
+                    cursor.z,
+                    step.to.x,
+                    step.to.z,
+                    door.hinge.x - cx,
+                    door.hinge.y - cz,
+                    door.closed.x - cx,
+                    door.closed.y - cz
+                  );
+                  if (u != null) doorCross = { dist: travelled + u * segLen };
+                }
+                travelled += segLen;
+              } else {
+                step.routeFrom = onFoot ? travelled : 0;
+                step.routeLen = 0;
+              }
+              cursor = step.to;
+            } else {
+              step.routeFrom = travelled;
+              step.routeLen = 0;
+            }
+          }
+        }
+        let doorAnim = null;
+        if (doorCross) {
+          const approach = Math.max(0.05, doorCross.dist - 0.12);
+          if (approach < 1.35) {
+            doorAnim = {
+              mode: "time",
+              start: null,
+              ms: Math.max(1100, (approach / WALK_SPEED_MPS) * 1000 + 500),
+            };
+          } else {
+            const lead = Math.min(2.5, approach);
+            doorAnim = { mode: "dist", from: doorCross.dist - lead, to: doorCross.dist - 0.12 };
+          }
+        }
+        showExteriorShell = true;
+        walkKeepsWalls = true;
+        setWalkLens(true);
+        resetFrontDoor();
+        walkRun = { script, index: 0, phase: null, doorLeaves, doorAnim };
+        if (doorAnim) setFrontDoorOpen(0);
+        beginWalkPhase(performance.now());
+        updateWalkDoor(performance.now());
+        updateCamera();
+      };
+
       onDown.current = (e) => {
+        cancelWalk();
         dragging = true;
         lastX = e.clientX;
         lastY = e.clientY;
@@ -3672,6 +4338,7 @@ export default function QuickConcept3DPreview({
         updateCamera();
       };
       onWheel.current = (e) => {
+        cancelWalk();
         e.preventDefault();
         const look = lookVector();
         const dist = Math.max(0.3, eye.distanceTo(target));
@@ -3691,6 +4358,8 @@ export default function QuickConcept3DPreview({
       ro = new ResizeObserver(setSize);
       ro.observe(mount);
 
+      if (walkRef) walkRef.current = beginWalkThrough;
+
       if (captureRef) {
         captureRef.current = (outW = 2200, options = {}) => {
           const prevEye = eye.clone();
@@ -3699,7 +4368,7 @@ export default function QuickConcept3DPreview({
           const prevEl = elevation;
           try {
             if (options.defaultView) {
-              azimuth = frontDoorAzimuth(planDoors);
+              azimuth = planCardinalAzimuth(outer);
               elevation = ISO_ELEVATION;
             } else {
               const shot = new THREE.Box3().setFromObject(group).getBoundingSphere(new THREE.Sphere());
@@ -3741,6 +4410,7 @@ export default function QuickConcept3DPreview({
         if (typingTarget(e.target)) return;
         const k = String(e.key || "").toLowerCase();
         if (k !== "w" && k !== "a" && k !== "s" && k !== "d" && k !== "e" && k !== "c") return;
+        cancelWalk();
         keys.add(k);
         e.preventDefault();
       };
@@ -3759,7 +4429,37 @@ export default function QuickConcept3DPreview({
         const now = performance.now();
         const dt = Math.min(0.05, (now - lastNav) / 1000);
         lastNav = now;
-        if (keys.size) {
+        if (walkRun) {
+          if (!walkRun.phase) beginWalkPhase(now);
+          const phase = walkRun?.phase;
+          if (phase?.kind === "pause") {
+            eye.copy(phase.eye);
+            azimuth = phase.az;
+            elevation = 0;
+            updateCamera();
+            if (now >= phase.until) {
+              walkRun.index += 1;
+              walkRun.phase = null;
+              beginWalkPhase(now);
+            }
+          } else if (phase) {
+            const t = Math.min(1, (now - phase.start) / Math.max(1, phase.ms));
+            const ease = t * t * (3 - 2 * t);
+            if (phase.toEye) eye.lerpVectors(phase.fromEye, phase.toEye, ease);
+            azimuth = phase.fromAz + phase.dAz * ease;
+            elevation = phase.fromEl + (phase.toEl - phase.fromEl) * ease;
+            updateCamera();
+            if (t >= 1 && walkRun) {
+              if (phase.toEye) eye.copy(phase.toEye);
+              azimuth = phase.fromAz + phase.dAz;
+              elevation = phase.toEl;
+              walkRun.index += 1;
+              walkRun.phase = null;
+              beginWalkPhase(now);
+            }
+          }
+          if (walkRun?.doorAnim) updateWalkDoor(now);
+        } else if (keys.size) {
           const forward = new THREE.Vector3(-Math.sin(azimuth), 0, -Math.cos(azimuth));
           const right = new THREE.Vector3(Math.cos(azimuth), 0, -Math.sin(azimuth));
           const move = new THREE.Vector3();
@@ -3795,6 +4495,7 @@ export default function QuickConcept3DPreview({
       if (onKeyUp.current) window.removeEventListener("keyup", onKeyUp.current);
       if (onBlur.current) window.removeEventListener("blur", onBlur.current);
       if (captureRef && captureRef.current) captureRef.current = null;
+      if (walkRef && walkRef.current === beginWalkThrough) walkRef.current = null;
       if (group) disposeObject(group);
       ground?.geometry?.dispose();
       if (Array.isArray(ground?.material)) ground.material.forEach((m) => m?.dispose?.());
@@ -3809,7 +4510,7 @@ export default function QuickConcept3DPreview({
       renderer?.dispose();
       if (canvas && canvas.parentNode === mount) mount.removeChild(canvas);
     };
-  }, [metres, rooms, innerMetres, walls, doors, captureRef]);
+  }, [metres, rooms, innerMetres, walls, doors, captureRef, walkRef]);
 
   return (
     <div

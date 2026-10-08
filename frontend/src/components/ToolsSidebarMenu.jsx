@@ -1,7 +1,8 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { UI } from "../utils/uiThemeTokens.js";
-import { TOOLS_MENU_LINKS, isToolsLinkActive } from "../constants/toolsMenu.js";
+import { isToolsLinkActive, visibleToolsLinks } from "../constants/toolsMenu.js";
+import { useToolsAccess } from "../hooks/useToolsAccess.js";
 
 const MONUMENT = UI.textPrimary;
 const SECTION_GREY = UI.panelBg;
@@ -46,10 +47,12 @@ const navLinkStyle = {
 export function ToolsNavLinks({ activePath }) {
   const location = useLocation();
   const path = activePath || location.pathname;
+  const { isAdmin, hasQuickConcept } = useToolsAccess();
+  const links = visibleToolsLinks({ isAdmin, hasQuickConcept });
 
   return (
     <>
-      {TOOLS_MENU_LINKS.map(({ to, label }) => {
+      {links.map(({ to, label }) => {
         const active = isToolsLinkActive(path, to);
         return (
           <Link
@@ -75,7 +78,7 @@ export function ToolsNavLinks({ activePath }) {
   );
 }
 
-/** Tools submenu: Email Generator, Maps, Apply Fields — used on the Tools hub and tool pages. */
+/** Tools submenu. Each link is shown only when that user has permission for it. */
 export default function ToolsSidebarMenu({ activePath, children, fillHeight = false }) {
   return (
     <div

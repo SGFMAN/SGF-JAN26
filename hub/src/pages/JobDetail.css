@@ -1,0 +1,417 @@
+.jd {
+  overflow-y: auto;
+  padding: 20px 28px 60px;
+  display: block;
+}
+
+.jd-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.jd-breadcrumb button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  font-size: 13px;
+}
+.jd-breadcrumb button:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.jd-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 3px solid var(--ink);
+  margin-bottom: 18px;
+}
+.jd-header h1 {
+  font: 700 28px/1.1 var(--fc);
+  margin: 0 0 8px;
+}
+.jd-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.jd-badge-pm {
+  background: var(--na);
+  color: var(--ink);
+}
+.jd-updated {
+  font-size: 12px;
+  color: var(--muted);
+}
+.jd-header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.jd-percent {
+  text-align: right;
+}
+.jd-percent-num {
+  font: 700 30px/1 var(--fc);
+}
+.jd-percent-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.jd-actions {
+  display: flex;
+  gap: 8px;
+}
+.jd-edit-btn {
+  width: auto;
+  padding: 7px 14px;
+}
+
+.jd-stagebar-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.jd-stagebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.jd-stagebar-head h2 {
+  font: 700 16px var(--fc);
+  margin: 0;
+}
+.jd-stagebar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 3px;
+}
+.jd-stagebar-cell {
+  height: 26px;
+  border-radius: 3px;
+  background: var(--empty);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.jd-stagebar-cell.done {
+  background: var(--done);
+  border-color: var(--done);
+}
+.jd-stagebar-cell.prog {
+  background: var(--prog);
+  border-color: var(--prog);
+}
+.jd-stagebar-cell.sched {
+  background: var(--sched);
+  border-color: var(--sched);
+}
+.jd-stagebar-cell.na {
+  background: repeating-linear-gradient(135deg, var(--na), var(--na) 3px, var(--empty) 3px, var(--empty) 7px);
+}
+.jd-stagebar-cell.locked {
+  cursor: default;
+  opacity: 0.5;
+}
+.jd-stagebar-nums {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: 4px;
+}
+.jd-stagebar-nums span {
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.jd-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.jd-card {
+  border-radius: 8px;
+  border-top: 4px solid var(--sched);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top-width: 4px;
+  padding: 14px 16px;
+}
+.jd-card--prog {
+  border-top-color: var(--prog);
+}
+.jd-card--late {
+  border-top-color: var(--late);
+}
+.jd-card--upnext {
+  border-top-color: var(--sched);
+}
+.jd-card-eyebrow {
+  font: 700 11px var(--fc);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.jd-card-title {
+  font: 700 18px var(--fc);
+  margin-bottom: 4px;
+}
+.jd-card-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.jd-card-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.jd-card-sub.late {
+  color: var(--late);
+}
+
+.jd-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  align-items: start;
+}
+.jd-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.jd-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.jd-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+.jd-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+.jd-panel h2 {
+  font: 700 16px var(--fc);
+  margin: 0;
+}
+
+.jd-table-wrap {
+  overflow-x: auto;
+}
+.jd-stage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.jd-stage-table th {
+  text-align: left;
+  font: 700 11px var(--fc);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--ink);
+  white-space: nowrap;
+}
+.jd-stage-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.jd-stage-table tbody tr {
+  cursor: pointer;
+}
+.jd-stage-table tbody tr:hover {
+  background: var(--rowhover);
+}
+.jd-stage-table tbody tr.locked {
+  cursor: default;
+  opacity: 0.55;
+}
+.jd-stage-table tbody tr.locked:hover {
+  background: none;
+}
+.jd-stage-table tbody tr.late td {
+  color: var(--late);
+}
+
+.badge-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge-status--not_started {
+  background: var(--empty);
+  color: var(--muted);
+}
+.badge-status--sched {
+  background: var(--sched);
+  color: #5a4a00;
+}
+.badge-status--prog {
+  background: var(--prog);
+  color: #fff;
+}
+.badge-status--done {
+  background: var(--done);
+  color: #fff;
+}
+.badge-status--na {
+  background: var(--na);
+  color: var(--ink);
+}
+
+.jd-doc-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.jd-doc-add .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 140px;
+}
+.jd-doc-add .field input,
+.jd-doc-add .field select {
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  font-size: 13px;
+  color: var(--ink);
+}
+.jd-doc-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.jd-doc-pills button {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+.jd-doc-pills button.on {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.jd-doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.jd-doc-table th {
+  text-align: left;
+  font: 700 11px var(--fc);
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--ink);
+}
+.jd-doc-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.jd-doc-sub {
+  font-size: 11px;
+}
+
+.jd-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+  font-size: 13px;
+}
+.jd-info-grid > div {
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.jd-info-label {
+  font: 700 10px var(--fc);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.jd-info-grid input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  font-size: 13px;
+}
+
+.jd-note-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.jd-note-add textarea {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  font: inherit;
+  resize: vertical;
+}
+.jd-notes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.jd-note-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.jd-note-body {
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  .jd-body {
+    grid-template-columns: 1fr;
+  }
+}

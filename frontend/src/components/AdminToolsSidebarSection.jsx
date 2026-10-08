@@ -19,14 +19,18 @@ const LINK_BASE_STYLE = {
   display: "block",
 };
 
-const ADMIN_TOOL_LINKS = [
-  { to: TOOLS_PAGE_PATH, label: "Tools" },
-  { to: "/settings", label: "Settings" },
-];
+/** Purple menu: Tools for anyone who can open a tool, Settings for admins. */
+export default function AdminToolsSidebarSection({
+  activePath = "",
+  showTools = false,
+  showSettings = false,
+}) {
+  if (!showTools && !showSettings) return null;
 
-/** Purple admin menu: Tools → Settings. */
-export default function AdminToolsSidebarSection({ activePath = "", visible = true }) {
-  if (!visible) return null;
+  const links = [
+    showTools ? { to: TOOLS_PAGE_PATH, label: "Tools" } : null,
+    showSettings ? { to: "/settings", label: "Settings" } : null,
+  ].filter(Boolean);
 
   return (
     <div
@@ -40,7 +44,7 @@ export default function AdminToolsSidebarSection({ activePath = "", visible = tr
         border: `1px solid ${UI.outline}`,
       }}
     >
-      {ADMIN_TOOL_LINKS.map(({ to, label }) => {
+      {links.map(({ to, label }) => {
         const active =
           to === TOOLS_PAGE_PATH
             ? isToolsPath(activePath)

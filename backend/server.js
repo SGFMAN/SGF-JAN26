@@ -2809,6 +2809,30 @@ app.post("/api/projects", async (req, res) => {
 });
 
 // Update project
+// Dan's roof control writes the existing Specs field: Panel → Affordable, Truss → Superior, undefined → cleared.
+app.put("/api/projects/:id/specs", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  const raw = req.body?.specs;
+  const specs = raw == null || String(raw).trim() === "" ? null : String(raw).trim();
+  if (specs != null && specs !== "Affordable" && specs !== "Superior") {
+    return res.status(400).json({ error: "specs must be Affordable, Superior, or empty" });
+  }
+  try {
+    const r = await pool.query(
+      `UPDATE projects SET specs = $1, updated_at = NOW() WHERE id = $2 RETURNING id, specs`,
+      [specs, id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "not found" });
+    res.json({ id: r.rows[0].id, specs: r.rows[0].specs });
+  } catch (e) {
+    console.error("PUT /api/projects/:id/specs:", e);
+    res.status(500).json({ error: e.message || "Failed to save specs" });
+  }
+});
+
 app.put("/api/projects/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
 

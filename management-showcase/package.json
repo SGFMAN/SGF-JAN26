@@ -1,0 +1,18 @@
+{
+  "name": "management-showcase",
+  "version": "1.0.0",
+  "description": "",
+  "main": "capture.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.10",
+    "docx": "^9.9.0",
+    "pdfjs-dist": "^6.4.299",
+    "playwright": "^1.64.0"
+  }
+}

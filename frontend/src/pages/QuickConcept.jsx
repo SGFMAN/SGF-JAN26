@@ -377,6 +377,14 @@ function designExportBoundsPx(layout, rooms, pad = 8) {
     maxY = Math.max(maxY, y);
   };
   for (const p of layout?.pts || []) add(p.x, p.y);
+  if (layout?.metres && layout?.eaveDepths) {
+    for (const run of eaveRuns(layout.metres, layout.eaveDepths)) {
+      const a = mPointToPx(run.a, layout);
+      const b = mPointToPx(run.b, layout);
+      add(a.x, a.y);
+      add(b.x, b.y);
+    }
+  }
   for (const room of rooms || []) {
     const r = roomToPx(room, layout);
     add(r.x, r.y);
@@ -2087,6 +2095,10 @@ function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, walls) {
     drawLaundryCanvas(ctx, room, layout, bw, stroke, innerMetres);
     return;
   }
+  if (kind === "laundryRoom") {
+    drawLaundryRoomCanvas(ctx, room, layout, bw, stroke, innerMetres);
+    return;
+  }
   if (kind === "bathroom" || kind === "powder") {
     const { shower, tank, bowl, toiletGeom } = bathroomFixtures(room);
     ctx.lineWidth = 1.1;
@@ -2222,15 +2234,23 @@ function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, walls) {
     }
     const door = roomDoorSwing(room, innerMetres);
     if (door) {
-      if (bw) {
-        drawDoorSwingCanvas(ctx, door, layout, "#111");
-      } else {
-        drawPlanDoorSwingCanvas(ctx, door, layout);
+      if (!door.sliding) {
+        if (bw) drawDoorSwingCanvas(ctx, door, layout, "#111");
+        else drawPlanDoorSwingCanvas(ctx, door, layout);
+      }
+      if (!bw || door.sliding) {
         const dl = mPointToPx(door.doorLabel, layout);
         ctx.font = '700 11px "Segoe UI", system-ui, sans-serif';
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        drawHaloText(ctx, formatPlanMm(door.doorWidth), dl.x, dl.y, PLAN_WOOD_EDGE, "rgba(255,255,255,0.95)");
+        drawHaloText(
+          ctx,
+          formatPlanMm(door.doorWidth),
+          dl.x,
+          dl.y,
+          bw ? "#111111" : PLAN_WOOD_EDGE,
+          "rgba(255,255,255,0.95)"
+        );
       }
     }
     return;
@@ -2503,7 +2523,7 @@ function drawDoorSwingCanvas(ctx, door, layout, color) {
 }
 
 function drawPlanDoorSwingCanvas(ctx, door, layout) {
-  if (!door) return;
+  if (!door || door.sliding) return;
   const hinge = mPointToPx(door.hinge, layout);
   const closed = mPointToPx(door.closed, layout);
   const open = mPointToPx(door.open, layout);
@@ -2527,6 +2547,37 @@ function drawPlanDoorSwingCanvas(ctx, door, layout) {
   ctx.fillStyle = PLAN_WOOD;
   ctx.strokeStyle = PLAN_WOOD_EDGE;
   ctx.lineWidth = 1;
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function traceQuad(ctx, quad, layout) {
+  const pts = (quad || []).map((p) => mPointToPx(p, layout));
+  if (pts.length < 3) return;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+}
+
+function drawSlidingDoorCanvas(ctx, door, layout, bw) {
+  if (!door?.sliding) return;
+  ctx.save();
+  const pocket = door.cavityQuad
+    ? Math.hypot(door.cavityQuad[1].x - door.cavityQuad[0].x, door.cavityQuad[1].y - door.cavityQuad[0].y)
+    : 0;
+  if (pocket > 0.02) {
+    traceQuad(ctx, door.cavityQuad, layout);
+    ctx.fillStyle = bw ? "#ffffff" : "#f4f1ea";
+    ctx.strokeStyle = bw ? "#111111" : WALL_FILL;
+    ctx.lineWidth = 1;
+    ctx.fill();
+    ctx.stroke();
+  }
+  traceQuad(ctx, door.leafQuad, layout);
+  ctx.fillStyle = bw ? "#ffffff" : PLAN_WOOD;
+  ctx.strokeStyle = bw ? "#111111" : PLAN_WOOD_EDGE;
   ctx.fill();
   ctx.stroke();
   ctx.restore();
@@ -2927,6 +2978,7 @@ function buildDesignExportCanvas(layout, rooms, options = {}) {
     tracePolygonPath(ctx, innerPts);
     ctx.stroke();
   }
+  drawEaveCanvas(ctx, layout);
 
   for (const room of rooms || []) {
     const r = roomToPx(room, layout);
@@ -2982,6 +3034,10 @@ function buildDesignExportCanvas(layout, rooms, options = {}) {
     for (const c of partitionWallCorners(exportWalls)) {
       const p = wallCornerToLayoutPx(c, layout);
       ctx.fillRect(p.x - half, p.y - half, wallPx, wallPx);
+    }
+    for (const room of rooms || []) {
+      const door = roomDoorSwing(room, exportInner);
+      if (door?.sliding) drawSlidingDoorCanvas(ctx, door, layout, bw);
     }
   }
 
@@ -3076,6 +3132,46 @@ function imageToPngDataUrl(img) {
   return canvas.toDataURL("image/png");
 }
 
+function measureDataUrl(url) {
+  return new Promise((resolve, reject) => {
+    if (!url) {
+      reject(new Error("Preview image was empty"));
+      return;
+    }
+    const img = new Image();
+    img.onload = () => resolve({ url, w: img.naturalWidth || img.width, h: img.naturalHeight || img.height });
+    img.onerror = () => reject(new Error("Preview image failed"));
+    img.src = url;
+  });
+}
+
+function rotatePngDataUrl(url, quarterTurns) {
+  const turns = ((Number(quarterTurns) % 4) + 4) % 4;
+  if (!url || turns === 0) return Promise.resolve(url || "");
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const swap = turns % 2 === 1;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, swap ? img.height : img.width);
+      canvas.height = Math.max(1, swap ? img.width : img.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Could not rotate the preview image"));
+        return;
+      }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((turns * Math.PI) / 2);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => reject(new Error("Could not rotate the preview image"));
+    img.src = url;
+  });
+}
+
 function cropWhiteCanvas(source, threshold = 248) {
   const w = source?.width || 0;
   const h = source?.height || 0;
@@ -3155,7 +3251,7 @@ function countLabel(n, singular, plural) {
   return `${v} ${v === 1 ? singular : plural}`;
 }
 
-async function buildSheetPdf(planCanvas, view3dUrl, details = {}) {
+async function buildSheetPdf(planUrl, view3dUrl, details = {}) {
   const spec = designSheetSpec();
   const pdf = new jsPDF({
     orientation: "portrait",
@@ -3194,15 +3290,7 @@ async function buildSheetPdf(planCanvas, view3dUrl, details = {}) {
 
   const topY = spec.boxesTop;
   const botY = spec.boxesTop + spec.boxH + spec.gap;
-  placePngInBox(
-    pdf,
-    planCanvas?.toDataURL?.("image/png") || "",
-    spec.side,
-    topY,
-    spec.boxW,
-    spec.boxH,
-    spec.inset
-  );
+  placePngInBox(pdf, planUrl || "", spec.side, topY, spec.boxW, spec.boxH, spec.inset);
   placePngInBox(pdf, view3dUrl || "", spec.side, botY, spec.boxW, spec.boxH, spec.inset);
   pdf.setDrawColor(50, 50, 51);
   pdf.setLineWidth(0.4);
@@ -3633,6 +3721,285 @@ function DesignEmailModal({ layout, rooms, address, quoteEmail, quoteFirstName, 
   );
 }
 
+function sheetPct(part, total) {
+  return `${(part / total) * 100}%`;
+}
+
+function PreviewRotateImage({ src, width, height, quarter }) {
+  const frameRef = useRef(null);
+  const [frame, setFrame] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return undefined;
+    const measure = () => setFrame({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const turns = ((quarter % 4) + 4) % 4;
+  const swap = turns % 2 === 1;
+  const srcW = swap ? height : width;
+  const srcH = swap ? width : height;
+  const scale =
+    frame.w > 0 && frame.h > 0 && srcW > 0 && srcH > 0 ? Math.min(frame.w / srcW, frame.h / srcH) : 0;
+  return (
+    <div ref={frameRef} style={{ position: "absolute", inset: 0 }}>
+      {scale > 0 ? (
+        <img
+          alt=""
+          draggable={false}
+          src={src}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: width * scale,
+            height: height * scale,
+            transform: `translate(-50%, -50%) rotate(${turns * 90}deg)`,
+            transformOrigin: "center center",
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PreviewSheetBox({ image, quarter, onRotate, label }) {
+  const spec = designSheetSpec();
+  const degrees = ((quarter % 4) + 4) % 4 * 90;
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        border: "1px solid #323233",
+        boxSizing: "border-box",
+        background: "#ffffff",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          left: sheetPct(spec.inset, spec.boxW),
+          right: sheetPct(spec.inset, spec.boxW),
+          top: sheetPct(spec.inset, spec.boxH),
+          bottom: sheetPct(spec.inset, spec.boxH),
+        }}
+      >
+        {image ? (
+          <PreviewRotateImage src={image.url} width={image.w} height={image.h} quarter={quarter} />
+        ) : (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#6b6b6b",
+              fontSize: "13px",
+              fontWeight: 600,
+            }}
+          >
+            Preparing…
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onRotate}
+        disabled={!image}
+        aria-label={`Rotate ${label}, currently ${degrees} degrees`}
+        style={{
+          position: "absolute",
+          top: 6,
+          right: 6,
+          zIndex: 2,
+          background: "rgba(255,255,255,0.94)",
+          color: MONUMENT,
+          border: "1px solid #323233",
+          borderRadius: "8px",
+          padding: "4px 8px",
+          fontSize: "12px",
+          fontWeight: 700,
+          cursor: image ? "pointer" : "not-allowed",
+          opacity: image ? 1 : 0.45,
+        }}
+      >
+        Rotate {degrees}°
+      </button>
+    </div>
+  );
+}
+
+function DesignPdfPreviewModal({
+  preview,
+  areaM2,
+  rooms,
+  planQuarter,
+  viewQuarter,
+  onRotatePlan,
+  onRotateView,
+  onGenerate,
+  onClose,
+  generating,
+}) {
+  const spec = designSheetSpec();
+  const { beds, baths } = designRoomCounts(rooms);
+  const ready = preview?.status === "ready";
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape" || generating) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [generating, onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="PDF preview"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 10250,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "12px 16px",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "12px",
+          height: "100%",
+          width: "100%",
+          minHeight: 0,
+        }}
+      >
+        <div
+          style={{
+            position: "relative",
+            width: "min(calc((100dvh - 92px) * 210 / 297), calc(100vw - 32px))",
+            maxHeight: "calc(100dvh - 92px)",
+            aspectRatio: `${spec.pageW} / ${spec.pageH}`,
+            flex: "0 1 auto",
+            background: "#ffffff",
+            boxShadow: "0 12px 40px rgba(0,0,0,0.28)",
+            containerType: "inline-size",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: sheetPct(spec.side, spec.pageW),
+              right: sheetPct(spec.side, spec.pageW),
+              top: sheetPct(spec.top, spec.pageH),
+              height: sheetPct(spec.header, spec.pageH),
+              display: "flex",
+              alignItems: "center",
+              gap: "4cqw",
+            }}
+          >
+            <img
+              alt="SGF Homes"
+              src={sgfHomesLogo}
+              style={{ height: "73%", width: "auto", objectFit: "contain" }}
+            />
+            <div style={{ fontWeight: 700, color: "#111111", fontSize: "2.15cqw", lineHeight: 1.25 }}>
+              <div>{formatSqm(areaM2)}</div>
+              <div>{countLabel(beds, "Bedroom", "Bedrooms")}</div>
+              <div>{countLabel(baths, "Bathroom", "Bathrooms")}</div>
+            </div>
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              left: sheetPct(spec.side, spec.pageW),
+              width: sheetPct(spec.boxW, spec.pageW),
+              top: sheetPct(spec.boxesTop, spec.pageH),
+              height: sheetPct(spec.boxH, spec.pageH),
+            }}
+          >
+            <PreviewSheetBox
+              image={preview?.plan}
+              quarter={planQuarter}
+              onRotate={onRotatePlan}
+              label="plan"
+            />
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              left: sheetPct(spec.side, spec.pageW),
+              width: sheetPct(spec.boxW, spec.pageW),
+              top: sheetPct(spec.boxesTop + spec.boxH + spec.gap, spec.pageH),
+              height: sheetPct(spec.boxH, spec.pageH),
+            }}
+          >
+            <PreviewSheetBox
+              image={preview?.view}
+              quarter={viewQuarter}
+              onRotate={onRotateView}
+              label="3D view"
+            />
+          </div>
+          {preview?.status === "error" ? (
+            <div
+              style={{
+                position: "absolute",
+                inset: "18% 8%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                textAlign: "center",
+                color: "#111",
+                fontWeight: 600,
+                background: "rgba(255,255,255,0.92)",
+              }}
+            >
+              {preview.error || "Could not prepare the preview."}
+            </div>
+          ) : null}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", flexShrink: 0 }}>
+          <button type="button" onClick={onClose} disabled={generating} style={toolbarButtonStyle(!generating)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={!ready || generating}
+            style={{
+              ...toolbarButtonStyle(ready && !generating),
+              background: ready && !generating ? MONUMENT : WHITE,
+              color: ready && !generating ? WHITE : MONUMENT,
+              border: `1px solid ${MONUMENT}`,
+            }}
+          >
+            {generating ? "Generating…" : "Generate"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmModal({ title, message, confirmLabel = "Delete", onConfirm, onCancel }) {
   useEffect(() => {
     const onKey = (e) => {
@@ -3709,7 +4076,17 @@ function ConfirmModal({ title, message, confirmLabel = "Delete", onConfirm, onCa
   );
 }
 
-function Design3DModal({ layout, rooms, onClose }) {
+function Design3DModal({
+  layout,
+  rooms,
+  walkRoute = null,
+  onAddLocation,
+  onAddPoint,
+  onAddFinish,
+  onClearWalk,
+  onClose,
+}) {
+  const walkRef = useRef(null);
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
@@ -3722,6 +4099,7 @@ function Design3DModal({ layout, rooms, onClose }) {
   }, [onClose]);
 
   const metres = layout?.metres;
+  const previewRooms = useMemo(() => roomsWithPorchSteps(rooms, metres), [rooms, metres]);
   const innerMetres = useMemo(
     () => (metres ? insetPolygon(metres, WALL_THICKNESS_M) : null),
     [metres]
@@ -3785,14 +4163,46 @@ function Design3DModal({ layout, rooms, onClose }) {
           <div style={{ position: "absolute", inset: 0 }}>
             <QuickConcept3DPreview
               metres={layout.metres}
-              rooms={roomsWithPorchSteps(rooms, layout.metres)}
+              rooms={previewRooms}
               innerMetres={innerMetres}
               walls={exportWalls}
               doors={planDoors}
+              walkRef={walkRef}
+              walkRoute={walkRoute}
             />
           </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginTop: 16, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                walkRef.current?.();
+              }}
+              style={{ ...toolbarButtonStyle(true), position: "relative", zIndex: 2 }}
+            >
+              Walk through
+            </button>
+            <button type="button" onClick={onAddLocation} style={toolbarButtonStyle(true)}>
+              Add location
+            </button>
+            <button type="button" onClick={onAddPoint} style={toolbarButtonStyle(true)}>
+              Add point
+            </button>
+            <button
+              type="button"
+              onClick={onAddFinish}
+              disabled={Boolean(walkRoute?.finish)}
+              style={toolbarButtonStyle(!walkRoute?.finish)}
+            >
+              Add finish
+            </button>
+            <button type="button" onClick={onClearWalk} style={toolbarButtonStyle(true)}>
+              Clear
+            </button>
+          </div>
           <button type="button" onClick={onClose} style={toolbarButtonStyle(true)} autoFocus>
             OK
           </button>
@@ -4437,7 +4847,7 @@ function metreGridStyle(ppm, offsetX = 0, offsetY = 0) {
   };
 }
 
-function layoutFromMetres(metres, width, height, lockedScale = null) {
+function layoutFromMetres(metres, width, height, lockedScale = null, includePoint = null, tightPoints = null) {
   const EDGE = 28;
   let minX = Infinity;
   let minY = Infinity;
@@ -4448,6 +4858,26 @@ function layoutFromMetres(metres, width, height, lockedScale = null) {
     minY = Math.min(minY, p.y);
     maxX = Math.max(maxX, p.x);
     maxY = Math.max(maxY, p.y);
+  }
+  const bMinX = minX;
+  const bMinY = minY;
+  const includeList = !includePoint ? [] : Array.isArray(includePoint) ? includePoint : [includePoint];
+  if (includeList.length) {
+    const pad = 2.2;
+    for (const p of includeList) {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      minX = Math.min(minX, p.x - pad);
+      minY = Math.min(minY, p.y - pad);
+      maxX = Math.max(maxX, p.x + pad);
+      maxY = Math.max(maxY, p.y + pad);
+    }
+  }
+  for (const p of tightPoints || []) {
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+    minX = Math.min(minX, p.x - 0.35);
+    minY = Math.min(minY, p.y - 0.35);
+    maxX = Math.max(maxX, p.x + 0.35);
+    maxY = Math.max(maxY, p.y + 0.35);
   }
   const bw = Math.max(maxX - minX, 0.01);
   const bh = Math.max(maxY - minY, 0.01);
@@ -4467,8 +4897,8 @@ function layoutFromMetres(metres, width, height, lockedScale = null) {
     scale,
     originX,
     originY,
-    offsetX: (width - bw * scale) / 2,
-    offsetY: (height - bh * scale) / 2,
+    offsetX: bMinX * scale + originX,
+    offsetY: bMinY * scale + originY,
     areaM2: polygonAreaM2(metres, 1),
   };
 }
@@ -4478,11 +4908,30 @@ const VIEW_SCALE_MIN = 6;
 const VIEW_SCALE_MAX = 600;
 
 /** Fit the building, porches and both dimension rings (plus their labels) inside the stage. */
-function layoutFitWithDims(metres, rooms, width, height) {
+function layoutFitWithDims(metres, rooms, width, height, includePoint = null, tightPoints = null) {
   const foot = planFootprintBounds(metres, rooms);
-  if (!foot) return layoutFromMetres(metres, width, height);
-  const fw = Math.max(foot.maxX - foot.minX, 0.01);
-  const fh = Math.max(foot.maxY - foot.minY, 0.01);
+  if (!foot) return layoutFromMetres(metres, width, height, null, includePoint, tightPoints);
+  let { minX, minY, maxX, maxY } = foot;
+  const includeList = !includePoint ? [] : Array.isArray(includePoint) ? includePoint : [includePoint];
+  if (includeList.length) {
+    const pad = 2.2;
+    for (const p of includeList) {
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      minX = Math.min(minX, p.x - pad);
+      minY = Math.min(minY, p.y - pad);
+      maxX = Math.max(maxX, p.x + pad);
+      maxY = Math.max(maxY, p.y + pad);
+    }
+  }
+  for (const p of tightPoints || []) {
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+    minX = Math.min(minX, p.x - 0.35);
+    minY = Math.min(minY, p.y - 0.35);
+    maxX = Math.max(maxX, p.x + 0.35);
+    maxY = Math.max(maxY, p.y + 0.35);
+  }
+  const fw = Math.max(maxX - minX, 0.01);
+  const fh = Math.max(maxY - minY, 0.01);
   let scale = Math.min(width / (fw + 4), height / (fh + 4));
   for (let i = 0; i < 4; i += 1) {
     const fixedPx = Math.max(DIM_LINE_GAP_M * scale, DIM_CHAIN_GAP_PX) + DIM_FIT_TEXT_PX;
@@ -4495,8 +4944,8 @@ function layoutFitWithDims(metres, rooms, width, height) {
     );
   }
   const b = buildingBounds(metres);
-  const originX = width / 2 - ((foot.minX + foot.maxX) / 2) * scale;
-  const originY = height / 2 - ((foot.minY + foot.maxY) / 2) * scale;
+  const originX = width / 2 - ((minX + maxX) / 2) * scale;
+  const originY = height / 2 - ((minY + maxY) / 2) * scale;
   return {
     pts: metres.map((p) => ({ x: p.x * scale + originX, y: p.y * scale + originY })),
     metres,
@@ -4519,6 +4968,10 @@ const LAUNDRY_DEPTH_M = 0.75;
 const LAUNDRY_LENGTHS_M = [1.3, 1.4, 1.5];
 const LAUNDRY_TROUGH_D_M = 0.6;
 const LAUNDRY_TROUGH_W_M = 0.45;
+const LAUNDRY_ROOM_W_M = 2.4;
+const LAUNDRY_ROOM_H_M = 1.8;
+const LAUNDRY_BENCH_D_M = 0.6;
+const LAUNDRY_SINK_M = 0.45;
 const KITCHEN_W_M = 3.0;
 const KITCHEN_H_M = 3.6;
 const KITCHEN_BENCH_M = 0.6;
@@ -4553,6 +5006,9 @@ const BED_SHORT_M = 1.8;
 const BED_LONG_M = 2.0;
 const SHOWER_LONG_M = 1.8;
 const SHOWER_SHORT_M = 0.9;
+const SHOWER_LEN_MIN_M = 0.9;
+const SHOWER_LEN_MAX_M = 2.1;
+const SHOWER_LEN_STEP_M = 0.1;
 const DOOR_WIDTH_DEFAULT_M = 0.87;
 const POWDER_DOOR_WIDTH_M = 0.77;
 
@@ -4560,6 +5016,7 @@ function roomDoorWidthM(room) {
   return roomKind(room) === "powder" ? POWDER_DOOR_WIDTH_M : DOOR_WIDTH_DEFAULT_M;
 }
 const DOOR_LEAF_T_M = 0.04;
+const SLIDER_PROTRUDE_M = 0.1;
 const ROBE_DEPTH_M = 0.6;
 const ROBE_WIDTH_DEFAULT_M = 1.6;
 const ROBE_MIN_M = 1.2;
@@ -4694,6 +5151,7 @@ function roomKind(room) {
   if (room?.kind === "bathroom") return "bathroom";
   if (room?.kind === "powder") return "powder";
   if (room?.kind === "laundry") return "laundry";
+  if (room?.kind === "laundryRoom") return "laundryRoom";
   if (room?.kind === "kitchen") return "kitchen";
   if (room?.kind === "porch") return "porch";
   if (room?.kind === "living") return "living";
@@ -4702,6 +5160,10 @@ function roomKind(room) {
 
 function isLaundry(room) {
   return roomKind(room) === "laundry";
+}
+
+function isLaundryRoom(room) {
+  return roomKind(room) === "laundryRoom";
 }
 
 /** Euro laundry: 750 deep, length (1200–1500) runs along x when unrotated / rotated 180. */
@@ -4767,6 +5229,129 @@ function laundryFixtures(room) {
   };
 }
 
+function defaultLaundryLayout(w, h) {
+  const tall = h >= w;
+  const doorSide = tall ? "top" : "left";
+  const benchSide = tall ? "bottom" : "right";
+  const wallLen = benchSide === "left" || benchSide === "right" ? h : w;
+  const wmAlong = WM_GAP_M;
+  const sinkAlong = wmAlong + WM_SIZE_M + WM_GAP_M;
+  return {
+    doorSide,
+    doorAlong: 0,
+    doorFlip: false,
+    doorSlide: false,
+    benchSide,
+    wmAlong: snapPlanMm(wmAlong),
+    sinkAlong: snapPlanMm(Math.min(Math.max(0, wallLen - LAUNDRY_SINK_M), sinkAlong)),
+  };
+}
+
+function clampLaundryWm(along, benchLen) {
+  const size = Math.min(WM_SIZE_M, Math.max(0.15, benchLen));
+  const gap = benchLen + 0.001 >= WM_SPACE_M ? WM_GAP_M : 0;
+  const min = gap;
+  const max = Math.max(min, benchLen - gap - size);
+  const raw = Number.isFinite(along) ? along : min;
+  return snapPlanMm(Math.max(min, Math.min(max, raw)));
+}
+
+function clampLaundrySink(along, benchLen, wmAlong) {
+  const size = Math.min(LAUNDRY_SINK_M, Math.max(0.15, benchLen));
+  const zone0 = wmAlong - WM_GAP_M;
+  const zone1 = wmAlong + Math.min(WM_SIZE_M, benchLen) + WM_GAP_M;
+  const spans = [];
+  if (zone0 + 0.001 >= size) spans.push([0, zone0 - size]);
+  if (benchLen - zone1 + 0.001 >= size) spans.push([zone1, benchLen - size]);
+  const raw = Number.isFinite(along) ? along : zone1;
+  if (!spans.length) return snapPlanMm(Math.max(0, Math.min(Math.max(0, benchLen - size), raw)));
+  let best = spans[0][0];
+  let bestD = Infinity;
+  for (const [a, b] of spans) {
+    const c = Math.max(a, Math.min(b, raw));
+    const d = Math.abs(c - raw);
+    if (d < bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return snapPlanMm(best);
+}
+
+/**
+ * 600mm bench on one wall. The washing-machine space is a 600 square with 75mm either side.
+ * The 450 sink sits in the bench. Both slide along the bench.
+ */
+function laundryBench(room, innerMetres) {
+  if (!room || !isLaundryRoom(room)) return null;
+  const doorSide = roomDoorSide(room, innerMetres);
+  const benchSide = hasBedroomSide(room.benchSide)
+    ? room.benchSide
+    : doorSide === "top"
+      ? "bottom"
+      : doorSide === "bottom"
+        ? "top"
+        : doorSide === "left"
+          ? "right"
+          : "left";
+  const frame = roomWallFrame(room, benchSide);
+  let t0 = 0;
+  let t1 = frame.wallLen;
+  if (benchSide === doorSide) {
+    const width = Math.min(roomDoorWidthM(room), Math.max(0.2, frame.wallLen - 0.05));
+    const maxAlong = Math.max(0, frame.wallLen - width);
+    const stored = Number(room?.doorAlong);
+    const open0 = Number.isFinite(stored) ? Math.max(0, Math.min(maxAlong, stored)) : 0;
+    const before = open0;
+    const after = frame.wallLen - (open0 + width);
+    if (after >= before) {
+      t0 = open0 + width;
+      t1 = frame.wallLen;
+    } else {
+      t0 = 0;
+      t1 = open0;
+    }
+  }
+  const length = Math.max(0, t1 - t0);
+  const roomDepth = benchSide === "left" || benchSide === "right" ? room.w : room.h;
+  const depth = Math.min(LAUNDRY_BENCH_D_M, Math.max(0.15, roomDepth - 0.05));
+  const origin = {
+    x: frame.origin.x + frame.along.x * t0,
+    y: frame.origin.y + frame.along.y * t0,
+  };
+  const wmAlong = clampLaundryWm(Number(room?.wmAlong), length);
+  const sinkAlong = clampLaundrySink(Number(room?.sinkAlong), length, wmAlong);
+  const wmSize = Math.min(WM_SIZE_M, Math.max(0.15, length));
+  const wmDepth = Math.min(WM_SIZE_M, depth);
+  const sinkSize = Math.min(LAUNDRY_SINK_M, depth, Math.max(0.15, length));
+  const sinkD0 = Math.max(0, (depth - sinkSize) / 2);
+  return {
+    benchSide,
+    along: frame.along,
+    inward: frame.inward,
+    origin,
+    length,
+    depth,
+    rect: wallBoxRect(origin, frame.along, frame.inward, 0, length, 0, depth),
+    wm: {
+      along: wmAlong,
+      rect: wallBoxRect(origin, frame.along, frame.inward, wmAlong, wmAlong + wmSize, 0, wmDepth),
+    },
+    sink: {
+      along: sinkAlong,
+      rect: wallBoxRect(
+        origin,
+        frame.along,
+        frame.inward,
+        sinkAlong,
+        sinkAlong + sinkSize,
+        sinkD0,
+        sinkD0 + sinkSize
+      ),
+    },
+  };
+}
+
 /** Living room furniture group: sits on the open living floor, not a walled room. */
 function isLivingSet(room) {
   return roomKind(room) === "living";
@@ -4784,6 +5369,25 @@ function isBathLike(room) {
 
 function bathroomHasShower(room) {
   return roomKind(room) === "bathroom";
+}
+
+function showerLenLimits(span) {
+  const roomMax = Number.isFinite(span) && span > 0.05 ? span : SHOWER_LEN_MAX_M;
+  const maxM = Math.min(SHOWER_LEN_MAX_M, roomMax);
+  const minM = Math.min(SHOWER_LEN_MIN_M, maxM);
+  const step = Math.round(SHOWER_LEN_STEP_M * 1000);
+  const max = Math.floor((Math.floor(maxM * 1000 + 1e-6)) / step) * step;
+  let min = Math.ceil((Math.ceil(minM * 1000 - 1e-6)) / step) * step;
+  if (min > max) min = max;
+  return { min: min / 1000, max: max / 1000 };
+}
+
+function showerLengthM(room, span) {
+  const { min, max } = showerLenLimits(span);
+  const raw = Number(room?.showerLen);
+  const base = raw > 0 ? raw : SHOWER_LONG_M;
+  const stepped = snapMetresToStep(base, SHOWER_LEN_STEP_M);
+  return Math.max(min, Math.min(max, stepped));
 }
 
 function vanityLengthM(room) {
@@ -4857,6 +5461,7 @@ function roomKindLabel(kind) {
   if (kind === "bathroom") return "Bathroom";
   if (kind === "powder") return "Powder Room";
   if (kind === "laundry") return "Euro Laundry";
+  if (kind === "laundryRoom") return "Laundry";
   if (kind === "kitchen") return "Kitchen";
   if (kind === "porch") return "Porch";
   if (kind === "living") return "Living Room";
@@ -4867,7 +5472,9 @@ function roomColors(room) {
   const kind = roomKind(room);
   if (kind === "living") return { stroke: ROOM_LIVING, fill: "none" };
   if (kind === "bathroom") return { stroke: ROOM_PURPLE, fill: BATH_TILE };
-  if (kind === "powder" || kind === "laundry") return { stroke: ROOM_PURPLE, fill: HYBRID_PLANKS[1] };
+  if (kind === "powder" || kind === "laundry" || kind === "laundryRoom") {
+    return { stroke: ROOM_PURPLE, fill: HYBRID_PLANKS[1] };
+  }
   if (kind === "kitchen") return { stroke: ROOM_KITCHEN, fill: HYBRID_PLANKS[1] };
   if (kind === "porch") return { stroke: ROOM_PORCH, fill: ROOM_PORCH_FILL };
   return { stroke: ROOM_BLUE, fill: CARPET_BASE };
@@ -5206,12 +5813,329 @@ function insetPolygon(pts, dist) {
   return out;
 }
 
+const EAVE_DEFAULT_M = 0.3;
+const EAVE_STEP_M = 0.05;
+const EAVE_MAX_M = 0.6;
+const EAVE_COLLAPSE_M = 0.02;
+
+function normalizeEaveDepths(depths, count) {
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    const v = Number(depths?.[i]);
+    const depth = Number.isFinite(v) ? v : EAVE_DEFAULT_M;
+    out.push(Math.min(EAVE_MAX_M, Math.max(0, depth)));
+  }
+  return out;
+}
+
+function buildingEdgeFrame(pts, index) {
+  const n = pts.length;
+  const a = pts[index];
+  const b = pts[(index + 1) % n];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  const inn = polygonEdgeInwardNormal(pts, a, b);
+  return {
+    a,
+    b,
+    len,
+    ux: len > 1e-9 ? dx / len : 1,
+    uy: len > 1e-9 ? dy / len : 0,
+    nx: -inn.nx,
+    ny: -inn.ny,
+  };
+}
+
+function eaveLineScalar(pts, index, depth) {
+  const edge = buildingEdgeFrame(pts, index);
+  return edge.a.x * edge.nx + edge.a.y * edge.ny + depth;
+}
+
+/** Outward offset of each wall edge. Corners are the mitres of the neighbouring eave lines. */
+function eaveOffsetCorners(pts, depths) {
+  const n = pts.length;
+  const lines = [];
+  for (let i = 0; i < n; i += 1) {
+    const edge = buildingEdgeFrame(pts, i);
+    const d = depths[i] || 0;
+    lines.push({
+      ...edge,
+      ox: edge.a.x + edge.nx * d,
+      oy: edge.a.y + edge.ny * d,
+    });
+  }
+  const corners = [];
+  for (let i = 0; i < n; i += 1) {
+    const prev = lines[(i - 1 + n) % n];
+    const cur = lines[i];
+    const hit = intersectAxes(
+      { x: prev.ox, y: prev.oy },
+      prev.ux,
+      prev.uy,
+      { x: cur.ox, y: cur.oy },
+      cur.ux,
+      cur.uy
+    );
+    corners.push(hit || { x: cur.ox, y: cur.oy });
+  }
+  return { lines, corners };
+}
+
+function eavePiecesCollinear(run, piece) {
+  const crossA = (piece.a.x - run.a.x) * run.uy - (piece.a.y - run.a.y) * run.ux;
+  const crossB = (piece.b.x - run.a.x) * run.uy - (piece.b.y - run.a.y) * run.ux;
+  const sameWay = piece.ux * run.ux + piece.uy * run.uy > 0.98;
+  const joined = Math.hypot(piece.a.x - run.b.x, piece.a.y - run.b.y) <= EAVE_COLLAPSE_M * 2;
+  return sameWay && joined && Math.abs(crossA) <= EAVE_COLLAPSE_M && Math.abs(crossB) <= EAVE_COLLAPSE_M;
+}
+
+/**
+ * Eave runs around the outer wall. A run is one dashed segment.
+ * Edges whose eave lines meet (a notch pulled out flush, or a straight wall) are one run.
+ */
+function eaveRuns(pts, depths) {
+  if (!pts || pts.length < 3) return [];
+  const safe = normalizeEaveDepths(depths, pts.length);
+  const { lines, corners } = eaveOffsetCorners(pts, safe);
+  const pieces = [];
+  for (let i = 0; i < pts.length; i += 1) {
+    if (lines[i].len < EAVE_COLLAPSE_M) continue;
+    const a = corners[i];
+    const b = corners[(i + 1) % pts.length];
+    const signed = (b.x - a.x) * lines[i].ux + (b.y - a.y) * lines[i].uy;
+    if (signed <= EAVE_COLLAPSE_M) continue;
+    pieces.push({
+      edges: [i],
+      a,
+      b,
+      nx: lines[i].nx,
+      ny: lines[i].ny,
+      ux: lines[i].ux,
+      uy: lines[i].uy,
+    });
+  }
+  if (!pieces.length) return [];
+  let guard = pieces.length + 2;
+  while (pieces.length > 1 && guard > 0) {
+    guard -= 1;
+    let merged = false;
+    for (let i = 0; i < pieces.length; i += 1) {
+      const j = (i + 1) % pieces.length;
+      if (!eavePiecesCollinear(pieces[i], pieces[j])) continue;
+      pieces[i].b = pieces[j].b;
+      pieces[i].edges.push(...pieces[j].edges);
+      pieces.splice(j, 1);
+      merged = true;
+      break;
+    }
+    if (!merged) break;
+  }
+  return pieces;
+}
+
+function shiftEaveDepths(startDepths, active, delta) {
+  const next = startDepths.slice();
+  let d = delta;
+  let minStart = Infinity;
+  let maxStart = -Infinity;
+  for (const i of active) {
+    minStart = Math.min(minStart, startDepths[i]);
+    maxStart = Math.max(maxStart, startDepths[i]);
+  }
+  if (minStart + d < 0) d = -minStart;
+  if (maxStart + d > EAVE_MAX_M) d = EAVE_MAX_M - maxStart;
+  for (const i of active) next[i] = Math.min(EAVE_MAX_M, Math.max(0, startDepths[i] + d));
+  return { depths: next, delta: d };
+}
+
+/** When a dragged eave reaches a parallel eave, snap onto it and keep any extra travel in 50 mm steps. */
+function applyEaveDelta(pts, startDepths, active, delta) {
+  let d = Math.round(delta / EAVE_STEP_M) * EAVE_STEP_M;
+  const shifted = shiftEaveDepths(startDepths, active, d);
+  d = shifted.delta;
+  const primary = active[0];
+  const origin = buildingEdgeFrame(pts, primary);
+  const startS = eaveLineScalar(pts, primary, startDepths[primary]);
+  const traveled = eaveLineScalar(pts, primary, shifted.depths[primary]) - startS;
+  let meeting = null;
+  for (let j = 0; j < pts.length; j += 1) {
+    if (active.includes(j)) continue;
+    const other = buildingEdgeFrame(pts, j);
+    if (origin.nx * other.nx + origin.ny * other.ny < 0.98) continue;
+    const needed = eaveLineScalar(pts, j, startDepths[j]) - startS;
+    if (Math.abs(needed) > 1e-4 && needed * traveled < 0) continue;
+    if (Math.abs(traveled) + EAVE_STEP_M * 0.5 < Math.abs(needed) - 1e-4) continue;
+    const trial = shiftEaveDepths(startDepths, active, needed);
+    const run = eaveRuns(pts, trial.depths).find((item) => item.edges.some((edge) => active.includes(edge)));
+    if (!run || !run.edges.includes(j)) continue;
+    if (!meeting || Math.abs(needed) < Math.abs(meeting.needed)) meeting = { needed, edges: run.edges };
+  }
+  if (!meeting) return { depths: shifted.depths, delta: d, magnet: false, joinEdges: null, meetDelta: 0 };
+  const excess = Math.round((d - meeting.needed) / EAVE_STEP_M) * EAVE_STEP_M;
+  const joined = shiftEaveDepths(startDepths, active, meeting.needed + excess);
+  const lineS = eaveLineScalar(pts, primary, joined.depths[primary]);
+  for (const edge of meeting.edges) {
+    if (active.includes(edge)) continue;
+    const required = lineS - eaveLineScalar(pts, edge, 0);
+    if (required > EAVE_MAX_M + 1e-4 || required < -1e-4) {
+      return { depths: shifted.depths, delta: d, magnet: false, joinEdges: null, meetDelta: 0 };
+    }
+  }
+  return {
+    depths: joined.depths,
+    delta: joined.delta,
+    magnet: true,
+    joinEdges: meeting.edges,
+    meetDelta: meeting.needed,
+  };
+}
+
+function eaveEdgesByDepth(depths, edges) {
+  let min = Infinity;
+  for (const edge of edges) min = Math.min(min, depths[edge]);
+  const base = [];
+  const extended = [];
+  for (const edge of edges) {
+    if (depths[edge] <= min + 0.001) base.push(edge);
+    else extended.push(edge);
+  }
+  return { base, extended };
+}
+
+/** One drag step. Pulling back inside a join restores the eaves that were met. */
+function stepEaveDrag(drag, pts, rawDelta) {
+  let applied;
+  if (drag.joined) {
+    const stepped = drag.joinDelta + Math.round((rawDelta - drag.joinDelta) / EAVE_STEP_M) * EAVE_STEP_M;
+    if (stepped < drag.meetDelta - 1e-6) {
+      drag.joined = false;
+      drag.active = drag.originActive.slice();
+      for (const edge of drag.baseEdges) drag.startDepths[edge] = drag.originalDepths[edge];
+      applied = shiftEaveDepths(drag.originalDepths, drag.originActive, stepped);
+      for (const edge of drag.baseEdges) applied.depths[edge] = drag.originalDepths[edge];
+    } else {
+      applied = shiftEaveDepths(drag.startDepths, drag.active, stepped);
+    }
+  } else {
+    applied = applyEaveDelta(pts, drag.startDepths, drag.active, rawDelta);
+    if (applied.magnet && applied.joinEdges) {
+      const lineS = eaveLineScalar(pts, drag.primary, applied.depths[drag.primary]);
+      const added = [];
+      for (const edge of applied.joinEdges) {
+        if (drag.active.includes(edge)) continue;
+        const required = lineS - eaveLineScalar(pts, edge, 0);
+        drag.startDepths[edge] = required - applied.delta;
+        applied.depths[edge] = required;
+        drag.active.push(edge);
+        added.push(edge);
+      }
+      if (added.length) {
+        drag.baseEdges = added;
+        drag.joined = true;
+        drag.joinDelta = applied.delta;
+        drag.meetDelta = applied.meetDelta;
+      }
+    }
+  }
+  return applied;
+}
+
+function hitEaveRun(runs, layout, raw) {
+  if (!runs?.length || !layout) return null;
+  let best = null;
+  const limit = Math.max(EDGE_HIT_PX, 14);
+  for (let i = 0; i < runs.length; i += 1) {
+    const run = runs[i];
+    const d = distToSegment(raw, mPointToPx(run.a, layout), mPointToPx(run.b, layout));
+    if (d <= limit && (!best || d < best.d)) best = { index: i, run, d };
+  }
+  return best;
+}
+
+function eaveDepthLabel(depths, edges) {
+  let min = Infinity;
+  for (const edge of edges || []) min = Math.min(min, depths[edge]);
+  return `${formatPlanMm(Number.isFinite(min) ? min : 0)} mm`;
+}
+
+function closestEaveEdge(pts, edges, cursor) {
+  let best = edges[0];
+  let bestD = Infinity;
+  for (const i of edges) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const d = distToSegment(cursor, a, b);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function pickPerimeterHit(metres, depths, layout, raw) {
+  const runs = eaveRuns(metres, depths);
+  const eave = hitEaveRun(runs, layout, raw);
+  const building = hitTestEdge(layout.pts, raw, true);
+  let buildingD = Infinity;
+  if (building) {
+    const a = layout.pts[building.index];
+    const b = layout.pts[(building.index + 1) % layout.pts.length];
+    buildingD = distToSegment(raw, a, b);
+  }
+  if (eave && eave.d <= buildingD) return { kind: "eave", eave, runs };
+  if (building) return { kind: "building", building };
+  return null;
+}
+
+function eavePathD(runs, layout) {
+  if (!runs?.length) return "";
+  const parts = [];
+  let cursor = null;
+  runs.forEach((run) => {
+    const a = mPointToPx(run.a, layout);
+    const b = mPointToPx(run.b, layout);
+    if (!cursor || Math.hypot(cursor.x - a.x, cursor.y - a.y) > 1.5) parts.push(`M ${a.x} ${a.y}`);
+    parts.push(`L ${b.x} ${b.y}`);
+    cursor = b;
+  });
+  const first = mPointToPx(runs[0].a, layout);
+  if (cursor && Math.hypot(cursor.x - first.x, cursor.y - first.y) <= 1.5) parts.push("Z");
+  return parts.join(" ");
+}
+
+function drawEaveCanvas(ctx, layout) {
+  const runs = eaveRuns(layout?.metres, layout?.eaveDepths);
+  if (!runs.length) return;
+  ctx.save();
+  ctx.strokeStyle = "#111111";
+  ctx.lineWidth = 1.35;
+  ctx.lineJoin = "miter";
+  ctx.setLineDash([7, 5]);
+  ctx.beginPath();
+  let cursor = null;
+  for (const run of runs) {
+    const a = mPointToPx(run.a, layout);
+    const b = mPointToPx(run.b, layout);
+    if (!cursor || Math.hypot(cursor.x - a.x, cursor.y - a.y) > 1.5) {
+      ctx.moveTo(a.x, a.y);
+    }
+    ctx.lineTo(b.x, b.y);
+    cursor = b;
+  }
+  const first = mPointToPx(runs[0].a, layout);
+  if (cursor && Math.hypot(cursor.x - first.x, cursor.y - first.y) <= 1.5) ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
 const WALL_COLINEAR_M = 0.08;
 const WALL_MIN_LEN_M = 0.05;
 
 function roomNeedsPartitionWalls(room) {
   const kind = roomKind(room);
-  return kind === "bedroom" || kind === "bathroom" || kind === "powder" || kind === "laundry";
+  return kind === "bedroom" || kind === "bathroom" || kind === "powder" || kind === "laundry" || kind === "laundryRoom";
 }
 
 function almostEqualM(a, b, tol = WALL_COLINEAR_M) {
@@ -5575,10 +6499,15 @@ function controlHint(hover) {
   if (type === "design-rotate") return "Rotate design";
   if (type === "door") return "Drag door";
   if (type === "door-flip") return "Flip door";
+  if (type === "door-options") return "Swing or sliding";
   if (type === "shower") return "Drag shower";
+  if (type === "shower-resize") return "Resize shower";
   if (type === "shower-rotate") return "Rotate shower";
   if (type === "toilet") return "Drag toilet";
   if (type === "vanity") return "Drag vanity";
+  if (type === "laundry-bench") return "Drag bench";
+  if (type === "laundry-wm") return "Drag washing machine";
+  if (type === "laundry-sink") return "Drag sink";
   if (type === "kitchen-layout") return "Kitchen layout";
   if (type === "kitchen-custom") return "Click a wall, then drag along it to draw the bench";
   if (type === "kitchen-run") return "Resize length";
@@ -5592,6 +6521,7 @@ function controlHint(hover) {
   if (type === "porch-move") return "Drag porch";
   if (type === "porch-resize") return "Extend porch";
   if (type === "resize-building") return "Resize building";
+  if (type === "eave") return hover.depthLabel ? `Drag eave · ${hover.depthLabel}` : "Drag eave";
   if (type === "resize") return "Resize";
   if (hover.kind === "rotate") return "Rotate";
   if (hover.kind === "move") return "Drag";
@@ -5749,6 +6679,38 @@ function flipRoomDoor(room) {
   return { ...room, doorFlip: !room.doorFlip };
 }
 
+function cycleRoomDoorStyle(room, innerMetres) {
+  const doorSlide = !room?.doorSlide;
+  if (!doorSlide) return { ...room, doorSlide: false };
+  const door = roomDoorSwing(room, innerMetres);
+  if (!door) return { ...room, doorSlide: true };
+  const frame = roomWallFrame(room, door.doorSide);
+  const along = Number.isFinite(Number(room?.doorAlong)) ? Number(room.doorAlong) : 0;
+  const startSpace = Math.max(0, along);
+  const endSpace = Math.max(0, frame.wallLen - along - door.doorWidth);
+  const flipped = Boolean(room?.doorFlip);
+  const here = flipped ? endSpace : startSpace;
+  const there = flipped ? startSpace : endSpace;
+  const need = Math.max(0, door.doorWidth - SLIDER_PROTRUDE_M);
+  if (here + 0.02 < need && there > here) return { ...room, doorSlide: true, doorFlip: !flipped };
+  return { ...room, doorSlide: true };
+}
+
+function doorOptionsHandlePx(door, layout) {
+  if (!door?.doorOptions) return null;
+  const p = mPointToPx(door.doorOptions, layout);
+  return { cx: p.x, cy: p.y, size: fixtureGrabPx(layout) };
+}
+
+function hitDoorOptionsHandle(door, layout, raw) {
+  const handle = doorOptionsHandlePx(door, layout);
+  if (!handle) return null;
+  if (Math.hypot(raw.x - handle.cx, raw.y - handle.cy) <= handle.size / 2 + 5) {
+    return { type: "door-options", kind: "rotate" };
+  }
+  return null;
+}
+
 function fixtureRotateHandlePx(rect, layout) {
   const s = mRectToPx(rect, layout);
   const hs = fixtureGrabPx(layout);
@@ -5776,6 +6738,96 @@ function showerRotOf(room) {
 
 function showerLongAxis(room) {
   return showerRotOf(room) % 2 === 0;
+}
+
+function showerResizeHandles(shower, room) {
+  if (!shower) return [];
+  const longIsX = showerLongAxis(room);
+  if (longIsX) {
+    const y = shower.y + shower.h / 2;
+    return [
+      { which: "start", point: { x: shower.x, y } },
+      { which: "end", point: { x: shower.x + shower.w, y } },
+    ];
+  }
+  const x = shower.x + shower.w / 2;
+  return [
+    { which: "start", point: { x, y: shower.y } },
+    { which: "end", point: { x, y: shower.y + shower.h } },
+  ];
+}
+
+function hitShowerResizeHandle(shower, room, layout, raw) {
+  if (!shower) return null;
+  const hs = fixtureGrabPx(layout);
+  const hitR = hs / 2 + 5;
+  let best = null;
+  for (const h of showerResizeHandles(shower, room)) {
+    const px = mPointToPx(h.point, layout);
+    const d = Math.hypot(raw.x - px.x, raw.y - px.y);
+    if (d <= hitR && (!best || d < best.d)) best = { which: h.which, d };
+  }
+  if (!best) return null;
+  return {
+    type: "shower-resize",
+    kind: showerLongAxis(room) ? "ew" : "ns",
+    which: best.which,
+  };
+}
+
+function startShowerResizeDrag(room, which, cursorM) {
+  const { shower } = bathroomFixtures(room);
+  if (!shower) return { mode: "shower-resize", which, grab: 0 };
+  const longIsX = showerLongAxis(room);
+  const edge =
+    which === "start"
+      ? longIsX
+        ? shower.x
+        : shower.y
+      : longIsX
+        ? shower.x + shower.w
+        : shower.y + shower.h;
+  const cursor = longIsX ? cursorM.x : cursorM.y;
+  return { mode: "shower-resize", which, grab: cursor - edge };
+}
+
+function moveShowerLength(room, which, cursorM, grab) {
+  const { shower } = bathroomFixtures(room);
+  if (!shower) return room;
+  const longIsX = showerLongAxis(room);
+  const room0 = longIsX ? room.x : room.y;
+  const span = longIsX ? room.w : room.h;
+  const room1 = room0 + span;
+  const { min, max } = showerLenLimits(span);
+  const cross = longIsX ? shower.y : shower.x;
+  const start0 = longIsX ? shower.x : shower.y;
+  const end0 = start0 + (longIsX ? shower.w : shower.h);
+  const cursor = (longIsX ? cursorM.x : cursorM.y) - (Number.isFinite(grab) ? grab : 0);
+  let start = start0;
+  let end = end0;
+  if (which === "start") {
+    const minStart = Math.max(room0, end0 - max);
+    const maxStart = end0 - min;
+    start = snapPlanMm(Math.max(minStart, Math.min(maxStart, cursor)));
+    end = end0;
+  } else {
+    const minEnd = start0 + min;
+    const maxEnd = Math.min(room1, start0 + max);
+    end = snapPlanMm(Math.max(minEnd, Math.min(maxEnd, cursor)));
+    start = start0;
+  }
+  const length = showerLengthM({ showerLen: end - start }, span);
+  const posAlong = which === "start" ? end - length : start;
+  const posX = longIsX ? posAlong : cross;
+  const posY = longIsX ? cross : posAlong;
+  return {
+    ...room,
+    showerLen: length,
+    showerRot: showerRotOf(room),
+    showerLongIsX: longIsX,
+    showerX: snapPlanMm(posX - room.x),
+    showerY: snapPlanMm(posY - room.y),
+  };
 }
 
 function showerGlassPlacement(rect, rot, flip) {
@@ -5990,7 +7042,9 @@ function roomDoorSideIsExternal(room, side, innerMetres) {
 
 function roomDoorSwing(room, innerMetres) {
   const kind = roomKind(room);
-  if (!room || (kind !== "bedroom" && kind !== "bathroom" && kind !== "powder")) return null;
+  if (!room || (kind !== "bedroom" && kind !== "bathroom" && kind !== "powder" && kind !== "laundryRoom")) {
+    return null;
+  }
   const doorSide = roomDoorSide(room, innerMetres);
   const frame = roomWallFrame(room, doorSide);
   return doorSwingOnFrame(room, frame, doorSide);
@@ -6401,6 +7455,28 @@ function doorSwingOnFrame(room, frame, doorSide, { center = false } = {}) {
     ? { x: -frame.along.x, y: -frame.along.y }
     : frame.along;
   const cross = leafAlong.x * frame.inward.y - leafAlong.y * frame.inward.x;
+  const sliding = Boolean(room?.doorSlide);
+  const pocketDir = flipped ? frame.along : { x: -frame.along.x, y: -frame.along.y };
+  const intoOpen = { x: -pocketDir.x, y: -pocketDir.y };
+  const jamb = flipped ? openingEnd : openingStart;
+  const neededPocket = Math.max(0, doorWidth - SLIDER_PROTRUDE_M);
+  const available = flipped
+    ? Math.max(0, frame.wallLen - doorAlong - doorWidth)
+    : Math.max(0, doorAlong);
+  const pocket = Math.min(neededPocket, available);
+  const show = Math.max(0.02, doorWidth - pocket);
+  const lead = { x: jamb.x + intoOpen.x * show, y: jamb.y + intoOpen.y * show };
+  const tail = { x: lead.x + pocketDir.x * doorWidth, y: lead.y + pocketDir.y * doorWidth };
+  const cavityFar = {
+    x: jamb.x + pocketDir.x * pocket,
+    y: jamb.y + pocketDir.y * pocket,
+  };
+  const out = { x: -frame.inward.x, y: -frame.inward.y };
+  const edgeQuad = (a, b, t0, t1) => {
+    const at = (pt, t) => ({ x: pt.x + out.x * t, y: pt.y + out.y * t });
+    return [at(a, t0), at(b, t0), at(b, t1), at(a, t1)];
+  };
+  const leafInset = Math.max(0, (WALL_THICKNESS_M - DOOR_LEAF_T_M) / 2);
   return {
     doorSide,
     doorWidth,
@@ -6413,6 +7489,11 @@ function doorSwingOnFrame(room, frame, doorSide, { center = false } = {}) {
     flipped,
     cw: cross > 0,
     cut,
+    sliding,
+    slideTail: tail,
+    slideLead: lead,
+    cavityQuad: edgeQuad(jamb, cavityFar, 0, WALL_THICKNESS_M),
+    leafQuad: edgeQuad(tail, lead, leafInset, leafInset + DOOR_LEAF_T_M),
     doorGrab: {
       x: (Math.min(hinge.x, closed.x, open.x) + Math.max(hinge.x, closed.x, open.x)) / 2,
       y: (Math.min(hinge.y, closed.y, open.y) + Math.max(hinge.y, closed.y, open.y)) / 2,
@@ -6420,6 +7501,10 @@ function doorSwingOnFrame(room, frame, doorSide, { center = false } = {}) {
     doorLabel: {
       x: openingStart.x + frame.along.x * (doorWidth / 2) + frame.inward.x * 0.22,
       y: openingStart.y + frame.along.y * (doorWidth / 2) + frame.inward.y * 0.22,
+    },
+    doorOptions: {
+      x: (flipped ? openingStart : openingEnd).x + frame.inward.x * 0.36,
+      y: (flipped ? openingStart : openingEnd).y + frame.inward.y * 0.36,
     },
   };
 }
@@ -6511,6 +7596,55 @@ function roomsWithPorchSteps(rooms, metres) {
     if (roomKind(room) !== "porch") return room;
     return { ...room, porchStepRects: porchStepFlight(room, metres) };
   });
+}
+
+function walkDoorFrame(rooms, metres, innerMetres) {
+  const door = (collectDesignDoors(rooms, metres, innerMetres || metres) || []).find(
+    (d) => d.external && d.inward && d.hinge && d.closed
+  );
+  if (!door) return null;
+  const mx = (door.hinge.x + door.closed.x) / 2;
+  const my = (door.hinge.y + door.closed.y) / 2;
+  let ox = -(door.inward.x || 0);
+  let oy = -(door.inward.y || 0);
+  const len = Math.hypot(ox, oy) || 1;
+  return { mx, my, ox: ox / len, oy: oy / len };
+}
+
+function defaultWalkStartMetres(rooms, metres, innerMetres) {
+  const frame = walkDoorFrame(rooms, metres, innerMetres);
+  if (frame) return { x: frame.mx + frame.ox * 10, y: frame.my + frame.oy * 10 };
+  if (!metres?.length) return null;
+  let sx = 0;
+  let sy = 0;
+  for (const p of metres) {
+    sx += p.x;
+    sy += p.y;
+  }
+  return { x: sx / metres.length, y: sy / metres.length + 10 };
+}
+
+function nextWalkLocationMetres(start, locations, frame) {
+  const prev = locations?.length ? locations[locations.length - 1] : start;
+  if (!prev) return null;
+  const ox = frame?.ox || 0;
+  const oy = frame?.oy || -1;
+  return {
+    x: snapMetresToStep(prev.x - ox * 3),
+    y: snapMetresToStep(prev.y - oy * 3),
+  };
+}
+
+function defaultWalkFinishMetres(rooms, metres, innerMetres, start) {
+  const frame = walkDoorFrame(rooms, metres, innerMetres);
+  if (frame) {
+    return {
+      x: snapMetresToStep(frame.mx + frame.ox * 2.5),
+      y: snapMetresToStep(frame.my + frame.oy * 2.5),
+    };
+  }
+  if (!start) return null;
+  return { x: snapMetresToStep(start.x), y: snapMetresToStep(start.y - 4) };
 }
 
 function porchFrontDoor(porch, metres) {
@@ -6948,6 +8082,8 @@ function hitLayoutRect(rectM, layout, raw, pad = 4) {
 
 function hitBedroomFixtureHandle(room, layout, raw, innerMetres) {
   const geom = bedroomDoorAndRobe(room, innerMetres);
+  const options = hitDoorOptionsHandle(geom, layout, raw);
+  if (options) return options;
   const flip = hitDoorFlipHandle(geom, layout, raw);
   if (flip) return flip;
   const resize = hitBedroomRobeResizeHandle(geom, layout, raw);
@@ -7047,8 +8183,12 @@ function hitBathroomFixtureHandle(room, layout, raw, innerMetres) {
   const door = roomDoorSwing(room, innerMetres);
   const vanity = bathroomVanity(room, innerMetres);
   const { shower, tank, bowl, toilet, toiletGeom } = bathroomFixtures(room);
+  const resize = shower ? hitShowerResizeHandle(shower, room, layout, raw) : null;
+  if (resize) return resize;
   const rotate = shower ? hitShowerRotateHandle(shower, layout, raw) : null;
   if (rotate) return rotate;
+  const doorOptions = hitDoorOptionsHandle(door, layout, raw);
+  if (doorOptions) return doorOptions;
   const flip = hitDoorFlipHandle(door, layout, raw);
   if (flip) return flip;
   const options = vanityOptionsHandlePx(vanity, layout);
@@ -7252,6 +8392,61 @@ function moveBedroomRobe(room, cursorM, grabAlong, innerMetres) {
   };
 }
 
+function moveLaundryBench(room, cursorM, innerMetres) {
+  const hit = nearestRoomSide(room, cursorM);
+  if (!hit) return room;
+  const bench = laundryBench({ ...room, benchSide: hit.side }, innerMetres);
+  if (!bench) return { ...room, benchSide: hit.side };
+  return { ...room, benchSide: hit.side, wmAlong: bench.wm.along, sinkAlong: bench.sink.along };
+}
+
+function moveLaundryWm(room, cursorM, innerMetres) {
+  const bench = laundryBench(room, innerMetres);
+  if (!bench) return room;
+  const t =
+    (cursorM.x - bench.origin.x) * bench.along.x + (cursorM.y - bench.origin.y) * bench.along.y;
+  const wmAlong = clampLaundryWm(t - WM_SIZE_M / 2, bench.length);
+  return {
+    ...room,
+    benchSide: bench.benchSide,
+    wmAlong,
+    sinkAlong: clampLaundrySink(bench.sink.along, bench.length, wmAlong),
+  };
+}
+
+function moveLaundrySink(room, cursorM, innerMetres) {
+  const bench = laundryBench(room, innerMetres);
+  if (!bench) return room;
+  const t =
+    (cursorM.x - bench.origin.x) * bench.along.x + (cursorM.y - bench.origin.y) * bench.along.y;
+  return {
+    ...room,
+    benchSide: bench.benchSide,
+    wmAlong: bench.wm.along,
+    sinkAlong: clampLaundrySink(t - LAUNDRY_SINK_M / 2, bench.length, bench.wm.along),
+  };
+}
+
+function hitLaundryFixtureHandle(room, layout, raw, innerMetres) {
+  const door = roomDoorSwing(room, innerMetres);
+  const bench = laundryBench(room, innerMetres);
+  const doorOptions = hitDoorOptionsHandle(door, layout, raw);
+  if (doorOptions) return doorOptions;
+  const flip = door?.sliding ? null : hitDoorFlipHandle(door, layout, raw);
+  if (flip) return flip;
+  const hs = fixtureGrabPx(layout);
+  const doorGrab = pickClosestGrab(raw, hs, [
+    door ? { type: "door", px: mPointToPx(door.doorGrab, layout) } : null,
+  ]);
+  if (doorGrab) return doorGrab;
+  if (bench?.wm && hitLayoutRect(bench.wm.rect, layout, raw, 4)) return { type: "laundry-wm", kind: "move" };
+  if (bench?.sink && hitLayoutRect(bench.sink.rect, layout, raw, 4)) {
+    return { type: "laundry-sink", kind: "move" };
+  }
+  if (bench && hitLayoutRect(bench.rect, layout, raw, 4)) return { type: "laundry-bench", kind: "move" };
+  return null;
+}
+
 function moveBathroomVanity(room, cursorM, grabAlong, innerMetres) {
   const hit = nearestRoomSide(room, cursorM);
   if (!hit) return room;
@@ -7330,6 +8525,9 @@ function startFixtureDrag(type, room, cursorM, innerMetres, metres) {
         (cursorM.x - geom.robeAnchor.x) * geom.robeAlong.x +
         (cursorM.y - geom.robeAnchor.y) * geom.robeAlong.y,
     };
+  }
+  if (type === "laundry-bench" || type === "laundry-wm" || type === "laundry-sink") {
+    return { mode: type };
   }
   if (type === "vanity") {
     const vanity = bathroomVanity(room, innerMetres);
@@ -8087,8 +9285,7 @@ function ceilToStep(m, step = BUILDING_STEP_M) {
 
 /**
  * Every room box sits on the 100mm grid. The box is the clear room: partition walls are drawn just
- * outside it, so every wall face is on the grid too. Laundry keeps its fixed 750 depth (back wall on
- * the grid); drawn custom benches keep their wall-traced extent.
+ * outside it, so every wall face is on the grid too. Drawn custom benches keep their wall-traced extent.
  */
 function snapRoomToGrid(room) {
   if (!room || hasCustomBench(room)) return room;
@@ -8404,6 +9601,9 @@ function rotateRoom90(room, innerMetres) {
         next.showerLongIsX = next.showerRot % 2 === 0;
       }
     }
+  } else if (kind === "laundryRoom") {
+    next.doorSide = rotateDoorSide(roomDoorSide(room, innerMetres));
+    if (hasBedroomSide(room.benchSide)) next.benchSide = rotateDoorSide(room.benchSide);
   }
   return next;
 }
@@ -8466,6 +9666,92 @@ function hitDesignHandle(layout, rooms, raw) {
   if (near(h.move)) return "design-move";
   if (near(h.rotate)) return "design-rotate";
   return null;
+}
+
+function WalkMarker({ cx, cy, fill, caption, number, diamond = false }) {
+  return (
+    <g transform={`translate(${cx} ${cy})`}>
+      {diamond ? (
+        <polygon points="0,-16 16,0 0,16 -16,0" fill={fill} stroke="#ffffff" strokeWidth="2" />
+      ) : (
+        <circle r="14" fill={fill} stroke="#ffffff" strokeWidth="2" />
+      )}
+      {number != null ? (
+        <text y="4" textAnchor="middle" fontSize="13" fontWeight="700" fill="#ffffff">
+          {number}
+        </text>
+      ) : (
+        <circle r="5" fill="#ffffff" />
+      )}
+      {caption ? (
+        <text y="30" textAnchor="middle" fontSize="12" fontWeight="700" fill={fill}>
+          {caption}
+        </text>
+      ) : null}
+    </g>
+  );
+}
+
+function hitWalkMarker(raw, layout, markers) {
+  if (!markers?.start || !layout) return null;
+  const candidates = [{ kind: "start", point: markers.start }];
+  if (markers.finish) candidates.push({ kind: "finish", point: markers.finish });
+  (markers.stops || []).forEach((stop, index) => {
+    if (stop) candidates.push({ kind: "stop", index, point: stop });
+  });
+  let best = null;
+  for (const c of candidates) {
+    const px = mPointToPx(c.point, layout);
+    const d = Math.hypot(raw.x - px.x, raw.y - px.y);
+    if (d <= 22 && (!best || d < best.d)) best = { ...c, d };
+  }
+  return best;
+}
+
+function WalkPathOverlay({ layout, markers }) {
+  const ordered = [markers.start, ...(markers.stops || []), ...(markers.finish ? [markers.finish] : [])].filter(
+    Boolean
+  );
+  const pts = ordered.map((p) => mPointToPx(p, layout));
+  const startPx = mPointToPx(markers.start, layout);
+  const finishPx = markers.finish ? mPointToPx(markers.finish, layout) : null;
+  let locationNumber = 0;
+  let pointNumber = 0;
+  return (
+    <g>
+      {pts.length >= 2 ? (
+        <polyline
+          points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+          fill="none"
+          stroke="#1f6b4a"
+          strokeWidth="2"
+          strokeDasharray="7 5"
+        />
+      ) : null}
+      <WalkMarker cx={startPx.x} cy={startPx.y} fill="#1f6b4a" caption="Start" />
+      {(markers.stops || []).map((stop, i) => {
+        const px = mPointToPx(stop, layout);
+        if (stop.kind === "point") {
+          pointNumber += 1;
+          return (
+            <WalkMarker
+              key={`walk-stop-${i}`}
+              cx={px.x}
+              cy={px.y}
+              fill="#0f766e"
+              number={pointNumber}
+              diamond
+            />
+          );
+        }
+        locationNumber += 1;
+        return (
+          <WalkMarker key={`walk-stop-${i}`} cx={px.x} cy={px.y} fill="#1d4f91" number={locationNumber} />
+        );
+      })}
+      {finishPx ? <WalkMarker cx={finishPx.x} cy={finishPx.y} fill="#9a3412" caption="Finish" /> : null}
+    </g>
+  );
 }
 
 function DesignMoveHandle({ cx, cy, size, color }) {
@@ -8537,23 +9823,25 @@ function drawBedroomDoorRobe(ctx, geom, layout, bw) {
   const color = bw ? "#111111" : PLAN_WOOD_EDGE;
   ctx.save();
   if (bw) {
-    const hinge = to(geom.hinge);
-    const closed = to(geom.closed);
-    const open = to(geom.open);
-    const radius = Math.max(1, geom.doorWidth * layout.scale);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.2;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(hinge.x, hinge.y);
-    ctx.lineTo(open.x, open.y);
-    ctx.stroke();
-    ctx.beginPath();
-    const start = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
-    const end = Math.atan2(open.y - hinge.y, open.x - hinge.x);
-    ctx.arc(hinge.x, hinge.y, radius, start, end, !geom.cw);
-    ctx.stroke();
+    if (!geom.sliding) {
+      const hinge = to(geom.hinge);
+      const closed = to(geom.closed);
+      const open = to(geom.open);
+      const radius = Math.max(1, geom.doorWidth * layout.scale);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(hinge.x, hinge.y);
+      ctx.lineTo(open.x, open.y);
+      ctx.stroke();
+      ctx.beginPath();
+      const start = Math.atan2(closed.y - hinge.y, closed.x - hinge.x);
+      const end = Math.atan2(open.y - hinge.y, open.x - hinge.x);
+      ctx.arc(hinge.x, hinge.y, radius, start, end, !geom.cw);
+      ctx.stroke();
+    }
     const rr = mRectToPx(geom.robeRect, layout);
     ctx.fillStyle = "transparent";
     ctx.beginPath();
@@ -8760,6 +10048,38 @@ function PlanNightstand({ rect, layout }) {
   );
 }
 
+function planPolyPoints(pts, layout) {
+  return (pts || [])
+    .map((p) => {
+      const q = mPointToPx(p, layout);
+      return `${q.x},${q.y}`;
+    })
+    .join(" ");
+}
+
+function PlanSlidingDoor({ door, layout }) {
+  if (!door?.sliding || !door.cavityQuad || !door.leafQuad) return null;
+  const pocket = Math.hypot(door.cavityQuad[1].x - door.cavityQuad[0].x, door.cavityQuad[1].y - door.cavityQuad[0].y);
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {pocket > 0.02 ? (
+        <polygon
+          points={planPolyPoints(door.cavityQuad, layout)}
+          fill="#f4f1ea"
+          stroke={WALL_FILL}
+          strokeWidth="1"
+        />
+      ) : null}
+      <polygon
+        points={planPolyPoints(door.leafQuad, layout)}
+        fill={PLAN_WOOD}
+        stroke={PLAN_WOOD_EDGE}
+        strokeWidth="1"
+      />
+    </g>
+  );
+}
+
 function PlanDoorSwing({ hinge, closed, open, radius, cw, layout }) {
   if (!hinge || !closed || !open) return null;
   const sweep = cw ? 1 : 0;
@@ -8848,6 +10168,7 @@ function BedroomFixtures({ room, layout, innerMetres, showHandles = false }) {
   const robeLabel = geom ? mPointToPx(geom.robeLabel, layout) : null;
   const robeTitle = geom ? mPointToPx(geom.robeTitle, layout) : null;
   const doorGrab = geom ? mPointToPx(geom.doorGrab, layout) : null;
+  const doorOptions = geom ? doorOptionsHandlePx(geom, layout) : null;
   const robeGrab = geom ? mPointToPx(geom.robeGrab, layout) : null;
   const bedGrab = mPointToPx(rectCenter(group || bed), layout);
   const hs = fixtureGrabPx(layout);
@@ -8947,14 +10268,16 @@ function BedroomFixtures({ room, layout, innerMetres, showHandles = false }) {
           {formatPlanMm(geom.robeWidth)}
         </text>
       ) : null}
-      <PlanDoorSwing
-        hinge={hinge}
-        closed={closed}
-        open={open}
-        radius={radius}
-        cw={geom?.cw}
-        layout={layout}
-      />
+      {geom?.sliding ? null : (
+        <PlanDoorSwing
+          hinge={hinge}
+          closed={closed}
+          open={open}
+          radius={radius}
+          cw={geom?.cw}
+          layout={layout}
+        />
+      )}
       {geom && doorLabel ? (
         <text
           x={doorLabel.x}
@@ -8989,6 +10312,9 @@ function BedroomFixtures({ room, layout, innerMetres, showHandles = false }) {
               })
             : null}
           <GrabSquare cx={doorGrab?.x} cy={doorGrab?.y} size={hs} color={color} />
+          {doorOptions ? (
+            <OptionsHandle cx={doorOptions.cx} cy={doorOptions.cy} size={doorOptions.size} color={color} />
+          ) : null}
           {open ? <MirrorHandle cx={open.x} cy={open.y} size={hs} color={color} /> : null}
         </>
       ) : null}
@@ -9010,12 +10336,14 @@ function bathroomFixtures(room) {
   let shower = null;
   if (bathroomHasShower(room)) {
     const longIsX = showerLongAxis(room);
+    const len = showerLengthM(room, longIsX ? room.w : room.h);
+    const wide = Math.min(SHOWER_SHORT_M, longIsX ? room.h : room.w);
     const def = defaultBathroomLayout(room.w, room.h);
     shower = applyStoredRoomRect(room, "showerX", "showerY", {
       x: room.x + def.showerX,
       y: room.y + def.showerY,
-      w: Math.min(longIsX ? SHOWER_LONG_M : SHOWER_SHORT_M, room.w),
-      h: Math.min(longIsX ? SHOWER_SHORT_M : SHOWER_LONG_M, room.h),
+      w: longIsX ? len : wide,
+      h: longIsX ? wide : len,
     });
   }
   return {
@@ -9352,6 +10680,7 @@ function BathroomFixtures({ room, layout, innerMetres, walls, showHandles = fals
   const open = door ? mPointToPx(door.open, layout) : null;
   const doorLabel = door ? mPointToPx(door.doorLabel, layout) : null;
   const doorGrab = door ? mPointToPx(door.doorGrab, layout) : null;
+  const doorOptions = door ? doorOptionsHandlePx(door, layout) : null;
   const vanityGrab = vanity ? mPointToPx(vanity.grab, layout) : null;
   const showerGrab = shower ? mPointToPx(rectCenter(shower), layout) : null;
   const showerRotate = shower ? fixtureRotateHandlePx(shower, layout) : null;
@@ -9494,14 +10823,16 @@ function BathroomFixtures({ room, layout, innerMetres, walls, showHandles = fals
           />
         </>
       ) : null}
-      <PlanDoorSwing
-        hinge={hinge}
-        closed={closed}
-        open={open}
-        radius={radius}
-        cw={door?.cw}
-        layout={layout}
-      />
+      {door?.sliding ? null : (
+        <PlanDoorSwing
+          hinge={hinge}
+          closed={closed}
+          open={open}
+          radius={radius}
+          cw={door?.cw}
+          layout={layout}
+        />
+      )}
       {door && doorLabel ? (
         <text
           x={doorLabel.x}
@@ -9534,6 +10865,24 @@ function BathroomFixtures({ room, layout, innerMetres, walls, showHandles = fals
             />
           ) : null}
           <GrabSquare cx={doorGrab?.x} cy={doorGrab?.y} size={hs} color={color} />
+          {doorOptions ? (
+            <OptionsHandle cx={doorOptions.cx} cy={doorOptions.cy} size={doorOptions.size} color={color} />
+          ) : null}
+          {shower
+            ? showerResizeHandles(shower, room).map((h) => {
+                const p = mPointToPx(h.point, layout);
+                return (
+                  <AxisHandle
+                    key={`shower-size-${h.which}`}
+                    cx={p.x}
+                    cy={p.y}
+                    size={hs}
+                    color={PLAN_CERAMIC_EDGE}
+                    axis={showerLongAxis(room) ? "ew" : "ns"}
+                  />
+                );
+              })
+            : null}
           {showerRotate ? (
             <RotateHandle
               cx={showerRotate.cx}
@@ -9721,6 +11070,136 @@ function drawLaundryCanvas(ctx, room, layout, bw, stroke, innerMetres) {
   ctx.textBaseline = "alphabetic";
   ctx.fillText("WM", w.x + Math.max(3, w.w * 0.08), w.y + w.h - Math.max(3, w.h * 0.08));
   ctx.restore();
+}
+
+function LaundryRoomFixtures({ room, layout, innerMetres, showHandles = false }) {
+  const bench = laundryBench(room, innerMetres);
+  const door = roomDoorSwing(room, innerMetres);
+  if (!bench) return null;
+  const r = mRectToPx(bench.rect, layout);
+  const w = mRectToPx(bench.wm.rect, layout);
+  const s = mRectToPx(bench.sink.rect, layout);
+  const hinge = door ? mPointToPx(door.hinge, layout) : null;
+  const closed = door ? mPointToPx(door.closed, layout) : null;
+  const open = door ? mPointToPx(door.open, layout) : null;
+  const doorLabel = door ? mPointToPx(door.doorLabel, layout) : null;
+  const doorGrab = door ? mPointToPx(door.doorGrab, layout) : null;
+  const doorOptions = door ? doorOptionsHandlePx(door, layout) : null;
+  const hs = fixtureGrabPx(layout);
+  const radius = door ? Math.max(1, door.doorWidth * layout.scale) : 0;
+  const color = PLAN_WOOD_EDGE;
+  return (
+    <g>
+      <rect x={r.x} y={r.y} width={r.w} height={r.h} fill="#ffffff" stroke={PLAN_CERAMIC_EDGE} strokeWidth="1.2" />
+      <rect
+        x={s.x}
+        y={s.y}
+        width={s.w}
+        height={s.h}
+        fill="#ffffff"
+        stroke={PLAN_CERAMIC_EDGE}
+        strokeWidth="1.1"
+      />
+      <circle
+        cx={s.x + s.w / 2}
+        cy={s.y + s.h / 2}
+        r={Math.max(1.5, Math.min(s.w, s.h) * 0.08)}
+        fill="none"
+        stroke={PLAN_CERAMIC_EDGE}
+        strokeWidth="1"
+      />
+      <rect
+        x={w.x}
+        y={w.y}
+        width={w.w}
+        height={w.h}
+        fill="none"
+        stroke="#2f2f2f"
+        strokeWidth="1.1"
+        strokeDasharray="5 4"
+      />
+      <text
+        x={w.x + Math.max(3, w.w * 0.08)}
+        y={w.y + w.h - Math.max(3, w.h * 0.08)}
+        fill="#2f2f2f"
+        fontSize={wmLabelPx(w)}
+        fontWeight="700"
+        textAnchor="start"
+        dominantBaseline="alphabetic"
+        style={{ pointerEvents: "none" }}
+      >
+        WM
+      </text>
+      {door?.sliding ? null : (
+        <PlanDoorSwing hinge={hinge} closed={closed} open={open} radius={radius} cw={door?.cw} layout={layout} />
+      )}
+      {door && doorLabel ? (
+        <text
+          x={doorLabel.x}
+          y={doorLabel.y}
+          fill={color}
+          fontSize="11"
+          fontWeight="700"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          style={{ pointerEvents: "none" }}
+        >
+          {formatPlanMm(door.doorWidth)}
+        </text>
+      ) : null}
+      {showHandles ? (
+        <>
+          <GrabSquare cx={w.x + w.w / 2} cy={w.y + w.h / 2} size={hs} color="#2f2f2f" />
+          <GrabSquare cx={s.x + s.w / 2} cy={s.y + s.h / 2} size={hs} color={PLAN_CERAMIC_EDGE} />
+          <GrabSquare cx={r.x + r.w / 2} cy={r.y + r.h / 2} size={hs} color={PLAN_CERAMIC_EDGE} />
+          {doorGrab ? <GrabSquare cx={doorGrab.x} cy={doorGrab.y} size={hs} color={color} /> : null}
+          {doorOptions ? (
+            <OptionsHandle cx={doorOptions.cx} cy={doorOptions.cy} size={doorOptions.size} color={color} />
+          ) : null}
+          {!door?.sliding && open ? <MirrorHandle cx={open.x} cy={open.y} size={hs} color={color} /> : null}
+        </>
+      ) : null}
+    </g>
+  );
+}
+
+function drawLaundryRoomCanvas(ctx, room, layout, bw, stroke, innerMetres) {
+  const bench = laundryBench(room, innerMetres);
+  if (!bench) return;
+  const ink = stroke || "#2f2f2f";
+  const r = mRectToPx(bench.rect, layout);
+  const s = mRectToPx(bench.sink.rect, layout);
+  const w = mRectToPx(bench.wm.rect, layout);
+  ctx.save();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = stroke || PLAN_CERAMIC_EDGE;
+  ctx.fillStyle = bw ? "transparent" : "#ffffff";
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  if (!bw) ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.rect(s.x, s.y, s.w, s.h);
+  if (!bw) ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(s.x + s.w / 2, s.y + s.h / 2, Math.max(1.5, Math.min(s.w, s.h) * 0.08), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = ink;
+  ctx.strokeRect(w.x, w.y, w.w, w.h);
+  ctx.setLineDash([]);
+  ctx.fillStyle = ink;
+  ctx.font = `700 ${wmLabelPx(w)}px "Segoe UI", system-ui, sans-serif`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("WM", w.x + Math.max(3, w.w * 0.08), w.y + w.h - Math.max(3, w.h * 0.08));
+  ctx.restore();
+  const door = roomDoorSwing(room, innerMetres);
+  if (door && !door.sliding) {
+    if (bw) drawDoorSwingCanvas(ctx, door, layout, "#111");
+    else drawPlanDoorSwingCanvas(ctx, door, layout);
+  }
 }
 
 /** Custom-bench drawing feedback: a 600 stub off the wall, then the bench outline while dragging. */
@@ -10259,49 +11738,52 @@ function DesignModal({
   const [hover, setHover] = useState(null);
   const [buildingSnap, setBuildingSnap] = useState(true);
   const [threeDOpen, setThreeDOpen] = useState(false);
+  const [walkSetup, setWalkSetup] = useState(false);
+  const [walkStart, setWalkStart] = useState(null);
+  const [walkFinish, setWalkFinish] = useState(null);
+  const [walkStops, setWalkStops] = useState([]);
+  const walkSetupRef = useRef(false);
+  const walkMarkersRef = useRef(null);
+  walkSetupRef.current = walkSetup;
   const [showDimensions, setShowDimensions] = useState(false);
   const [viewMode, setViewMode] = useState(false);
   const [pdfCaptureOn, setPdfCaptureOn] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState(null);
+  const [planQuarter, setPlanQuarter] = useState(0);
+  const [viewQuarter, setViewQuarter] = useState(0);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
   const pdfCaptureRef = useRef(null);
-  const pdfSaveHandleRef = useRef(null);
   /** Custom-bench drawing preview (world metres): a 600 stub on hover/press, then the bench outline. */
   const [benchPreview, setBenchPreview] = useState(null);
   const [, setViewTick] = useState(0);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
   const [clearOpen, setClearOpen] = useState(false);
   const [areaOffsetM, setAreaOffsetM] = useState({ dx: 0, dy: 0 });
+  const [eaveDepths, setEaveDepths] = useState([]);
+  const eaveDepthsRef = useRef(eaveDepths);
+  eaveDepthsRef.current = eaveDepths;
   const areaDragRef = useRef(null);
   const buildingMetresRef = useRef(buildingMetres);
   roomsRef.current = rooms;
   buildingMetresRef.current = buildingMetres;
   const maxAreaM2 = maxArea ? MAX_AREA_M2 : 0;
 
-  const downloadDesignSheet = useCallback(async () => {
-    if (!layoutRef.current || pdfCaptureOn) return;
-    const filename = designPdfFilename(layoutRef.current.areaM2);
-    pdfSaveHandleRef.current = null;
-    if (typeof window.showSaveFilePicker === "function") {
-      try {
-        pdfSaveHandleRef.current = await window.showSaveFilePicker({
-          suggestedName: filename,
-          types: [
-            {
-              description: "PDF document",
-              accept: { "application/pdf": [".pdf"] },
-            },
-          ],
-        });
-      } catch (err) {
-        if (err && (err.name === "AbortError" || err.name === "NotAllowedError")) return;
-        console.warn("showSaveFilePicker failed, falling back to download:", err);
-        pdfSaveHandleRef.current = null;
-      }
-    }
+  const openPdfPreview = useCallback(() => {
+    if (!layoutRef.current || pdfCaptureOn || pdfPreview) return;
+    setPlanQuarter(0);
+    setViewQuarter(0);
+    setPdfPreview({ status: "loading", plan: null, view: null, error: "" });
     setPdfCaptureOn(true);
-  }, [pdfCaptureOn]);
+  }, [pdfCaptureOn, pdfPreview]);
+
+  const closePdfPreview = useCallback(() => {
+    if (pdfGenerating) return;
+    setPdfPreview(null);
+    setPdfCaptureOn(false);
+  }, [pdfGenerating]);
 
   useEffect(() => {
-    if (!pdfCaptureOn) return undefined;
+    if (!pdfCaptureOn || pdfPreview?.status !== "loading") return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -10321,30 +11803,21 @@ function DesignModal({
             grid: false,
           })
         );
-        const pdf = await buildSheetPdf(planCanvas, view3dUrl, {
-          areaM2: current.areaM2,
-          rooms: roomsRef.current,
-        });
-        const blob = pdf.output("blob");
-        const handle = pdfSaveHandleRef.current;
-        if (handle) {
-          const writable = await handle.createWritable();
-          await writable.write(blob);
-          await writable.close();
-        } else {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = designPdfFilename(current.areaM2);
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          URL.revokeObjectURL(url);
-        }
+        const [plan, view] = await Promise.all([
+          measureDataUrl(planCanvas.toDataURL("image/png")),
+          measureDataUrl(view3dUrl),
+        ]);
+        if (cancelled) return;
+        setPdfPreview({ status: "ready", plan, view, error: "" });
       } catch (err) {
         if (!cancelled) {
-          console.error("[QuickConcept] design PDF failed:", err);
-          window.alert(err?.message || "Could not save the PDF.");
+          console.error("[QuickConcept] design PDF preview failed:", err);
+          setPdfPreview({
+            status: "error",
+            plan: null,
+            view: null,
+            error: err?.message || "Could not prepare the preview.",
+          });
         }
       } finally {
         if (!cancelled) setPdfCaptureOn(false);
@@ -10353,7 +11826,63 @@ function DesignModal({
     return () => {
       cancelled = true;
     };
-  }, [pdfCaptureOn]);
+  }, [pdfCaptureOn, pdfPreview?.status]);
+
+  const generatePdfFromPreview = useCallback(async () => {
+    const current = layoutRef.current;
+    if (!current || pdfPreview?.status !== "ready" || pdfGenerating) return;
+    const filename = designPdfFilename(current.areaM2);
+    let handle = null;
+    if (typeof window.showSaveFilePicker === "function") {
+      try {
+        handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [
+            {
+              description: "PDF document",
+              accept: { "application/pdf": [".pdf"] },
+            },
+          ],
+        });
+      } catch (err) {
+        if (err && (err.name === "AbortError" || err.name === "NotAllowedError")) return;
+        console.warn("showSaveFilePicker failed, falling back to download:", err);
+        handle = null;
+      }
+    }
+    setPdfGenerating(true);
+    try {
+      const [planUrl, viewUrl] = await Promise.all([
+        rotatePngDataUrl(pdfPreview.plan.url, planQuarter),
+        rotatePngDataUrl(pdfPreview.view.url, viewQuarter),
+      ]);
+      const pdf = await buildSheetPdf(planUrl, viewUrl, {
+        areaM2: current.areaM2,
+        rooms: roomsRef.current,
+      });
+      const blob = pdf.output("blob");
+      if (handle) {
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+      setPdfPreview(null);
+    } catch (err) {
+      console.error("[QuickConcept] design PDF failed:", err);
+      window.alert(err?.message || "Could not save the PDF.");
+    } finally {
+      setPdfGenerating(false);
+    }
+  }, [pdfGenerating, pdfPreview, planQuarter, viewQuarter]);
 
   const applyBuildingMetres = useCallback(
     (unsnapped) => {
@@ -10430,18 +11959,77 @@ function DesignModal({
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
-      if (threeDOpen || deleteTargetId || clearOpen) return;
+      if (threeDOpen || deleteTargetId || clearOpen || pdfPreview) return;
       onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, threeDOpen, deleteTargetId, clearOpen]);
+  }, [onClose, threeDOpen, deleteTargetId, clearOpen, pdfPreview]);
 
+  const addWalkStop = useCallback(
+    (kind) => {
+      const inner =
+        buildingMetres.length >= 3 ? insetPolygon(buildingMetres, WALL_THICKNESS_M) : buildingMetres;
+      const start =
+        walkMarkersRef.current?.start ||
+        walkStart ||
+        defaultWalkStartMetres(rooms, buildingMetres, inner);
+      const frame = walkDoorFrame(rooms, buildingMetres, inner);
+      const stops = walkMarkersRef.current?.stops || walkStops;
+      const point = nextWalkLocationMetres(start, stops, frame);
+      if (!point) return;
+      setWalkStops((list) => [...list, { kind, x: point.x, y: point.y }]);
+      setWalkSetup(true);
+      freezeLayoutRef.current = null;
+    },
+    [buildingMetres, rooms, walkStops, walkStart]
+  );
+  const addWalkLocation = useCallback(() => addWalkStop("location"), [addWalkStop]);
+  const addWalkPoint = useCallback(() => addWalkStop("point"), [addWalkStop]);
+  const clearWalkSetup = useCallback(() => {
+    setWalkStart(null);
+    setWalkFinish(null);
+    setWalkStops([]);
+    freezeLayoutRef.current = null;
+  }, []);
+
+  const addWalkFinish = useCallback(() => {
+    if (walkFinish || walkMarkersRef.current?.finish) return;
+    const inner =
+      buildingMetres.length >= 3 ? insetPolygon(buildingMetres, WALL_THICKNESS_M) : buildingMetres;
+    const start =
+      walkMarkersRef.current?.start ||
+      walkStart ||
+      defaultWalkStartMetres(rooms, buildingMetres, inner);
+    const point = defaultWalkFinishMetres(rooms, buildingMetres, inner, start);
+    if (!point) return;
+    setWalkFinish(point);
+    setWalkSetup(true);
+    freezeLayoutRef.current = null;
+  }, [buildingMetres, rooms, walkFinish, walkStart]);
+
+  const shownWalkStart =
+    buildingMetres.length >= 3
+      ? walkStart ||
+        defaultWalkStartMetres(
+          rooms,
+          buildingMetres,
+          insetPolygon(buildingMetres, WALL_THICKNESS_M)
+        )
+      : null;
+  const walkFitPoints =
+    walkSetup && shownWalkStart
+      ? [shownWalkStart, ...walkStops, ...(walkFinish ? [walkFinish] : [])]
+      : null;
+  const eaveDepthsLive = normalizeEaveDepths(eaveDepths, buildingMetres.length);
+  const eaveRunList = buildingMetres.length >= 3 ? eaveRuns(buildingMetres, eaveDepthsLive) : [];
+  const eaveFitPoints = eaveRunList.flatMap((run) => [run.a, run.b]);
   const layout = (() => {
     if (!(size.w > 0 && size.h > 0 && buildingMetres.length >= 3)) return null;
     const live = showDimensions
-      ? layoutFitWithDims(buildingMetres, rooms, size.w, size.h)
-      : layoutFromMetres(buildingMetres, size.w, size.h);
+      ? layoutFitWithDims(buildingMetres, rooms, size.w, size.h, walkFitPoints, eaveFitPoints)
+      : layoutFromMetres(buildingMetres, size.w, size.h, null, walkFitPoints, eaveFitPoints);
+    live.eaveDepths = eaveDepthsLive;
     const frozen = freezeLayoutRef.current;
     if (!frozen) return live;
     return {
@@ -10463,6 +12051,10 @@ function DesignModal({
     if (s > 0) onViewScaleChange?.(s);
   }, [layout, onViewScaleChange]);
   const innerMetres = layout ? insetPolygon(layout.metres, WALL_THICKNESS_M) : null;
+  walkMarkersRef.current =
+    walkSetup && layout && shownWalkStart
+      ? { start: shownWalkStart, finish: walkFinish, stops: walkStops }
+      : null;
   const innerPts =
     layout && innerMetres
       ? innerMetres.map((p) => ({
@@ -10540,6 +12132,8 @@ function DesignModal({
           <KitchenFixtures room={room} layout={layout} showHandles={edit} />
         ) : kind === "laundry" ? (
           <LaundryFixtures room={room} layout={layout} innerMetres={innerMetres} />
+        ) : kind === "laundryRoom" ? (
+          <LaundryRoomFixtures room={room} layout={layout} innerMetres={innerMetres} showHandles={edit} />
         ) : kind === "living" ? (
           <LivingSetFixtures room={room} layout={layout} showHandles={edit} />
         ) : kind === "porch" ? (
@@ -10639,6 +12233,11 @@ function DesignModal({
             ...room,
             ...defaultPowderLayout(w, h),
           };
+        } else if (kind === "laundryRoom") {
+          room = {
+            ...room,
+            ...defaultLaundryLayout(room.w, room.h),
+          };
         }
       }
       onRoomsChange((prev) => prev.concat(snapRoomToGrid(room)));
@@ -10660,6 +12259,10 @@ function DesignModal({
 
   const addLaundry = useCallback(() => {
     addRoom("laundry", LAUNDRY_LENGTHS_M[0], LAUNDRY_DEPTH_M);
+  }, [addRoom]);
+
+  const addLaundryRoom = useCallback(() => {
+    addRoom("laundryRoom", LAUNDRY_ROOM_W_M, LAUNDRY_ROOM_H_M);
   }, [addRoom]);
 
   const addKitchen = useCallback(() => {
@@ -10698,10 +12301,34 @@ function DesignModal({
 
   const onStagePointerDown = useCallback(
     (e) => {
-      if (e.button !== 0 || !layout || viewMode) return;
+      if (e.button !== 0 || !layout) return;
       const el = stageRef.current;
       if (!el) return;
       const raw = pointFromEvent(el, e);
+      const walkHit = walkSetupRef.current ? hitWalkMarker(raw, layout, walkMarkersRef.current) : null;
+      if (walkHit) {
+        e.preventDefault();
+        el.setPointerCapture(e.pointerId);
+        const ownedFreeze = !freezeLayoutRef.current;
+        if (ownedFreeze) {
+          freezeLayoutRef.current = {
+            scale: layout.scale,
+            originX: layout.originX,
+            originY: layout.originY,
+            offsetX: layout.offsetX,
+            offsetY: layout.offsetY,
+          };
+        }
+        dragRef.current = {
+          mode: "walk-marker",
+          kind: walkHit.kind,
+          index: walkHit.index,
+          ownedFreeze,
+        };
+        setHover({ kind: "move", id: "walk-marker" });
+        return;
+      }
+      if (viewMode) return;
       const hs = handlePx(layout);
       const designHit = hitDesignHandle(layout, roomsRef.current, raw);
       if (designHit) {
@@ -10837,13 +12464,27 @@ function DesignModal({
             return;
           }
         }
-        if (roomKind(room) === "bedroom" || isBathLike(room) || isPorch(room)) {
+        if (roomKind(room) === "bedroom" || isBathLike(room) || isLaundryRoom(room) || isPorch(room)) {
           const fixture = isPorch(room)
             ? hitPorchFixtureHandle(room, layout, raw, layout.metres)
             : roomKind(room) === "bedroom"
               ? hitBedroomFixtureHandle(room, layout, raw, innerMetres)
-              : hitBathroomFixtureHandle(room, layout, raw, innerMetres);
+              : isLaundryRoom(room)
+                ? hitLaundryFixtureHandle(room, layout, raw, innerMetres)
+                : hitBathroomFixtureHandle(room, layout, raw, innerMetres);
           if (fixture) {
+            if (fixture.type === "shower-resize") {
+              e.preventDefault();
+              el.setPointerCapture(e.pointerId);
+              const cursorM = pxToMetres(raw, layout);
+              dragRef.current = {
+                ...startShowerResizeDrag(room, fixture.which, cursorM),
+                id: room.id,
+                start: { ...room },
+              };
+              setHover(hintAt({ id: room.id, kind: fixture.kind, type: "shower-resize" }, raw));
+              return;
+            }
             if (fixture.type === "shower-rotate") {
               e.preventDefault();
               updateRoom(room.id, rotateShower90(room));
@@ -10858,6 +12499,12 @@ function DesignModal({
               setHover(
                 hintAt({ id: room.id, kind: "rotate", type: noFit ? "vanity-options-full" : "vanity-options" }, raw)
               );
+              return;
+            }
+            if (fixture.type === "door-options") {
+              e.preventDefault();
+              updateRoom(room.id, cycleRoomDoorStyle(room, innerMetres));
+              setHover(hintAt({ id: room.id, kind: "rotate", type: "door-options" }, raw));
               return;
             }
             if (fixture.type === "door-flip") {
@@ -10941,7 +12588,53 @@ function DesignModal({
           return;
         }
       }
-      const buildingHit = hitTestEdge(layout.pts, raw, true);
+      const depthsNow = normalizeEaveDepths(eaveDepthsRef.current, buildingMetres.length);
+      const perimeter = pickPerimeterHit(buildingMetres, depthsNow, layout, raw);
+      if (perimeter?.kind === "eave") {
+        e.preventDefault();
+        el.setPointerCapture(e.pointerId);
+        freezeLayoutRef.current = {
+          scale: layout.scale,
+          originX: layout.originX,
+          originY: layout.originY,
+          offsetX: layout.offsetX,
+          offsetY: layout.offsetY,
+        };
+        const run = perimeter.eave.run;
+        const primary = closestEaveEdge(buildingMetres, run.edges, pxToMetres(raw, layout));
+        const original = depthsNow.slice();
+        const grouped = eaveEdgesByDepth(original, run.edges);
+        const alreadyJoined = grouped.extended.length > 0;
+        dragRef.current = {
+          mode: "eave",
+          active: [...run.edges],
+          originActive: alreadyJoined ? [...grouped.extended] : [...run.edges],
+          baseEdges: alreadyJoined ? [...grouped.base] : [],
+          startDepths: original.slice(),
+          originalDepths: original,
+          primary: alreadyJoined ? grouped.extended[0] : primary,
+          nx: run.nx,
+          ny: run.ny,
+          grab: pxToMetres(raw, layout),
+          joined: alreadyJoined,
+          joinDelta: 0,
+          meetDelta: 0,
+        };
+        setHover(
+          hintAt(
+            {
+              id: "eave",
+              type: "eave",
+              kind: Math.abs(run.ny) >= Math.abs(run.nx) ? "ns" : "ew",
+              edges: [...run.edges],
+              depthLabel: eaveDepthLabel(depthsNow, run.edges),
+            },
+            raw
+          )
+        );
+        return;
+      }
+      const buildingHit = perimeter?.kind === "building" ? perimeter.building : null;
       if (buildingHit) {
         e.preventDefault();
         el.setPointerCapture(e.pointerId);
@@ -10976,15 +12669,46 @@ function DesignModal({
   const onStagePointerMove = useCallback(
     (e) => {
       if (!layout) return;
-      if (viewMode) {
-        setHover(null);
-        return;
-      }
       const el = stageRef.current;
       if (!el) return;
       const raw = pointFromEvent(el, e);
       const cursorM = pxToMetres(raw, layout);
       const drag = dragRef.current;
+      if (drag?.mode === "walk-marker") {
+        const next = {
+          x: snapMetresToStep(cursorM.x),
+          y: snapMetresToStep(cursorM.y),
+        };
+        const current = walkMarkersRef.current;
+        if (drag.kind === "start") {
+          setWalkStart(next);
+          if (current) walkMarkersRef.current = { ...current, start: next };
+        } else if (drag.kind === "finish") {
+          setWalkFinish(next);
+          if (current) walkMarkersRef.current = { ...current, finish: next };
+        } else if (drag.kind === "stop") {
+          setWalkStops((prev) =>
+            prev.map((stop, i) => (i === drag.index ? { ...stop, x: next.x, y: next.y } : stop))
+          );
+          if (current) {
+            walkMarkersRef.current = {
+              ...current,
+              stops: (current.stops || []).map((stop, i) =>
+                i === drag.index ? { ...stop, x: next.x, y: next.y } : stop
+              ),
+            };
+          }
+        }
+        return;
+      }
+      if (!drag && walkSetupRef.current && hitWalkMarker(raw, layout, walkMarkersRef.current)) {
+        setHover({ kind: "move", id: "walk-marker" });
+        return;
+      }
+      if (viewMode) {
+        setHover(null);
+        return;
+      }
       const hs = handlePx(layout);
 
       if (drag?.mode === "design-move") {
@@ -11169,6 +12893,12 @@ function DesignModal({
         setHover(hintAt({ id: drag.id, kind: "move", type: "bed" }, raw));
         return;
       }
+      if (drag?.mode === "shower-resize") {
+        const next = moveShowerLength(drag.start, drag.which, cursorM, drag.grab);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: showerLongAxis(next) ? "ew" : "ns", type: "shower-resize" }, raw));
+        return;
+      }
       if (drag?.mode === "shower") {
         const { shower } = bathroomFixtures(drag.start);
         updateRoom(
@@ -11182,6 +12912,24 @@ function DesignModal({
         const next = moveBathroomToilet(drag.start, cursorM, drag.grabAlong);
         updateRoom(drag.id, next);
         setHover(hintAt({ id: drag.id, kind: "move", type: "toilet" }, raw));
+        return;
+      }
+      if (drag?.mode === "laundry-bench") {
+        const next = moveLaundryBench(drag.start, cursorM, innerMetres);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: "move", type: "laundry-bench" }, raw));
+        return;
+      }
+      if (drag?.mode === "laundry-wm") {
+        const next = moveLaundryWm(drag.start, cursorM, innerMetres);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: "move", type: "laundry-wm" }, raw));
+        return;
+      }
+      if (drag?.mode === "laundry-sink") {
+        const next = moveLaundrySink(drag.start, cursorM, innerMetres);
+        updateRoom(drag.id, next);
+        setHover(hintAt({ id: drag.id, kind: "move", type: "laundry-sink" }, raw));
         return;
       }
       if (drag?.mode === "vanity") {
@@ -11206,6 +12954,27 @@ function DesignModal({
               id: drag.id,
               kind: kitchenRunResizeKind(drag.start),
               type: "kitchen-run",
+            },
+            raw
+          )
+        );
+        return;
+      }
+      if (drag?.mode === "eave") {
+        const metres = buildingMetresRef.current;
+        const rawDelta = (cursorM.x - drag.grab.x) * drag.nx + (cursorM.y - drag.grab.y) * drag.ny;
+        const applied = stepEaveDrag(drag, metres, rawDelta);
+        eaveDepthsRef.current = applied.depths;
+        setEaveDepths(applied.depths);
+        const runNow = eaveRuns(metres, applied.depths).find((item) => item.edges.includes(drag.primary));
+        setHover(
+          hintAt(
+            {
+              id: "eave",
+              type: "eave",
+              kind: Math.abs(drag.ny) >= Math.abs(drag.nx) ? "ns" : "ew",
+              edges: runNow ? [...runNow.edges] : [...drag.active],
+              depthLabel: eaveDepthLabel(applied.depths, runNow ? runNow.edges : drag.active),
             },
             raw
           )
@@ -11292,6 +13061,11 @@ function DesignModal({
         }
         if (roomKind(room) === "bathroom") {
           const { shower } = bathroomFixtures(room);
+          const resize = hitShowerResizeHandle(shower, room, layout, raw);
+          if (resize) {
+            nextHover = { id: room.id, kind: resize.kind, type: "shower-resize" };
+            break;
+          }
           if (hitShowerRotateHandle(shower, layout, raw)) {
             nextHover = { id: room.id, kind: "rotate", type: "shower-rotate" };
             break;
@@ -11331,6 +13105,13 @@ function DesignModal({
             break;
           }
         }
+        if (isLaundryRoom(room)) {
+          const fixture = hitLaundryFixtureHandle(room, layout, raw, innerMetres);
+          if (fixture) {
+            nextHover = { id: room.id, kind: fixture.kind || "move", type: fixture.type };
+            break;
+          }
+        }
         if (isPorch(room)) {
           const fixture = hitPorchFixtureHandle(room, layout, raw, layout.metres);
           if (fixture) {
@@ -11364,8 +13145,19 @@ function DesignModal({
         }
       }
       if (!nextHover) {
-        const buildingHit = hitTestEdge(layout.pts, raw, true);
-        if (buildingHit) {
+        const depthsNow = normalizeEaveDepths(eaveDepthsRef.current, buildingMetresRef.current.length);
+        const perimeter = pickPerimeterHit(buildingMetresRef.current, depthsNow, layout, raw);
+        if (perimeter?.kind === "eave") {
+          const run = perimeter.eave.run;
+          nextHover = {
+            id: "eave",
+            type: "eave",
+            kind: Math.abs(run.ny) >= Math.abs(run.nx) ? "ns" : "ew",
+            edges: [...run.edges],
+            depthLabel: eaveDepthLabel(depthsNow, run.edges),
+          };
+        } else if (perimeter?.kind === "building") {
+          const buildingHit = perimeter.building;
           nextHover = {
             id: "building",
             kind: buildingHit.axis === "h" ? "ns" : "ew",
@@ -11400,7 +13192,16 @@ function DesignModal({
       }
       const drag = dragRef.current;
       const wasBuilding = drag?.mode === "building-edge";
+      const wasEave = drag?.mode === "eave";
       dragRef.current = null;
+      if (wasEave) {
+        freezeLayoutRef.current = null;
+        setViewTick((t) => t + 1);
+      }
+      if (drag?.mode === "walk-marker" && drag.ownedFreeze) {
+        freezeLayoutRef.current = null;
+        setViewTick((t) => t + 1);
+      }
       if (wasBuilding) {
         setBuildingMetres((prev) => prev.map((p) => ({ x: p.x, y: p.y })));
       }
@@ -11608,6 +13409,18 @@ function DesignModal({
             </button>
             <button
               type="button"
+              onClick={addLaundryRoom}
+              disabled={!layout}
+              style={{
+                ...toolbarButtonStyle(Boolean(layout)),
+                width: "100%",
+                minWidth: 0,
+              }}
+            >
+              Add Laundry
+            </button>
+            <button
+              type="button"
               onClick={addKitchen}
               disabled={!layout}
               style={{
@@ -11739,6 +13552,37 @@ function DesignModal({
                       strokeLinejoin="round"
                     />
                   ) : null}
+                  {eaveRunList.length ? (
+                    <path
+                      d={eavePathD(eaveRunList, layout)}
+                      fill="none"
+                      stroke="#111111"
+                      strokeWidth="1.35"
+                      strokeDasharray="7 5"
+                      strokeLinejoin="miter"
+                    />
+                  ) : null}
+                  {hover?.type === "eave"
+                    ? eaveRunList
+                        .filter((run) => (hover.edges || []).some((edge) => run.edges.includes(edge)))
+                        .map((run) => {
+                          const a = mPointToPx(run.a, layout);
+                          const b = mPointToPx(run.b, layout);
+                          return (
+                            <line
+                              key={`eave-hot-${run.edges.join("-")}`}
+                              x1={a.x}
+                              y1={a.y}
+                              x2={b.x}
+                              y2={b.y}
+                              stroke="#111111"
+                              strokeWidth="2.6"
+                              strokeDasharray="7 5"
+                              strokeLinecap="butt"
+                            />
+                          );
+                        })
+                    : null}
                   {hover?.id === "building" && hover.edgeIndex != null ? (
                     <line
                       x1={layout.pts[hover.edgeIndex].x}
@@ -11776,9 +13620,17 @@ function DesignModal({
                       />
                     );
                   })}
+                  {rooms.map((room) => {
+                    const door = roomDoorSwing(room, innerMetres);
+                    if (!door?.sliding) return null;
+                    return <PlanSlidingDoor key={`slide-${room.id}`} door={door} layout={layout} />;
+                  })}
                   {rooms.filter((room) => !isLivingSet(room)).map(renderRoomHandles)}
                   {rooms.filter(isLivingSet).map(renderPlanRoom)}
                   {benchPreview && !viewMode ? <BenchDrawPreview preview={benchPreview} layout={layout} /> : null}
+                  {walkMarkersRef.current && layout ? (
+                    <WalkPathOverlay layout={layout} markers={walkMarkersRef.current} />
+                  ) : null}
                   {designHandles ? (
                     <>
                       <DesignMoveHandle
@@ -11950,6 +13802,7 @@ function DesignModal({
             borderTop: `1px solid ${EXPLORER_BORDER}`,
             background: "#f3f3f3",
             flexShrink: 0,
+            flexWrap: "wrap",
           }}
         >
           <button
@@ -11971,11 +13824,11 @@ function DesignModal({
           </button>
           <button
             type="button"
-            onClick={() => void downloadDesignSheet()}
-            disabled={!layout || pdfCaptureOn}
-            style={toolbarButtonStyle(Boolean(layout) && !pdfCaptureOn)}
+            onClick={openPdfPreview}
+            disabled={!layout || pdfCaptureOn || Boolean(pdfPreview)}
+            style={toolbarButtonStyle(Boolean(layout) && !pdfCaptureOn && !pdfPreview)}
           >
-            {pdfCaptureOn ? "Saving…" : "Download"}
+            {pdfCaptureOn ? "Preparing…" : "Download"}
           </button>
           <button
             type="button"
@@ -11992,6 +13845,44 @@ function DesignModal({
           >
             Show Dimensions
           </button>
+          <button
+            type="button"
+            onClick={() =>
+              setWalkSetup((on) => {
+                if (!on) freezeLayoutRef.current = null;
+                return !on;
+              })
+            }
+            disabled={!layout}
+            aria-pressed={walkSetup}
+            style={{
+              ...toolbarButtonStyle(Boolean(layout)),
+              ...(walkSetup ? { background: MONUMENT, color: WHITE, border: `1px solid ${MONUMENT}` } : null),
+            }}
+          >
+            Set Up Walkthrough
+          </button>
+          {walkSetup ? (
+            <>
+              <button type="button" onClick={addWalkLocation} style={toolbarButtonStyle(true)}>
+                Add location
+              </button>
+              <button type="button" onClick={addWalkPoint} style={toolbarButtonStyle(true)}>
+                Add point
+              </button>
+              <button
+                type="button"
+                onClick={addWalkFinish}
+                disabled={Boolean(walkFinish)}
+                style={toolbarButtonStyle(!walkFinish)}
+              >
+                Add finish
+              </button>
+              <button type="button" onClick={clearWalkSetup} style={toolbarButtonStyle(true)}>
+                Clear
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -12012,7 +13903,35 @@ function DesignModal({
         <Design3DModal
           layout={layout}
           rooms={rooms}
+          walkRoute={{ start: shownWalkStart, stops: walkStops, finish: walkFinish }}
+          onAddLocation={() => {
+            addWalkLocation();
+            setThreeDOpen(false);
+          }}
+          onAddPoint={() => {
+            addWalkPoint();
+            setThreeDOpen(false);
+          }}
+          onAddFinish={() => {
+            addWalkFinish();
+            setThreeDOpen(false);
+          }}
+          onClearWalk={clearWalkSetup}
           onClose={() => setThreeDOpen(false)}
+        />
+      ) : null}
+      {pdfPreview ? (
+        <DesignPdfPreviewModal
+          preview={pdfPreview}
+          areaM2={layout?.areaM2}
+          rooms={rooms}
+          planQuarter={planQuarter}
+          viewQuarter={viewQuarter}
+          onRotatePlan={() => setPlanQuarter((q) => (q + 1) % 4)}
+          onRotateView={() => setViewQuarter((q) => (q + 1) % 4)}
+          onGenerate={() => void generatePdfFromPreview()}
+          onClose={closePdfPreview}
+          generating={pdfGenerating}
         />
       ) : null}
       {pdfCaptureOn && layout ? (

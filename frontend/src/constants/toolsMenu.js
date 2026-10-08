@@ -1,13 +1,22 @@
 export const TOOLS_PAGE_PATH = "/tools";
 
 export const TOOLS_MENU_LINKS = [
-  { to: "/email-generator", label: "Email Generator" },
-  { to: "/maps", label: "Maps" },
-  { to: "/apply-fields", label: "Apply Fields" },
-  { to: "/planner", label: "Planner" },
-  { to: "/quick-concept", label: "Quick Concept" },
-  { to: "/archicad-viewer", label: "Archicad 3D Viewer" },
+  { to: "/email-generator", label: "Email Generator", access: "admin" },
+  { to: "/maps", label: "Maps", access: "admin" },
+  { to: "/apply-fields", label: "Apply Fields", access: "admin" },
+  { to: "/planner", label: "Planner", access: "admin" },
+  { to: "/quick-concept", label: "Quick Concept", access: "quickconcept" },
+  { to: "/archicad-viewer", label: "Archicad 3D Viewer", access: "admin" },
+  { to: "/dan", label: "Dan", access: "admin" },
 ];
+
+/** Admin sees every tool. Quick Concept on its own shows only that tool. */
+export function visibleToolsLinks({ isAdmin = false, hasQuickConcept = false } = {}) {
+  return TOOLS_MENU_LINKS.filter((link) => {
+    if (link.access === "quickconcept") return hasQuickConcept || isAdmin;
+    return isAdmin;
+  });
+}
 
 export function isToolsPath(path) {
   const p = String(path || "");

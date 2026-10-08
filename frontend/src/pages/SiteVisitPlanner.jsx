@@ -14,6 +14,7 @@ import {
 } from "../utils/projectDeposit";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
 import AdminToolsSidebarSection from "../components/AdminToolsSidebarSection";
+import { useToolsAccess } from "../hooks/useToolsAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
 import { getSiteVisitUpdateEmailSettings } from "../utils/emailGeneralSettings";
 
@@ -137,6 +138,7 @@ export default function SiteVisitPlanner() {
   const [hourHeight, setHourHeight] = useState(0);
   const draggingIdRef = useRef(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const { showToolsMenu, isAdmin: toolsAdmin } = useToolsAccess();
   const [showSiteVisitEmailPreview, setShowSiteVisitEmailPreview] = useState(false);
   const [currentEmailProjectIndex, setCurrentEmailProjectIndex] = useState(0);
   const [siteVisitPreviewTo, setSiteVisitPreviewTo] = useState("");
@@ -1325,7 +1327,11 @@ ${rows || "<div>No site visits in this group.</div>"}
           >
             Site Visit Manager
           </Link>
-          <AdminToolsSidebarSection activePath={location.pathname} visible={isAdmin} />
+          <AdminToolsSidebarSection
+            activePath={location.pathname}
+            showTools={showToolsMenu}
+            showSettings={toolsAdmin}
+          />
         </div>
 
         {/* Section 3: Content */}

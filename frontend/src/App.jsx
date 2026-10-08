@@ -33,6 +33,7 @@ import NextOuts from "./pages/NextOuts";
 import DrawingManager from "./pages/DrawingManager";
 import DrawingAccessRoute from "./components/DrawingAccessRoute";
 import AdminAccessRoute from "./components/AdminAccessRoute";
+import RequireAccessRoute from "./components/RequireAccessRoute";
 import SalesAccessRoute from "./components/SalesAccessRoute";
 import SandpitAccessRoute from "./components/SandpitAccessRoute";
 import ManagersAccessRoute from "./components/ManagersAccessRoute";
@@ -51,6 +52,7 @@ import SecretLevelEditor from "./pages/SecretLevelEditor";
 import SecretLevel from "./pages/SecretLevel";
 import Sandpit from "./pages/Sandpit";
 import Maps from "./pages/Maps";
+import Dan from "./pages/Dan";
 import MapsRecent from "./pages/MapsRecent";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
@@ -116,10 +118,10 @@ export default function App() {
             <Route path="/project/:token" element={<Auth><ProjectPage /></Auth>} />
             <Route path="/settings" element={<Auth><AdminAccessRoute><SettingsPage /></AdminAccessRoute></Auth>} />
             <Route path="/settings/mobile" element={<Auth><AdminAccessRoute><MobilePreviewPage /></AdminAccessRoute></Auth>} />
-            <Route path="/tools" element={<Auth><AdminAccessRoute><Tools /></AdminAccessRoute></Auth>} />
+            <Route path="/tools" element={<Auth><RequireAccessRoute anyOf={["admin", "quickconcept"]}><Tools /></RequireAccessRoute></Auth>} />
             <Route path="/apply-fields" element={<Auth><AdminAccessRoute><ApplyFields /></AdminAccessRoute></Auth>} />
             <Route path="/planner" element={<Auth><AdminAccessRoute><Planner /></AdminAccessRoute></Auth>} />
-            <Route path="/quick-concept" element={<Auth><AdminAccessRoute><QuickConcept /></AdminAccessRoute></Auth>} />
+            <Route path="/quick-concept" element={<Auth><RequireAccessRoute anyOf={["admin", "quickconcept"]}><QuickConcept /></RequireAccessRoute></Auth>} />
             <Route path="/archicad-viewer" element={<Auth><AdminAccessRoute><ArchicadViewer /></AdminAccessRoute></Auth>} />
             <Route path="/finished-projects" element={<Auth><FinishedProjects /></Auth>} />
             <Route path="/pre-engagement-phase" element={<Auth><PreEngagementPhase /></Auth>} />
@@ -154,6 +156,7 @@ export default function App() {
             <Route path="/secret-area" element={<Auth><SecretArea /></Auth>} />
             <Route path="/secret-area/level-editor" element={<Auth><SecretLevelEditor /></Auth>} />
             <Route path="/secret-area/level" element={<Auth><SecretLevel /></Auth>} />
+            <Route path="/dan" element={<Auth><AdminAccessRoute><Dan /></AdminAccessRoute></Auth>} />
             <Route path="/maps" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
             <Route path="/maps/recent" element={<Auth><AdminAccessRoute><MapsRecent /></AdminAccessRoute></Auth>} />
             <Route path="/maps/sold-projects" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
