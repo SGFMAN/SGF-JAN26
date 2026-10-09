@@ -53,6 +53,7 @@ import SecretLevel from "./pages/SecretLevel";
 import Sandpit from "./pages/Sandpit";
 import Maps from "./pages/Maps";
 import Dan from "./pages/Dan";
+import Parts from "./pages/Parts";
 import MapsRecent from "./pages/MapsRecent";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
@@ -157,6 +158,7 @@ export default function App() {
             <Route path="/secret-area/level-editor" element={<Auth><SecretLevelEditor /></Auth>} />
             <Route path="/secret-area/level" element={<Auth><SecretLevel /></Auth>} />
             <Route path="/dan" element={<Auth><AdminAccessRoute><Dan /></AdminAccessRoute></Auth>} />
+            <Route path="/parts" element={<Auth><AdminAccessRoute><Parts /></AdminAccessRoute></Auth>} />
             <Route path="/maps" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
             <Route path="/maps/recent" element={<Auth><AdminAccessRoute><MapsRecent /></AdminAccessRoute></Auth>} />
             <Route path="/maps/sold-projects" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
