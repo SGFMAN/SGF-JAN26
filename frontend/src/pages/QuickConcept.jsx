@@ -30,7 +30,7 @@ import {
   nearestParamOnLoop,
   snapLoopParam,
 } from "../utils/kitchenCustomRun.js";
-import QuickConcept3DPreview from "../components/QuickConcept3DPreview";
+import QuickConcept3DPreview, { walkSplinePlanPoints } from "../components/QuickConcept3DPreview";
 import sgfHomesLogo from "../images/SGF Homes.png";
 import ModalBackdrop from "../components/ModalBackdrop";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
@@ -9861,7 +9861,8 @@ function WalkPathOverlay({ layout, markers }) {
   const ordered = [markers.start, ...(markers.stops || []), ...(markers.finish ? [markers.finish] : [])].filter(
     Boolean
   );
-  const pts = ordered.map((p) => mPointToPx(p, layout));
+  const curve = walkSplinePlanPoints(ordered);
+  const pts = (curve.length >= 2 ? curve : ordered).map((p) => mPointToPx(p, layout));
   const startPx = mPointToPx(markers.start, layout);
   const finishPx = markers.finish ? mPointToPx(markers.finish, layout) : null;
   let locationNumber = 0;

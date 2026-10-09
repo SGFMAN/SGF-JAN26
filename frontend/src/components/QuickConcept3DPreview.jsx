@@ -77,11 +77,14 @@ const DECK_GAP_M = 0.008;
 const ISO_AZIMUTH = Math.PI / 4;
 const WALK_EYE_HEIGHT_M = 1.5;
 const WALK_DOOR_DISTANCE_M = 10;
-const WALK_MOVE_MS = 1100;
 const WALK_PAUSE_MS = 2000;
 const WALK_SPEED_MPS = 1.2;
 const WALK_LOOK_RAD = (20 * Math.PI) / 180;
-const WALK_CORNER_LEAD_M = 1.2;
+const WALK_PAN_MPS = 3;
+const WALK_PAN_MIN_MS = 2600;
+const WALK_PAN_MAX_MS = 8000;
+const WALK_LOOK_MS = 2200;
+const WALK_TURN_MS = 2800;
 const WALK_FOV = 76;
 // 90° is straight down. 80° sits just off that, tilted back toward the front.
 const ISO_ELEVATION = (80 * Math.PI) / 180;
@@ -289,16 +292,64 @@ function wrapAngle(delta) {
   return d;
 }
 
-function walkDir(a, b) {
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  const len = Math.hypot(dx, dz);
-  if (len < 1e-4) return null;
-  return { x: dx / len, z: dz / len, len };
-}
-
 function walkHeading(dx, dz) {
   return Math.atan2(-dx, -dz);
+}
+
+function mirroredSplineEnd(a, b) {
+  return { x: a.x * 2 - b.x, y: a.y * 2 - b.y };
+}
+
+/** Centripetal Catmull-Rom. t = 0 is p1 and t = 1 is p2, so the curve hits both. */
+function catmullRom2D(p0, p1, p2, p3, t) {
+  if (t <= 0) return { x: p1.x, y: p1.y };
+  if (t >= 1) return { x: p2.x, y: p2.y };
+  const alpha = 0.5;
+  const span = (a, b) => Math.pow(Math.hypot(b.x - a.x, b.y - a.y), alpha);
+  const t0 = 0;
+  let t1 = t0 + span(p0, p1);
+  let t2 = t1 + span(p1, p2);
+  let t3 = t2 + span(p2, p3);
+  if (t1 - t0 < 1e-4) t1 = t0 + 1e-4;
+  if (t2 - t1 < 1e-4) t2 = t1 + 1e-4;
+  if (t3 - t2 < 1e-4) t3 = t2 + 1e-4;
+  const u = t1 + (t2 - t1) * t;
+  const mix = (a, b, ta, tb) => {
+    const f = (u - ta) / (tb - ta);
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+  };
+  const a1 = mix(p0, p1, t0, t1);
+  const a2 = mix(p1, p2, t1, t2);
+  const a3 = mix(p2, p3, t2, t3);
+  const b1 = mix(a1, a2, t0, t2);
+  const b2 = mix(a2, a3, t1, t3);
+  return mix(b1, b2, t1, t2);
+}
+
+/** Plan points {x, y} joined by one spline that passes through each of them. */
+export function walkSplinePlanPoints(points) {
+  const src = (points || []).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (src.length < 2) return src.map((p) => ({ x: p.x, y: p.y }));
+  const out = [];
+  for (let i = 0; i < src.length - 1; i += 1) {
+    const p0 = i === 0 ? mirroredSplineEnd(src[0], src[1]) : src[i - 1];
+    const p1 = src[i];
+    const p2 = src[i + 1];
+    const p3 = i + 2 < src.length ? src[i + 2] : mirroredSplineEnd(src[src.length - 1], src[src.length - 2]);
+    const chord = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const steps = Math.max(6, Math.ceil(chord / 0.12));
+    const start = out.length === 0 ? 0 : 1;
+    for (let s = start; s <= steps; s += 1) {
+      const at = s / steps;
+      const point = catmullRom2D(p0, p1, p2, p3, at);
+      out.push({
+        x: point.x,
+        y: point.y,
+        node: at === 0 ? i : at === 1 ? i + 1 : -1,
+      });
+    }
+  }
+  return out;
 }
 
 function pushWalkSample(samples, point, az) {
@@ -317,115 +368,38 @@ function pushWalkSample(samples, point, az) {
   });
 }
 
-function appendWalkStraight(samples, from, to) {
-  const d = walkDir(from, to);
-  if (!d) return;
-  const az = walkHeading(d.x, d.z);
-  const steps = Math.max(1, Math.ceil(d.len / 0.35));
-  for (let i = 1; i <= steps; i += 1) {
-    const t = i / steps;
+function splineWalkSamples(nodes) {
+  const plan = nodes.map((node) => ({
+    x: node.pos.x,
+    y: node.pos.z,
+    kind: node.kind,
+    eyeY: node.pos.y,
+  }));
+  const curve = walkSplinePlanPoints(plan);
+  const samples = [];
+  for (const point of curve) {
+    const node = point.node >= 0 ? plan[point.node] : null;
     pushWalkSample(
       samples,
-      {
-        x: from.x + (to.x - from.x) * t,
-        y: from.y,
-        z: from.z + (to.z - from.z) * t,
-      },
-      az
+      { x: point.x, y: node?.eyeY ?? plan[0].eyeY, z: point.y },
+      0
     );
+    if (node) samples[samples.length - 1].kind = node.kind;
   }
-}
-
-function appendWalkHermite(samples, p0, p1, m0, m1) {
-  const steps = 8;
-  let prev = p0;
-  for (let i = 1; i <= steps; i += 1) {
-    const t = i / steps;
-    const t2 = t * t;
-    const t3 = t2 * t;
-    const h00 = 2 * t3 - 3 * t2 + 1;
-    const h10 = t3 - 2 * t2 + t;
-    const h01 = -2 * t3 + 3 * t2;
-    const h11 = t3 - t2;
-    const point = {
-      x: h00 * p0.x + h10 * m0.x + h01 * p1.x + h11 * m1.x,
-      y: p0.y,
-      z: h00 * p0.z + h10 * m0.z + h01 * p1.z + h11 * m1.z,
-    };
-    const dx = point.x - prev.x;
-    const dz = point.z - prev.z;
-    const az =
-      Math.hypot(dx, dz) > 1e-4
-        ? walkHeading(dx, dz)
-        : samples[samples.length - 1]?.az ?? 0;
-    pushWalkSample(samples, point, az);
-    prev = point;
+  for (let i = 0; i < samples.length; i += 1) {
+    const prev = samples[Math.max(0, i - 1)];
+    const next = samples[Math.min(samples.length - 1, i + 1)];
+    const dx = next.x - prev.x;
+    const dz = next.z - prev.z;
+    samples[i].az =
+      Math.hypot(dx, dz) > 1e-4 ? walkHeading(dx, dz) : prev.az || 0;
   }
-}
-
-/** Straight between corners. Through each pass-through point the path bends
- *  early, passes the point, and finishes the turn on the far side. */
-function curveThroughPoints(points) {
-  const samples = [];
-  if (!points || points.length < 2) return samples;
-  const startDir = walkDir(points[0], points[1]);
-  const startAz = startDir ? walkHeading(startDir.x, startDir.z) : 0;
-  pushWalkSample(samples, points[0], startAz);
-  let cursor = points[0];
-  for (let i = 1; i < points.length - 1; i += 1) {
-    const inn = walkDir(points[i - 1], points[i]);
-    const out = walkDir(points[i], points[i + 1]);
-    if (!inn || !out) {
-      appendWalkStraight(samples, cursor, points[i]);
-      cursor = points[i];
-      continue;
-    }
-    const lead = Math.min(WALK_CORNER_LEAD_M, inn.len * 0.45, out.len * 0.45);
-    if (lead < 0.12) {
-      appendWalkStraight(samples, cursor, points[i]);
-      cursor = points[i];
-      continue;
-    }
-    let bx = inn.x + out.x;
-    let bz = inn.z + out.z;
-    const bl = Math.hypot(bx, bz);
-    if (bl < 0.25) {
-      bx = -inn.z;
-      bz = inn.x;
-    } else {
-      bx /= bl;
-      bz /= bl;
-    }
-    const corner = points[i];
-    const entry = {
-      x: corner.x - inn.x * lead,
-      y: corner.y,
-      z: corner.z - inn.z * lead,
-    };
-    const exit = {
-      x: corner.x + out.x * lead,
-      y: corner.y,
-      z: corner.z + out.z * lead,
-    };
-    appendWalkStraight(samples, cursor, entry);
-    appendWalkHermite(
-      samples,
-      entry,
-      corner,
-      { x: inn.x * lead, z: inn.z * lead },
-      { x: bx * lead, z: bz * lead }
-    );
-    appendWalkHermite(
-      samples,
-      corner,
-      exit,
-      { x: bx * lead, z: bz * lead },
-      { x: out.x * lead, z: out.z * lead }
-    );
-    cursor = exit;
-  }
-  appendWalkStraight(samples, cursor, points[points.length - 1]);
   return samples;
+}
+
+function rebaseWalkChunk(chunk) {
+  const origin = chunk[0]?.dist || 0;
+  return chunk.map((sample) => ({ ...sample, dist: sample.dist - origin }));
 }
 
 function sampleWalkPath(samples, dist) {
@@ -445,20 +419,6 @@ function sampleWalkPath(samples, dist) {
     z: a.z + (b.z - a.z) * u,
     az: a.az + wrapAngle(b.az - a.az) * u,
   };
-}
-
-function walkGroups(nodes) {
-  const groups = [];
-  let group = [nodes[0]];
-  for (let i = 1; i < nodes.length; i += 1) {
-    group.push(nodes[i]);
-    const kind = nodes[i].kind;
-    if (kind === "location" || kind === "finish" || i === nodes.length - 1) {
-      groups.push(group);
-      group = [nodes[i]];
-    }
-  }
-  return groups;
 }
 
 // Parameter along the camera path (0–1) where it crosses the door opening.
@@ -4060,7 +4020,6 @@ export default function QuickConcept3DPreview({
       addLivingHybridFloor(group, innerMetres?.length >= 3 ? innerMetres : outer, rooms, alongX, cx, cz, mats);
       buildFurniture(group, rooms, walls, cx, cz, mats, alongX);
       cleanWallJoins(group);
-      window.__qcGroup = group;
 
       const box = new THREE.Box3().setFromObject(group);
       const size = box.getSize(new THREE.Vector3());
@@ -4316,7 +4275,7 @@ export default function QuickConcept3DPreview({
               fromEl: elevation,
               toEl: 0,
               start: now,
-              ms: Math.max(700, (Math.abs(dAz) / WALK_LOOK_RAD) * 850),
+              ms: Math.max(1600, (Math.abs(dAz) / WALK_LOOK_RAD) * WALK_LOOK_MS),
               linear: true,
             };
             return;
@@ -4358,8 +4317,8 @@ export default function QuickConcept3DPreview({
               toEl: 0,
               start: now,
               ms: step.slow
-                ? Math.max(1400, (Math.abs(dAz) / Math.PI) * 2400)
-                : Math.max(420, (Math.abs(dAz) / Math.PI) * 1000),
+                ? Math.max(2800, (Math.abs(dAz) / Math.PI) * WALK_TURN_MS * 1.6)
+                : Math.max(1400, (Math.abs(dAz) / Math.PI) * WALK_TURN_MS),
             };
             return;
           }
@@ -4371,7 +4330,7 @@ export default function QuickConcept3DPreview({
           }
           const ms =
             step.op === "pan"
-              ? Math.max(WALK_MOVE_MS, Math.min(2400, (dist / 8) * 1000))
+              ? Math.max(WALK_PAN_MIN_MS, Math.min(WALK_PAN_MAX_MS, (dist / WALK_PAN_MPS) * 1000))
               : Math.max(500, (Math.max(dist, 0.05) / WALK_SPEED_MPS) * 1000);
           const toAz = step.op === "pan" && step.az ? step.az() : azimuth;
           walkRun.phase = {
@@ -4465,22 +4424,19 @@ export default function QuickConcept3DPreview({
           nodes.push({ pos: { x: stop.to.x, y: stop.to.y, z: stop.to.z }, kind: stop.kind });
         }
         if (finish) nodes.push({ pos: { x: finish.x, y: finish.y, z: finish.z }, kind: "finish" });
-        const chunks = [];
-        for (const group of walkGroups(nodes)) {
-          const samples = curveThroughPoints(group.map((node) => node.pos));
-          if (samples.length < 2) continue;
-          const end = samples[samples.length - 1];
-          chunks.push({
-            samples,
-            endKind: group[group.length - 1].kind,
-            endAz: end.az,
-          });
-        }
-        const firstAz = chunks[0]?.samples?.[1]?.az ?? chunks[0]?.samples?.[0]?.az ?? faceBuilding();
+        const samples = splineWalkSamples(nodes);
+        const firstAz = samples[0]?.az ?? faceBuilding();
         const script = [{ op: "pan", to: start, az: () => firstAz }];
-        for (const chunk of chunks) {
-          script.push({ op: "path", samples: chunk.samples });
-          if (chunk.endKind === "location") script.push({ op: "look", az: chunk.endAz });
+        let chunk = [];
+        for (let i = 0; i < samples.length; i += 1) {
+          chunk.push(samples[i]);
+          const atLocation = samples[i].kind === "location";
+          const last = i === samples.length - 1;
+          if ((atLocation || last) && chunk.length > 1) {
+            script.push({ op: "path", samples: rebaseWalkChunk(chunk) });
+            if (atLocation) script.push({ op: "look", az: samples[i].az });
+            chunk = [samples[i]];
+          }
         }
         script.push({ op: "face", az: faceBuilding, slow: false });
         const doorLeaves = frontDoorForWalk();
@@ -4713,8 +4669,10 @@ export default function QuickConcept3DPreview({
             const blend = 0.7;
             eye.set(posed.x, posed.y, posed.z);
             if (phase.entryAz == null) phase.entryAz = phase.fromAz ?? azimuth;
+            const pathAz = phase.samples[0]?.az ?? posed.az;
+            const offPath = Math.abs(wrapAngle(phase.entryAz - pathAz)) > 0.08;
             azimuth =
-              along < blend
+              offPath && along < blend
                 ? phase.entryAz + wrapAngle(posed.az - phase.entryAz) * (along / blend)
                 : posed.az;
             elevation = phase.fromEl * (1 - Math.min(1, t * 4));
