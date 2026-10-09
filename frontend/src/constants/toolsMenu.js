@@ -8,7 +8,6 @@ export const TOOLS_MENU_LINKS = [
   { to: "/quick-concept", label: "Quick Concept", access: "quickconcept" },
   { to: "/archicad-viewer", label: "Archicad 3D Viewer", access: "admin" },
   { to: "/dan", label: "Dan", access: "admin" },
-  { to: "/parts", label: "Parts", access: "admin" },
 ];
 
 /** Admin sees every tool. Quick Concept on its own shows only that tool. */

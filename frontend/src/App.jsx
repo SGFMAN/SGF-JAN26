@@ -53,7 +53,7 @@ import SecretLevel from "./pages/SecretLevel";
 import Sandpit from "./pages/Sandpit";
 import Maps from "./pages/Maps";
 import Dan from "./pages/Dan";
-import Parts from "./pages/Parts";
+import ConceptClientView from "./pages/ConceptClientView";
 import MapsRecent from "./pages/MapsRecent";
 import { EmailSendOverlayProvider } from "./components/EmailSendOverlay";
 import PortalProjects from "./pages/PortalProjects";
@@ -106,6 +106,7 @@ export default function App() {
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
             <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
             <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
+            <Route path="/concept-client" element={<ConceptClientView />} />
             <Route path="/secret-area" element={<Auth><SecretArea /></Auth>} />
             <Route path="/secret-area/level-editor" element={<Auth><SecretLevelEditor /></Auth>} />
             <Route path="/secret-area/level" element={<Auth><SecretLevel /></Auth>} />
@@ -158,7 +159,6 @@ export default function App() {
             <Route path="/secret-area/level-editor" element={<Auth><SecretLevelEditor /></Auth>} />
             <Route path="/secret-area/level" element={<Auth><SecretLevel /></Auth>} />
             <Route path="/dan" element={<Auth><AdminAccessRoute><Dan /></AdminAccessRoute></Auth>} />
-            <Route path="/parts" element={<Auth><AdminAccessRoute><Parts /></AdminAccessRoute></Auth>} />
             <Route path="/maps" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
             <Route path="/maps/recent" element={<Auth><AdminAccessRoute><MapsRecent /></AdminAccessRoute></Auth>} />
             <Route path="/maps/sold-projects" element={<Auth><AdminAccessRoute><Maps /></AdminAccessRoute></Auth>} />
@@ -167,6 +167,7 @@ export default function App() {
             <Route path="/approve-concept/:projectId" element={<ApproveConcept />} />
             <Route path="/colours-portal/:projectId" element={<ColoursPortal />} />
             <Route path="/3d-vis-portal/:projectId" element={<ThreeDVisPortal />} />
+            <Route path="/concept-client" element={<ConceptClientView />} />
             <Route path="/portal" element={<Auth><PortalProjects /></Auth>} />
             <Route path="/portal/projects/:token" element={<Auth><ProjectPage /></Auth>} />
           </>

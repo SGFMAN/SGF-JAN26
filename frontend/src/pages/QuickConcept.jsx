@@ -3482,6 +3482,155 @@ async function createDesignPdfBlob({
 }
 
 
+function SendConceptClientModal({
+  address,
+  quoteEmail,
+  quoteFirstName,
+  metres,
+  rooms,
+  eaveDepths,
+  walkStart,
+  walkStops,
+  walkFinish,
+  onClose,
+}) {
+  const { runWithEmailOverlay } = useEmailSendOverlay();
+  const [to, setTo] = useState(() => String(quoteEmail || "").trim());
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    setTo(String(quoteEmail || "").trim());
+  }, [quoteEmail]);
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  const fieldStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "8px 10px",
+    fontSize: 13,
+    fontFamily: "inherit",
+    border: `1px solid ${EXPLORER_BORDER}`,
+    borderRadius: 8,
+    background: WHITE,
+    color: MONUMENT,
+  };
+
+  const send = async () => {
+    const recipient = String(to || "").trim();
+    if (!recipient) {
+      setError("Enter an email address.");
+      return;
+    }
+    if (!metres || metres.length < 3) {
+      setError("Draw the design before sending it.");
+      return;
+    }
+    setError("");
+    setSending(true);
+    try {
+      const inner = insetPolygon(metres, WALL_THICKNESS_M) || metres;
+      const start = walkStart || defaultWalkStartMetres(rooms, metres, inner);
+      const snapshot = {
+        address: address || "",
+        metres,
+        rooms,
+        eaveDepths: normalizeEaveDepths(eaveDepths, metres.length),
+        walk: {
+          start: start ? { x: start.x, y: start.y } : null,
+          stops: (walkStops || []).map((stop) => ({
+            kind: stop.kind === "point" ? "point" : "location",
+            x: stop.x,
+            y: stop.y,
+          })),
+          finish: walkFinish ? { x: walkFinish.x, y: walkFinish.y } : null,
+        },
+      };
+      await runWithEmailOverlay(async () => {
+        const res = await fetch("/api/quick-concept/client-view", {
+          method: "POST",
+          credentials: "include",
+          headers: getApiHeaders(),
+          body: JSON.stringify({
+            email: recipient,
+            firstName: quoteFirstName || "",
+            snapshot,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Could not send the email.");
+      });
+      onClose();
+    } catch (err) {
+      setError(err.message || "Could not send the email.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <ModalBackdrop
+      zIndex={21000}
+      style={{
+        background: "rgba(0,0,0,0.55)",
+        padding: 24,
+        overflow: "auto",
+        alignItems: "flex-start",
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: "min(480px, 100%)",
+          margin: "40px auto",
+          background: WHITE,
+          borderRadius: 12,
+          boxShadow: "0 12px 40px rgba(0,0,0,0.28)",
+          padding: 22,
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: MONUMENT, marginBottom: 8 }}>Send to client</div>
+        <div style={{ fontSize: 13, color: "#555", marginBottom: 16, lineHeight: 1.45 }}>
+          They receive a one-time link to the plan, a 3D view they can turn, and the walk through.
+        </div>
+        <label style={{ display: "block", fontSize: 12, color: "#555", marginBottom: 16 }}>
+          Email
+          <input
+            type="email"
+            value={to}
+            autoFocus
+            onChange={(event) => {
+              setTo(event.target.value);
+              if (error) setError("");
+            }}
+            placeholder="client@email.com"
+            style={{ ...fieldStyle, marginTop: 4 }}
+          />
+        </label>
+        {error ? <div style={{ color: "#c00", fontSize: 13, marginBottom: 12 }}>{error}</div> : null}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" onClick={onClose} disabled={sending} style={toolbarButtonStyle(!sending)}>
+            Cancel
+          </button>
+          <button type="button" onClick={() => void send()} disabled={sending} style={toolbarButtonStyle(!sending)}>
+            {sending ? "Sending…" : "Send"}
+          </button>
+        </div>
+      </div>
+    </ModalBackdrop>
+  );
+}
+
 function DesignEmailModal({ layout, rooms, address, quoteEmail, quoteFirstName, onClose }) {
   const { runWithEmailOverlay } = useEmailSendOverlay();
   const captureRef = useRef(null);
@@ -11720,6 +11869,9 @@ function DesignModal({
   onViewScaleChange,
   maxArea = true,
   onMaxAreaChange,
+  address = "",
+  quoteEmail = "",
+  quoteFirstName = "",
   onClose,
 }) {
   const stageRef = useRef(null);
@@ -11738,6 +11890,7 @@ function DesignModal({
   const [hover, setHover] = useState(null);
   const [buildingSnap, setBuildingSnap] = useState(true);
   const [threeDOpen, setThreeDOpen] = useState(false);
+  const [clientSendOpen, setClientSendOpen] = useState(false);
   const [walkSetup, setWalkSetup] = useState(false);
   const [walkStart, setWalkStart] = useState(null);
   const [walkFinish, setWalkFinish] = useState(null);
@@ -11959,12 +12112,12 @@ function DesignModal({
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
-      if (threeDOpen || deleteTargetId || clearOpen || pdfPreview) return;
+      if (threeDOpen || deleteTargetId || clearOpen || pdfPreview || clientSendOpen) return;
       onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, threeDOpen, deleteTargetId, clearOpen, pdfPreview]);
+  }, [onClose, threeDOpen, deleteTargetId, clearOpen, pdfPreview, clientSendOpen]);
 
   const addWalkStop = useCallback(
     (kind) => {
@@ -13832,6 +13985,14 @@ function DesignModal({
           </button>
           <button
             type="button"
+            onClick={() => setClientSendOpen(true)}
+            disabled={!layout}
+            style={toolbarButtonStyle(Boolean(layout))}
+          >
+            Send To Client
+          </button>
+          <button
+            type="button"
             onClick={() => {
               freezeLayoutRef.current = null;
               setShowDimensions((v) => !v);
@@ -13899,6 +14060,20 @@ function DesignModal({
           </button>
         </div>
       </div>
+      {clientSendOpen ? (
+        <SendConceptClientModal
+          address={address}
+          quoteEmail={quoteEmail}
+          quoteFirstName={quoteFirstName}
+          metres={buildingMetres}
+          rooms={rooms}
+          eaveDepths={eaveDepths}
+          walkStart={shownWalkStart}
+          walkStops={walkStops}
+          walkFinish={walkFinish}
+          onClose={() => setClientSendOpen(false)}
+        />
+      ) : null}
       {threeDOpen && layout ? (
         <Design3DModal
           layout={layout}
@@ -15549,3 +15724,14 @@ export default function QuickConcept() {
     </div>
   );
 }
+
+export {
+  WALL_THICKNESS_M,
+  bedroomBathroomInternalWalls,
+  buildDesignExportCanvas,
+  collectDesignDoors,
+  formatSqm,
+  insetPolygon,
+  layoutFitWithDims,
+  roomsWithPorchSteps,
+};

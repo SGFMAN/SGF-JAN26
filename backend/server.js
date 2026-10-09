@@ -11735,6 +11735,10 @@ require("./clientPortalRoutes")(app, pool, {
   getSmtpCredentialsForFromAddress,
   getDefaultSystemSmtpFrom,
 });
+require("./quickConceptClientRoutes").registerQuickConceptClientRoutes(app, pool, {
+  getSmtpCredentialsForFromAddress,
+  resolveEmailAppPublicBase,
+});
 require("./archicad/routes").register(app, () => pool);
 
 // Serve colours PDF
@@ -16312,6 +16316,7 @@ const { attachSandpitRaceWebSocket } = require("./sandpitRaceRoom");
     const t0 = Date.now();
     await ensureSchema();
     console.log(`ensureSchema: ${Date.now() - t0}ms`);
+    await require("./quickConceptClientRoutes").ensureQuickConceptClientTables(pool);
     try {
       await require("./archicad/routes").ensureReady(pool);
     } catch (archicadError) {
