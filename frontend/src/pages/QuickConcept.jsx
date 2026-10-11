@@ -6670,6 +6670,8 @@ function controlHint(hover) {
   if (type === "porch-move") return "Drag porch";
   if (type === "porch-resize") return "Extend porch";
   if (type === "resize-building") return "Resize building";
+  if (type === "walk-stop") return "Drag · double-click to switch";
+  if (type === "walk-marker") return "Drag";
   if (type === "eave") return hover.depthLabel ? `Drag eave · ${hover.depthLabel}` : "Drag eave";
   if (type === "resize") return "Resize";
   if (hover.kind === "rotate") return "Rotate";
@@ -11898,6 +11900,7 @@ function DesignModal({
   const [walkStops, setWalkStops] = useState([]);
   const walkSetupRef = useRef(false);
   const walkMarkersRef = useRef(null);
+  const walkClickRef = useRef(null);
   walkSetupRef.current = walkSetup;
   const [showDimensions, setShowDimensions] = useState(false);
   const [viewMode, setViewMode] = useState(false);
@@ -12478,8 +12481,14 @@ function DesignModal({
           kind: walkHit.kind,
           index: walkHit.index,
           ownedFreeze,
+          startRaw: raw,
+          moved: false,
         };
-        setHover({ kind: "move", id: "walk-marker" });
+        setHover({
+          kind: "move",
+          id: "walk-marker",
+          type: walkHit.kind === "stop" ? "walk-stop" : "walk-marker",
+        });
         return;
       }
       if (viewMode) return;
@@ -12829,6 +12838,10 @@ function DesignModal({
       const cursorM = pxToMetres(raw, layout);
       const drag = dragRef.current;
       if (drag?.mode === "walk-marker") {
+        if (!drag.moved) {
+          if (Math.hypot(raw.x - drag.startRaw.x, raw.y - drag.startRaw.y) < 6) return;
+          drag.moved = true;
+        }
         const next = {
           x: snapMetresToStep(cursorM.x),
           y: snapMetresToStep(cursorM.y),
@@ -12855,9 +12868,21 @@ function DesignModal({
         }
         return;
       }
-      if (!drag && walkSetupRef.current && hitWalkMarker(raw, layout, walkMarkersRef.current)) {
-        setHover({ kind: "move", id: "walk-marker" });
-        return;
+      if (!drag && walkSetupRef.current) {
+        const walkHover = hitWalkMarker(raw, layout, walkMarkersRef.current);
+        if (walkHover) {
+          setHover(
+            hintAt(
+              {
+                kind: "move",
+                id: "walk-marker",
+                type: walkHover.kind === "stop" ? "walk-stop" : "walk-marker",
+              },
+              raw
+            )
+          );
+          return;
+        }
       }
       if (viewMode) {
         setHover(null);
@@ -13355,6 +13380,24 @@ function DesignModal({
       if (drag?.mode === "walk-marker" && drag.ownedFreeze) {
         freezeLayoutRef.current = null;
         setViewTick((t) => t + 1);
+      }
+      if (drag?.mode === "walk-marker" && drag.kind === "stop" && !drag.moved) {
+        const now = performance.now();
+        const prev = walkClickRef.current;
+        if (prev && prev.index === drag.index && now - prev.time < 500) {
+          walkClickRef.current = null;
+          setWalkStops((list) =>
+            list.map((stop, i) =>
+              i === drag.index
+                ? { ...stop, kind: stop.kind === "point" ? "location" : "point" }
+                : stop
+            )
+          );
+        } else {
+          walkClickRef.current = { index: drag.index, time: now };
+        }
+      } else if (drag?.moved) {
+        walkClickRef.current = null;
       }
       if (wasBuilding) {
         setBuildingMetres((prev) => prev.map((p) => ({ x: p.x, y: p.y })));
