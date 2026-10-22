@@ -26,6 +26,17 @@ const actionButtonStyle = {
   cursor: "pointer",
 };
 
+function buildReplyBody(text, original) {
+  const when = formatMessageDate(original?.created_at);
+  const who = original?.from_user_name || "Unknown user";
+  const quoted = String(original?.body || "")
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join("\n");
+  const lead = when ? `On ${when}, ${who} wrote:` : `${who} wrote:`;
+  return `${text}\n\n${lead}\n${quoted}`;
+}
+
 export default function MessagesModal({ open, onClose, onInboxChange }) {
   const loggedInUserId = getLoggedInUserId();
   const [view, setView] = useState("inbox");
@@ -39,6 +50,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [toUserId, setToUserId] = useState("");
   const [composeBody, setComposeBody] = useState("");
+  const [replyingTo, setReplyingTo] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
@@ -54,6 +66,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
     setToUserId("");
     setComposeBody("");
     setComposeError("");
+    setReplyingTo(null);
   }, []);
 
   const loadInbox = useCallback(async () => {
@@ -174,6 +187,15 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
     }
   }
 
+  function handleReply() {
+    if (!selectedMessage?.from_user_id) return;
+    setReplyingTo(selectedMessage);
+    setToUserId(String(selectedMessage.from_user_id));
+    setComposeBody("");
+    setComposeError("");
+    setView("compose");
+  }
+
   async function handleSend() {
     setComposeError("");
     if (!toUserId) {
@@ -185,6 +207,8 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
       return;
     }
 
+    const body = replyingTo ? buildReplyBody(composeBody.trim(), replyingTo) : composeBody.trim();
+
     setSending(true);
     try {
       const response = await fetch(`${API_URL}/api/messages`, {
@@ -192,7 +216,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
         headers: getApiHeaders(),
         body: JSON.stringify({
           toUserId: Number(toUserId),
-          body: composeBody.trim(),
+          body,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -327,13 +351,13 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
                   htmlFor="message-recipient"
                   style={{ display: "block", marginBottom: "8px", fontWeight: 600, fontSize: "0.95rem" }}
                 >
-                  To
+                  {replyingTo ? "Reply to" : "To"}
                 </label>
                 <select
                   id="message-recipient"
                   value={toUserId}
                   onChange={(e) => setToUserId(e.target.value)}
-                  disabled={loadingUsers || sending}
+                  disabled={loadingUsers || sending || Boolean(replyingTo)}
                   style={{
                     width: "100%",
                     padding: "10px 12px",
@@ -346,6 +370,10 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
                   }}
                 >
                   <option value="">{loadingUsers ? "Loading users…" : "Select a user"}</option>
+                  {replyingTo &&
+                    !recipientOptions.some((user) => String(user.id) === String(toUserId)) && (
+                      <option value={toUserId}>{replyingTo.from_user_name || "Original sender"}</option>
+                    )}
                   {recipientOptions.map((user) => (
                     <option key={user.id} value={user.id}>
                       {user.name}
@@ -354,19 +382,38 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
                 </select>
               </div>
 
+              {replyingTo && (
+                <div
+                  style={{
+                    background: UI.inputBg,
+                    borderRadius: "12px",
+                    padding: "12px 14px",
+                    color: UI.textSecondary,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, marginBottom: "6px", fontSize: "0.9rem" }}>
+                    {replyingTo.from_user_name || "Unknown user"}
+                    {replyingTo.created_at ? ` · ${formatMessageDate(replyingTo.created_at)}` : ""}
+                  </div>
+                  <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.45, fontSize: "0.9rem" }}>
+                    {replyingTo.body}
+                  </div>
+                </div>
+              )}
+
               <div style={{ flex: 1, minHeight: "160px", display: "flex", flexDirection: "column" }}>
                 <label
                   htmlFor="message-body"
                   style={{ display: "block", marginBottom: "8px", fontWeight: 600, fontSize: "0.95rem" }}
                 >
-                  Message
+                  {replyingTo ? "Reply" : "Message"}
                 </label>
                 <textarea
                   id="message-body"
                   value={composeBody}
                   onChange={(e) => setComposeBody(e.target.value)}
                   disabled={sending}
-                  placeholder="Type your message…"
+                  placeholder={replyingTo ? "Type your reply…" : "Type your message…"}
                   style={{
                     flex: 1,
                     minHeight: "160px",
@@ -411,7 +458,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
                     opacity: sending ? 0.7 : 1,
                   }}
                 >
-                  {sending ? "Sending…" : "Send"}
+                  {sending ? "Sending…" : replyingTo ? "Send reply" : "Send"}
                 </button>
               </div>
             </>
@@ -464,6 +511,18 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
               )}
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={handleReply}
+                  disabled={deleting || !selectedMessage.from_user_id}
+                  style={{
+                    ...actionButtonStyle,
+                    background: MENU.blueActive,
+                    color: MENU.activeText,
+                  }}
+                >
+                  Reply
+                </button>
                 <button
                   type="button"
                   onClick={handleOk}
