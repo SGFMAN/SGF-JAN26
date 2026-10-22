@@ -13747,7 +13747,10 @@ app.put("/api/quotes/:id", async (req, res) => {
 
 app.delete("/api/quotes/:id", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
-  if (!(await requireHotlistSalesAccess(req, res))) return;
+  if (!requireStaffUserId(req, res)) return;
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
   try {

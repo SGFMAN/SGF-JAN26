@@ -8,6 +8,7 @@ export const CLASSIFICATION_OPTIONS = [
   "Dwelling & DPU",
   "Dwelling & SSD",
   "SSD & DPU",
+  "SSD & Detached Ext.",
   "Renovation",
   "Dual Occ",
 ];
@@ -24,6 +25,7 @@ export const CLASSIFICATION_ABBREV_MAP = {
   "Dwelling & DPU": "D&DPU",
   "Dwelling & SSD": "D&SSD",
   "SSD & DPU": "SSD&DPU",
+  "SSD & Detached Ext.": "SSD&DEX",
   Renovation: "REN",
   "Dual Occ": "DOC",
 };
@@ -38,6 +40,7 @@ export const CLASSIFICATION_BADGE_MAP = {
   "Dwelling & DPU": { acronym: "D&DPU", color: BADGE_GREY },
   "Dwelling & SSD": { acronym: "D&SSD", color: BADGE_GREY },
   "SSD & DPU": { acronym: "SSD&DPU", color: BADGE_GREY },
+  "SSD & Detached Ext.": { acronym: "SSD&DEX", color: BADGE_GREY },
   Renovation: { acronym: "REN", color: BADGE_GREY },
   "Dual Occ": { acronym: "DOC", color: BADGE_GREY },
 };

@@ -6,6 +6,7 @@ import NewProject2 from "./NewProject_2_ClientDetails";
 import QuoteCallbackLists from "./QuoteCallbackLists";
 import { getApiHeaders } from "../utils/auth";
 import useAppLogo from "../hooks/useAppLogo.js";
+import { useToolsAccess } from "../hooks/useToolsAccess.js";
 import { parseAustralianAddress, STATE_OPTIONS } from "../utils/parseAustralianAddress.js";
 import { buildSavedButtonStyle, ensureUiButtonStylesLoaded } from "../utils/uiButtonStyles.js";
 import { UI, STREAM } from "../utils/uiThemeTokens.js";
@@ -201,6 +202,15 @@ function quoteHotlistButtonStyle() {
   };
 }
 
+function quoteListDeleteButtonStyle() {
+  return {
+    ...quoteHotlistButtonStyle(),
+    background: STREAM.qldRed,
+    color: PAGE_TEXT,
+    border: `1px solid ${STREAM.qldRed}`,
+  };
+}
+
 function quoteModalDeleteButtonStyle() {
   const saved = buildSavedButtonStyle(QUOTE_DELETE_BUTTON_ID, true);
   const fallback = {
@@ -338,6 +348,7 @@ function QuoteSheetRow({ value, disabled, onActiveChange, onContactChange, trail
 export default function NewPage() {
   const location = useLocation();
   const logo = useAppLogo();
+  const { isAdmin } = useToolsAccess();
   const pasteRef = useRef(null);
   const searchRef = useRef(null);
   const [quotes, setQuotes] = useState([]);
@@ -353,6 +364,7 @@ export default function NewPage() {
   const [editingQuoteId, setEditingQuoteId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
+  const [savingAction, setSavingAction] = useState(null);
   const [error, setError] = useState(null);
   const [showCallbackLists, setShowCallbackLists] = useState(false);
   const [, setUiButtonStyleRevision] = useState(0);
@@ -576,6 +588,7 @@ export default function NewPage() {
     if (!window.confirm(`Add “${label}” to Hotlist?`)) return;
     try {
       setSavingId(id);
+      setSavingAction("hotlist");
       setError(null);
       const res = await fetch(`${API_URL}/api/quotes/${id}/add-to-hotlist`, {
         method: "POST",
@@ -593,6 +606,7 @@ export default function NewPage() {
       alert(err.message || "Failed to add quote to hotlist");
     } finally {
       setSavingId(null);
+      setSavingAction(null);
     }
   }
 
@@ -602,6 +616,7 @@ export default function NewPage() {
     if (!window.confirm(`Delete “${label}”? This cannot be undone.`)) return;
     try {
       setSavingId(id);
+      setSavingAction("delete");
       setError(null);
       const res = await fetch(`${API_URL}/api/quotes/${id}`, {
         method: "DELETE",
@@ -620,6 +635,7 @@ export default function NewPage() {
       alert(err.message || "Failed to delete quote");
     } finally {
       setSavingId(null);
+      setSavingAction(null);
     }
   }
 
@@ -982,8 +998,22 @@ export default function NewPage() {
                                   cursor: busy || rowBusy ? "default" : "pointer",
                                 }}
                               >
-                                {rowBusy ? "Adding…" : "Add to Hotlist"}
+                                {rowBusy && savingAction === "hotlist" ? "Adding…" : "Add to Hotlist"}
                               </button>
+                              {isAdmin ? (
+                                <button
+                                  type="button"
+                                  disabled={busy || rowBusy}
+                                  onClick={() => handleDeleteQuote(quote.id)}
+                                  style={{
+                                    ...quoteListDeleteButtonStyle(),
+                                    opacity: busy || rowBusy ? 0.6 : 1,
+                                    cursor: busy || rowBusy ? "default" : "pointer",
+                                  }}
+                                >
+                                  {rowBusy && savingAction === "delete" ? "Deleting…" : "Delete"}
+                                </button>
+                              ) : null}
                             </div>
                           }
                         />
@@ -1171,7 +1201,7 @@ export default function NewPage() {
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginTop: "24px" }}>
               <div>
-                {editingQuoteId != null ? (
+                {isAdmin && editingQuoteId != null ? (
                   <button
                     type="button"
                     onClick={() => handleDeleteQuote(editingQuoteId)}
@@ -1235,7 +1265,7 @@ export default function NewPage() {
         onFormDataChange={setClientForm}
         onBack={handleClientModalBack}
         onNext={handleClientModalNext}
-        onDelete={editingQuoteId != null ? () => handleDeleteQuote(editingQuoteId) : undefined}
+        onDelete={isAdmin && editingQuoteId != null ? () => handleDeleteQuote(editingQuoteId) : undefined}
         deleteDisabled={busy}
         deleteButtonStyle={quoteModalDeleteButtonStyle()}
         nextLabel={

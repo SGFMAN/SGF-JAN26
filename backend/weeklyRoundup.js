@@ -17,6 +17,20 @@ const TICK_MS = 20 * 1000;
 const FAIL_BACKOFF_MS = 2 * 60 * 1000;
 const WEEKDAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_LONG = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 const VIC_BLUE = "#4D93D9";
 const QLD_MAROON = "#D54358";
 const STREAM_GREEN = "#92D050";
@@ -104,6 +118,20 @@ function reportingWeekPeriod(now = new Date()) {
 
 function roundupSendAt(period) {
   return melbourneLocalToUtc(addDaysYmd(period.endMonday, 1), SEND_HOUR, 0);
+}
+
+/** Calendar month of the reported week, through the same Monday 5pm cutoff.
+ *  If the week started in the previous month, those sales are included too.
+ */
+function soldMonthWindow(week) {
+  const month = parseInt(String(week.endMonday).slice(5, 7), 10);
+  const monthStartYmd = `${String(week.endMonday).slice(0, 4)}-${String(month).padStart(2, "0")}-01`;
+  const monthStart = melbourneLocalToUtc(monthStartYmd, 0, 0);
+  return {
+    start: new Date(Math.min(monthStart.getTime(), week.start.getTime())),
+    endExclusive: week.endExclusive,
+    label: MONTHS_LONG[month - 1] || monthStartYmd,
+  };
 }
 
 /** Previous completed Mon 5pm–Mon 5pm week. */
@@ -292,6 +320,145 @@ async function collectWeeklyFigures(pool, periodStart, periodEnd) {
   };
 }
 
+function formatSoldAddress(suburb, street) {
+  const sub = String(suburb || "").trim();
+  const st = String(street || "").trim();
+  if (sub && st) return `${sub.toUpperCase()} ${st}`;
+  return sub.toUpperCase() || st || "(no address)";
+}
+
+/** Sold jobs in the same VIC / QLD / streams buckets as the roundup counts. */
+async function collectSoldAddresses(pool, periodStart, periodEnd) {
+  const r = await pool.query(
+    `SELECT suburb, street, stream
+     FROM projects
+     WHERE NULLIF(sold_at::text, '')::timestamptz >= $1
+       AND NULLIF(sold_at::text, '')::timestamptz < $2
+     ORDER BY UPPER(TRIM(COALESCE(suburb, ''))), UPPER(TRIM(COALESCE(street, '')))`,
+    [periodStart, periodEnd]
+  );
+  const groups = { vic: [], qld: [], streams: [] };
+  for (const row of r.rows) {
+    const stream = String(row.stream || "").trim();
+    const address = formatSoldAddress(row.suburb, row.street);
+    if (stream === "SGF - VIC") groups.vic.push(address);
+    else if (stream === "SGF - QLD") groups.qld.push(address);
+    else groups.streams.push(address);
+  }
+  return groups;
+}
+
+function shortDayMonth(ymd) {
+  const [, m, d] = String(ymd).split("-").map((n) => parseInt(n, 10));
+  if (!m || !d) return String(ymd);
+  return `${d} ${MONTHS_SHORT[m - 1]}`;
+}
+
+/** This reporting week plus the three weeks before it, oldest first. */
+function quoteHistoryWeeks(period) {
+  const weeks = [];
+  for (let i = 3; i >= 0; i -= 1) {
+    const endMonday = addDaysYmd(period.endMonday, -7 * i);
+    const startMonday = addDaysYmd(endMonday, -7);
+    weeks.push({
+      startMonday,
+      endMonday,
+      label: shortDayMonth(endMonday),
+      start: melbourneLocalToUtc(startMonday, PERIOD_HOUR, 0),
+      endExclusive: melbourneLocalToUtc(endMonday, PERIOD_HOUR, 0),
+    });
+  }
+  return weeks;
+}
+
+async function collectQuoteWeekCounts(pool, weeks) {
+  const oldest = weeks[0].start;
+  const newest = weeks[weeks.length - 1].endExclusive;
+  const r = await pool.query(
+    `SELECT ${REGION_SQL} AS region,
+            NULLIF(quote_added_at::text, '')::timestamptz AS added
+     FROM projects
+     WHERE NULLIF(quote_added_at::text, '')::timestamptz >= $1
+       AND NULLIF(quote_added_at::text, '')::timestamptz < $2`,
+    [oldest, newest]
+  );
+  return weeks.map((week) => {
+    let vic = 0;
+    let qld = 0;
+    const startMs = week.start.getTime();
+    const endMs = week.endExclusive.getTime();
+    for (const row of r.rows) {
+      const added = row.added instanceof Date ? row.added : new Date(row.added);
+      const ms = added.getTime();
+      if (!Number.isFinite(ms) || ms < startMs || ms >= endMs) continue;
+      if (row.region === "VIC") vic += 1;
+      else if (row.region === "QLD") qld += 1;
+    }
+    return { ...week, vic, qld };
+  });
+}
+
+function quotesChartSvg(weeks) {
+  const width = 680;
+  const height = 340;
+  const max = Math.max(1, ...weeks.map((w) => Math.max(w.vic, w.qld)));
+  const plotLeft = 36;
+  const plotRight = width - 16;
+  const plotTop = 78;
+  const plotBottom = 248;
+  const plotH = plotBottom - plotTop;
+  const groupW = (plotRight - plotLeft) / weeks.length;
+  const barW = 34;
+  const barGap = 8;
+  const bars = [];
+  const labels = [];
+  weeks.forEach((week, i) => {
+    const cx = plotLeft + groupW * i + groupW / 2;
+    const pair = [
+      { n: week.vic, color: VIC_BLUE, dx: -(barW + barGap / 2) },
+      { n: week.qld, color: QLD_MAROON, dx: barGap / 2 },
+    ];
+    for (const bar of pair) {
+      const h = Math.round((bar.n / max) * plotH);
+      const x = Math.round(cx + bar.dx);
+      const y = plotBottom - h;
+      bars.push(
+        `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(h, bar.n > 0 ? 2 : 0)}" fill="${bar.color}"/>`
+      );
+      bars.push(
+        `<text x="${x + barW / 2}" y="${y - 6}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#333333">${bar.n}</text>`
+      );
+    }
+    labels.push(
+      `<text x="${cx}" y="${plotBottom + 24}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#333333">${escapeHtml(week.label)}</text>`
+    );
+  });
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="16" y="28" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#333333">New quotes</text>
+  <text x="16" y="48" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#666666">This week and the previous 3 weeks, week ending Monday</text>
+  <rect x="${width - 168}" y="14" width="14" height="14" fill="${VIC_BLUE}"/>
+  <text x="${width - 148}" y="26" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#333333">VIC</text>
+  <rect x="${width - 96}" y="14" width="14" height="14" fill="${QLD_MAROON}"/>
+  <text x="${width - 76}" y="26" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#333333">QLD</text>
+  <line x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}" stroke="#cccccc" stroke-width="1"/>
+  ${bars.join("\n  ")}
+  ${labels.join("\n  ")}
+</svg>`;
+}
+
+async function loadQuotesChartAttachment(weeks) {
+  const content = await sharp(Buffer.from(quotesChartSvg(weeks))).png().toBuffer();
+  return {
+    filename: "quotes-weeks.png",
+    content,
+    cid: "sgf-quotes-chart",
+    contentType: "image/png",
+    contentDisposition: "inline",
+  };
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -312,9 +479,9 @@ function metricRows(vic, qld, other) {
   return rows;
 }
 
-function vicQldCountTable(vic, qld, other) {
+function vicQldCountTable(vic, qld, other, labelWidth = SOLD_LABEL_WIDTH_PX) {
   const rows = metricRows(vic, qld, other);
-  const w = SOLD_LABEL_WIDTH_PX;
+  const w = labelWidth;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 12px 0;">
 ${rows
   .map(
@@ -327,22 +494,76 @@ ${rows
 </table>`;
 }
 
-function soldCountTable(figures) {
+function metricColumn(headingHtml, vic, qld, other) {
+  return `<td valign="top" width="33%" style="width:33%;vertical-align:top;padding:0 16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#333333;line-height:1.4;">
+  ${headingHtml}<br>
+  ${vicQldCountTable(vic, qld, other, 72)}
+</td>`;
+}
+
+function contactCallbackHotlistRow(figures) {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;margin:4px 0 8px 0;">
+  <tr>
+    ${metricColumn(`${boldNum(figures.quotesContact)} quotes make contact`, figures.quotesContactVic, figures.quotesContactQld, figures.quotesContactOther)}
+    ${metricColumn(`${boldNum(figures.callbacks)} call backs`, figures.callbacksVic, figures.callbacksQld, figures.callbacksOther)}
+    ${metricColumn(`${boldNum(figures.newHotlist)} new Hotlist entries`, figures.newHotlistVic, figures.newHotlistQld, figures.newHotlistOther)}
+  </tr>
+</table>`;
+}
+
+function soldAddressHtml(addresses) {
+  if (!addresses?.length) return "";
+  return addresses
+    .map(
+      (address) =>
+        `<div style="margin-top:2px;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#333333;line-height:1.35;">${escapeHtml(address)}</div>`
+    )
+    .join("");
+}
+
+function soldBucketTable(counts, addresses, unitLabel) {
   const rows = [
-    ["VIC", VIC_BLUE, figures.soldVic],
-    ["QLD", QLD_MAROON, figures.soldQld],
-    ["STREAMS", STREAM_GREEN, figures.soldStreams],
+    ["VIC", VIC_BLUE, counts.vic, addresses?.vic],
+    ["QLD", QLD_MAROON, counts.qld, addresses?.qld],
+    ["STREAMS", STREAM_GREEN, counts.streams, addresses?.streams],
   ];
-  const w = SOLD_LABEL_WIDTH_PX;
+  const w = 100;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0">
 ${rows
   .map(
-    ([label, hex, n], i) => `  <tr>
-    <td width="${w}" bgcolor="${hex}" align="center" style="width:${w}px;background-color:${hex};color:#000000;text-align:center;padding:4px 8px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.3;"><font color="#000000">${escapeHtml(label)}</font></td>
-    <td style="padding-left:16px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#333333;line-height:1.3;">${boldNum(n)} new projects</td>
+    ([label, hex, n, list], i) => `  <tr>
+    <td width="${w}" bgcolor="${hex}" align="center" valign="top" style="width:${w}px;background-color:${hex};color:#000000;text-align:center;padding:4px 8px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.3;"><font color="#000000">${escapeHtml(label)}</font></td>
+    <td valign="top" style="padding-left:12px;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#333333;line-height:1.3;">${boldNum(n)} ${escapeHtml(unitLabel)}${soldAddressHtml(list)}</td>
   </tr>${i < rows.length - 1 ? `\n  <tr><td colspan="2" height="8" style="height:8px;line-height:8px;font-size:0;">&nbsp;</td></tr>` : ""}`
   )
   .join("\n")}
+</table>`;
+}
+
+function soldColumn(heading, counts, addresses, unitLabel) {
+  return `<td valign="top" width="50%" style="width:50%;vertical-align:top;padding:0 18px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;color:#333333;line-height:1.4;">
+  <b>${escapeHtml(heading)}</b><br>
+  ${soldBucketTable(counts, addresses, unitLabel)}
+</td>`;
+}
+
+function soldCountTable(figures) {
+  const weekCounts = {
+    vic: figures.soldVic,
+    qld: figures.soldQld,
+    streams: figures.soldStreams,
+  };
+  const monthAddresses = figures.soldMonthAddresses || {};
+  const monthCounts = {
+    vic: monthAddresses.vic?.length || 0,
+    qld: monthAddresses.qld?.length || 0,
+    streams: monthAddresses.streams?.length || 0,
+  };
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+  <tr>
+    ${soldColumn("This week", weekCounts, figures.soldAddresses, "new projects")}
+    ${soldColumn(figures.soldMonthLabel || "This month", monthCounts, null, "projects")}
+  </tr>
 </table>`;
 }
 
@@ -374,6 +595,31 @@ function formatWeekSpan(weekDates) {
   return `Mon ${start} 5pm to Mon ${end} 5pm`;
 }
 
+function soldTextLines(label, count, addresses, unitLabel) {
+  const lines = [`${label.padEnd(8, " ")}${count} ${unitLabel}`];
+  for (const address of addresses || []) lines.push(`        ${address}`);
+  return lines;
+}
+
+function soldTextBlock(heading, counts, addresses, unitLabel) {
+  return [
+    heading,
+    ...soldTextLines("VIC", counts.vic, addresses?.vic, unitLabel),
+    ...soldTextLines("QLD", counts.qld, addresses?.qld, unitLabel),
+    ...soldTextLines("STREAMS", counts.streams, addresses?.streams, unitLabel),
+  ];
+}
+
+function quoteWeekTextLines(weeks) {
+  if (!weeks?.length) return [];
+  const lines = ["New quotes by week (VIC / QLD), week ending Monday"];
+  weeks.forEach((week, i) => {
+    const mark = i === weeks.length - 1 ? " (this week)" : "";
+    lines.push(`  ${week.label.padEnd(8, " ")} ${week.vic} / ${week.qld}${mark}`);
+  });
+  return lines;
+}
+
 function buildRoundupContent(figures, weekDates) {
   const span = formatWeekSpan(weekDates);
   const pad = (label) => label.padEnd(8, " ");
@@ -387,15 +633,29 @@ function buildRoundupContent(figures, weekDates) {
     "",
     `${figures.newQuotes} new quotes added`,
     ...textRegionLines(figures.newQuotesVic, figures.newQuotesQld, figures.newQuotesOther),
+    ...quoteWeekTextLines(figures.quoteWeeks),
     `${figures.quotesContact} quotes make contact`,
     ...textRegionLines(figures.quotesContactVic, figures.quotesContactQld, figures.quotesContactOther),
     `${figures.callbacks} call backs`,
     ...textRegionLines(figures.callbacksVic, figures.callbacksQld, figures.callbacksOther),
     `${figures.newHotlist} new Hotlist entries`,
     ...textRegionLines(figures.newHotlistVic, figures.newHotlistQld, figures.newHotlistOther),
-    `${pad("VIC")}${figures.soldVic} new projects`,
-    `${pad("QLD")}${figures.soldQld} new projects`,
-    `${pad("STREAMS")}${figures.soldStreams} new projects`,
+    ...soldTextBlock(
+      "This week",
+      { vic: figures.soldVic, qld: figures.soldQld, streams: figures.soldStreams },
+      figures.soldAddresses,
+      "new projects"
+    ),
+    ...soldTextBlock(
+      figures.soldMonthLabel || "This month",
+      {
+        vic: figures.soldMonthAddresses?.vic?.length || 0,
+        qld: figures.soldMonthAddresses?.qld?.length || 0,
+        streams: figures.soldMonthAddresses?.streams?.length || 0,
+      },
+      null,
+      "projects"
+    ),
     "",
     "Strength and Honour !",
     "",
@@ -414,13 +674,13 @@ function buildRoundupContent(figures, weekDates) {
   const metrics = [
     `${boldNum(figures.newQuotes)} new quotes added`,
     vicQldCountTable(figures.newQuotesVic, figures.newQuotesQld, figures.newQuotesOther),
-    `${boldNum(figures.quotesContact)} quotes make contact`,
-    vicQldCountTable(figures.quotesContactVic, figures.quotesContactQld, figures.quotesContactOther),
-    `${boldNum(figures.callbacks)} call backs`,
-    vicQldCountTable(figures.callbacksVic, figures.callbacksQld, figures.callbacksOther),
-    `${boldNum(figures.newHotlist)} new Hotlist entries`,
-    vicQldCountTable(figures.newHotlistVic, figures.newHotlistQld, figures.newHotlistOther),
-  ].join("<br>\r\n");
+    figures.includeQuoteChart
+      ? `<img src="cid:sgf-quotes-chart" width="640" alt="New quotes, this week and the previous 3 weeks" style="display:block;width:640px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none;margin:8px 0 12px 0;" />`
+      : null,
+    contactCallbackHotlistRow(figures),
+  ]
+    .filter(Boolean)
+    .join("<br>\r\n");
   const inner = `${intro}<br>\r\n&nbsp;<br>\r\n${metrics}<br>\r\n<img src="cid:sgf-sold" width="200" alt="SOLD" style="display:block;width:200px;height:auto;border:0;outline:none;text-decoration:none;" /><br>\r\n${soldCountTable(figures)}<br>\r\n&nbsp;<br>\r\nStrength and Honour !<br>\r\n&nbsp;<br>\r\nPowered by SGF Central`;
   return { text, html: htmlEmailShell(inner) };
 }
@@ -436,7 +696,7 @@ async function loadSoldImageAttachment() {
   };
 }
 
-async function sendRoundupEmail(helpers, { from, text, html, attachments }) {
+async function sendRoundupEmail(helpers, { from, text, html, attachments, subject }) {
   const creds = await helpers.getSmtpCredentialsForFromAddress(from);
   const smtpUser = creds?.smtpUser;
   const smtpPass = creds?.smtpPass;
@@ -459,7 +719,7 @@ async function sendRoundupEmail(helpers, { from, text, html, attachments }) {
   await transporter.sendMail({
     from: String(from || "").trim() || smtpUser,
     to: TO_ADDRESS,
-    subject: SUBJECT,
+    subject: subject || SUBJECT,
     text: String(text || "").replace(/\n/g, "\r\n"),
     html,
     attachments: Array.isArray(attachments) ? attachments : [],
@@ -499,21 +759,33 @@ async function markRoundupSent(pool, { melbourneDate, periodEnd, markSent }) {
   }
 }
 
-async function sendWeeklyRoundup(pool, helpers, { markSent = false, markFriday = false, skipMark = false } = {}) {
+async function sendWeeklyRoundup(pool, helpers, { markSent = false, markFriday = false, skipMark = false, subject = SUBJECT } = {}) {
   const now = new Date();
   const week = reportingWeekPeriod(now);
   const sendDay = addDaysYmd(week.endMonday, 1);
   const figures = await collectWeeklyFigures(pool, week.start, week.endExclusive);
+  figures.soldAddresses = await collectSoldAddresses(pool, week.start, week.endExclusive);
+  const soldMonth = soldMonthWindow(week);
+  figures.soldMonthLabel = soldMonth.label;
+  figures.soldMonthAddresses = await collectSoldAddresses(pool, soldMonth.start, soldMonth.endExclusive);
+  const quoteWeeks = quoteHistoryWeeks(week);
+  figures.quoteWeeks = await collectQuoteWeekCounts(pool, quoteWeeks);
   const from = await helpers.getDefaultSystemSmtpFrom(pool);
   if (!from) throw new Error("No SMTP From address for weekly roundup");
-  const { text, html } = buildRoundupContent(figures, week);
   const attachments = [];
   try {
     attachments.push(await loadSoldImageAttachment());
   } catch (e) {
     console.error("[weekly-roundup] sold image:", e.message || e);
   }
-  await sendRoundupEmail(helpers, { from, text, html, attachments });
+  try {
+    attachments.push(await loadQuotesChartAttachment(figures.quoteWeeks));
+    figures.includeQuoteChart = true;
+  } catch (e) {
+    console.error("[weekly-roundup] quotes chart:", e.message || e);
+  }
+  const { text, html } = buildRoundupContent(figures, week);
+  await sendRoundupEmail(helpers, { from, text, html, attachments, subject });
   if (!skipMark) {
     await markRoundupSent(pool, {
       melbourneDate: sendDay,
@@ -522,7 +794,7 @@ async function sendWeeklyRoundup(pool, helpers, { markSent = false, markFriday =
     });
   }
   console.log(
-    `[weekly-roundup] sent to ${TO_ADDRESS}: quotes=${figures.newQuotes} (VIC ${figures.newQuotesVic}/QLD ${figures.newQuotesQld}) contact=${figures.quotesContact} (VIC ${figures.quotesContactVic}/QLD ${figures.quotesContactQld}) callbacks=${figures.callbacks} (VIC ${figures.callbacksVic}/QLD ${figures.callbacksQld}) hotlist=${figures.newHotlist} (VIC ${figures.newHotlistVic}/QLD ${figures.newHotlistQld}) sold vic=${figures.soldVic} qld=${figures.soldQld} streams=${figures.soldStreams}`
+    `[weekly-roundup] sent to ${TO_ADDRESS}: quotes=${figures.newQuotes} (VIC ${figures.newQuotesVic}/QLD ${figures.newQuotesQld}) contact=${figures.quotesContact} (VIC ${figures.quotesContactVic}/QLD ${figures.quotesContactQld}) callbacks=${figures.callbacks} (VIC ${figures.callbacksVic}/QLD ${figures.callbacksQld}) hotlist=${figures.newHotlist} (VIC ${figures.newHotlistVic}/QLD ${figures.newHotlistQld}) sold vic=${figures.soldVic} qld=${figures.soldQld} streams=${figures.soldStreams} month=${figures.soldMonthLabel} vic=${figures.soldMonthAddresses?.vic?.length || 0} qld=${figures.soldMonthAddresses?.qld?.length || 0} streams=${figures.soldMonthAddresses?.streams?.length || 0}`
   );
   return figures;
 }

@@ -76,6 +76,9 @@ const DECK_BOARD_M = 0.09;
 const DECK_GAP_M = 0.008;
 const ISO_AZIMUTH = Math.PI / 4;
 const WALK_EYE_HEIGHT_M = 1.5;
+const FLY_HEIGHT_M = 20;
+const FLY_CORNER_MARGIN_M = 5;
+const FLY_LOOP_MS = 45000;
 const WALK_DOOR_DISTANCE_M = 10;
 const WALK_PAUSE_MS = 2000;
 const WALK_SPEED_MPS = 1.2;
@@ -438,6 +441,15 @@ function pathCrossDoor(fromX, fromZ, toX, toZ, hingeX, hingeZ, closedX, closedZ)
   if (t < -slack || t > 1 + slack) return null;
   if (u < -0.01 || u > 1.01) return null;
   return Math.max(0, Math.min(1, u));
+}
+
+/** Circle radius: plan centre to the furthest corner, plus 5m. Scene XZ, centre subtracted. */
+function flybyRadius(outer, cx, cz) {
+  let furthest = 0;
+  for (const p of outer || []) {
+    furthest = Math.max(furthest, Math.hypot(p.x - cx, p.y - cz));
+  }
+  return furthest + FLY_CORNER_MARGIN_M;
 }
 
 function ringBounds(pts) {
@@ -2031,7 +2043,7 @@ function addShowerTiles(parent, side, shower, t0, t1, cx, cz, mats) {
 
 function addShowerGlass(parent, side, shower, t0, t1, cx, cz, mats) {
   const len = t1 - t0;
-  if (len < 0.2) return;
+  if (len < 0.04) return;
   const gt = 0.01;
   const inset = 0.012;
   if (side === "left" || side === "right") {
@@ -2195,11 +2207,64 @@ function showerHeadSide(shower) {
   return "bottom";
 }
 
+function showerScreenRuns(shower, room) {
+  const fromRaw = Number(room?.showerScreenFrom);
+  const lenRaw = Number(room?.showerScreenLen);
+  const P = 2 * (shower.w + shower.h);
+  if (!Number.isFinite(fromRaw) || !Number.isFinite(lenRaw) || !(lenRaw > 0) || !(P > 0)) return null;
+  const len = Math.min(P, Math.max(0.15, lenRaw));
+  let cursor = ((fromRaw % P) + P) % P;
+  let left = len;
+  const sides = [
+    { side: "top", len: shower.w },
+    { side: "right", len: shower.h },
+    { side: "bottom", len: shower.w },
+    { side: "left", len: shower.h },
+  ];
+  const runs = [];
+  let guard = 0;
+  while (left > 0.004 && guard < 8) {
+    guard += 1;
+    const pos = ((cursor % P) + P) % P;
+    let acc = 0;
+    let side = sides[0];
+    let local = pos;
+    for (let i = 0; i < sides.length; i += 1) {
+      if (pos < acc + sides[i].len - 1e-9 || i === sides.length - 1) {
+        side = sides[i];
+        local = Math.max(0, pos - acc);
+        break;
+      }
+      acc += sides[i].len;
+    }
+    const take = Math.min(left, Math.max(0, side.len - local));
+    if (take <= 0.004) {
+      cursor += 0.01;
+      left -= 0.01;
+      continue;
+    }
+    if (side.side === "top") runs.push({ side: "top", t0: shower.x + local, t1: shower.x + local + take });
+    else if (side.side === "right") runs.push({ side: "right", t0: shower.y + local, t1: shower.y + local + take });
+    else if (side.side === "bottom") {
+      const x1 = shower.x + shower.w - local;
+      runs.push({ side: "bottom", t0: x1 - take, t1: x1 });
+    } else {
+      const y1 = shower.y + shower.h - local;
+      runs.push({ side: "left", t0: y1 - take, t1: y1 });
+    }
+    cursor += take;
+    left -= take;
+  }
+  return runs;
+}
+
 function addBathroomShower(parent, room, walls, cx, cz, mats) {
   const shower = showerRect3D(room);
   if (!(shower.w > 0.3) || !(shower.h > 0.3)) return;
-  const panel = showerGlassChoice(shower, walls);
-  addShowerGlass(parent, panel.side, shower, panel.t0, panel.t1, cx, cz, mats);
+  const panels = showerScreenRuns(shower, room) || [showerGlassChoice(shower, walls)];
+  for (const panel of panels) {
+    addShowerGlass(parent, panel.side, shower, panel.t0, panel.t1, cx, cz, mats);
+  }
   addShowerRail(parent, shower, cx, cz, mats);
   const headSide = showerHeadSide(shower);
   const headSpan =
@@ -3908,6 +3973,7 @@ export default function QuickConcept3DPreview({
   onOrbitChange,
   captureRef,
   walkRef,
+  flyByRef,
   walkRoute = null,
 }) {
   const mountRef = useRef(null);
@@ -3940,6 +4006,7 @@ export default function QuickConcept3DPreview({
     const onKeyUp = { current: null };
     const onBlur = { current: null };
     let beginWalkThrough = null;
+    let beginFlyBy = null;
 
     try {
       const bounds = ringBounds(outer);
@@ -4066,6 +4133,8 @@ export default function QuickConcept3DPreview({
       const eye = new THREE.Vector3();
       let walkRun = null;
       let walkKeepsWalls = false;
+      let flyRun = null;
+      let flyKeepsWalls = false;
       let showExteriorShell = false;
       const houseSphere = box.getBoundingSphere(new THREE.Sphere());
       const houseRadius = Math.max(
@@ -4128,7 +4197,7 @@ export default function QuickConcept3DPreview({
       };
 
       const updateGhostWalls = () => {
-        if (walkKeepsWalls) {
+        if (walkKeepsWalls || flyKeepsWalls) {
           for (const mesh of wallMeshes) {
             mesh.visible = true;
             mesh.material = mats.wall;
@@ -4226,10 +4295,16 @@ export default function QuickConcept3DPreview({
           if (swing) leaf.rotation.y = swing.restRot;
         }
       };
+      const cancelFly = () => {
+        flyRun = null;
+        flyKeepsWalls = false;
+      };
+
       const cancelWalk = () => {
         const wasWalking = Boolean(walkRun) || walkKeepsWalls;
         walkRun = null;
         walkKeepsWalls = false;
+        cancelFly();
         resetFrontDoor();
         if (wasWalking) {
           setWalkLens(false);
@@ -4382,6 +4457,7 @@ export default function QuickConcept3DPreview({
       };
 
       beginWalkThrough = () => {
+        cancelFly();
         const door = externalFrontDoor(planDoors);
         const outward = frontDoorOutward(door);
         const route = walkRouteRef.current || {};
@@ -4541,8 +4617,24 @@ export default function QuickConcept3DPreview({
         updateCamera();
       };
 
-      onDown.current = (e) => {
+      beginFlyBy = () => {
+        if (flyRun) {
+          cancelFly();
+          updateCamera();
+          return;
+        }
         cancelWalk();
+        const radius = flybyRadius(outer, cx, cz);
+        if (!(radius > 1)) return;
+        showExteriorShell = true;
+        flyKeepsWalls = true;
+        setWalkLens(false);
+        flyRun = { radius, start: performance.now(), pitchOffset: 0, yawOffset: 0 };
+        updateCamera();
+      };
+
+      onDown.current = (e) => {
+        if (!flyRun) cancelWalk();
         dragging = true;
         lastX = e.clientX;
         lastY = e.clientY;
@@ -4551,15 +4643,27 @@ export default function QuickConcept3DPreview({
       };
       onMove.current = (e) => {
         if (!dragging) return;
-        azimuth -= (e.clientX - lastX) * 0.008;
-        elevation = Math.max(-1.35, Math.min(1.48, elevation + (e.clientY - lastY) * 0.006));
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
         lastX = e.clientX;
         lastY = e.clientY;
+        if (flyRun) {
+          flyRun.yawOffset -= dx * 0.008;
+          flyRun.pitchOffset = Math.max(-1.2, Math.min(1.2, flyRun.pitchOffset + dy * 0.006));
+          return;
+        }
+        azimuth -= dx * 0.008;
+        elevation = Math.max(-1.35, Math.min(1.48, elevation + dy * 0.006));
         updateCamera();
       };
       onWheel.current = (e) => {
-        cancelWalk();
         e.preventDefault();
+        if (flyRun) {
+          const dist = Math.max(0.3, flyRun.radius);
+          flyRun.radius = Math.max(3, flyRun.radius + e.deltaY * 0.0018 * dist);
+          return;
+        }
+        cancelWalk();
         const look = lookVector();
         const dist = Math.max(0.3, eye.distanceTo(target));
         eye.addScaledVector(look, -e.deltaY * 0.0018 * dist);
@@ -4579,6 +4683,7 @@ export default function QuickConcept3DPreview({
       ro.observe(mount);
 
       if (walkRef) walkRef.current = beginWalkThrough;
+      if (flyByRef) flyByRef.current = beginFlyBy;
 
       if (captureRef) {
         captureRef.current = (outW = 2200, options = {}) => {
@@ -4703,6 +4808,19 @@ export default function QuickConcept3DPreview({
             }
           }
           if (walkRun?.doorAnim) updateWalkDoor(now);
+        } else if (flyRun) {
+          const angle = (((now - flyRun.start) % FLY_LOOP_MS) / FLY_LOOP_MS) * Math.PI * 2;
+          eye.set(Math.cos(angle) * flyRun.radius, FLY_HEIGHT_M, Math.sin(angle) * flyRun.radius);
+          const dx = target.x - eye.x;
+          const dy = target.y - eye.y;
+          const dz = target.z - eye.z;
+          const dist = Math.hypot(dx, dy, dz) || 1;
+          elevation = Math.max(
+            -1.2,
+            Math.min(1.48, Math.asin(Math.max(-1, Math.min(1, -dy / dist))) + flyRun.pitchOffset)
+          );
+          azimuth = Math.atan2(-dx, -dz) + flyRun.yawOffset;
+          updateCamera();
         } else if (keys.size) {
           const forward = new THREE.Vector3(-Math.sin(azimuth), 0, -Math.cos(azimuth));
           const right = new THREE.Vector3(Math.cos(azimuth), 0, -Math.sin(azimuth));
@@ -4740,6 +4858,7 @@ export default function QuickConcept3DPreview({
       if (onBlur.current) window.removeEventListener("blur", onBlur.current);
       if (captureRef && captureRef.current) captureRef.current = null;
       if (walkRef && walkRef.current === beginWalkThrough) walkRef.current = null;
+      if (flyByRef && flyByRef.current === beginFlyBy) flyByRef.current = null;
       if (group) disposeObject(group);
       ground?.geometry?.dispose();
       if (Array.isArray(ground?.material)) ground.material.forEach((m) => m?.dispose?.());
@@ -4754,7 +4873,7 @@ export default function QuickConcept3DPreview({
       renderer?.dispose();
       if (canvas && canvas.parentNode === mount) mount.removeChild(canvas);
     };
-  }, [metres, rooms, innerMetres, walls, doors, captureRef, walkRef]);
+  }, [metres, rooms, innerMetres, walls, doors, captureRef, walkRef, flyByRef]);
 
   return (
     <div
