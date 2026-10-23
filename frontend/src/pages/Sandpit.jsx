@@ -1,5 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import WalkingMan from "../components/WalkingMan.jsx";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const PAGE_TEXT = UI.pageText;
@@ -22,39 +23,31 @@ export default function Sandpit() {
       style={{
         position: "fixed",
         inset: 0,
-        background: "#061127",
+        background: "#1c2433",
       }}
     >
+      <WalkingMan />
+      <div style={{ position: "absolute", top: 16, left: 16, zIndex: 2 }}>
+        <Link to="/projects" style={hudButtonStyle}>
+          Back to Projects
+        </Link>
+      </div>
       <div
         style={{
           position: "absolute",
-          inset: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 36,
-          background:
-            "radial-gradient(circle at 50% 28%, rgba(70, 110, 180, 0.28), transparent 42%), #061127",
+          left: 0,
+          right: 0,
+          bottom: 128,
+          textAlign: "center",
+          color: PAGE_TEXT,
+          fontSize: "0.8rem",
+          letterSpacing: "0.04em",
+          opacity: 0.75,
+          pointerEvents: "none",
+          zIndex: 2,
         }}
       >
-        <div style={{ position: "absolute", top: 16, left: 16 }}>
-          <Link to="/projects" style={hudButtonStyle}>
-            Back to Projects
-          </Link>
-        </div>
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              color: PAGE_TEXT,
-              fontSize: "2.4rem",
-              fontWeight: 800,
-              letterSpacing: "0.18em",
-            }}
-          >
-            SANDPIT
-          </div>
-        </div>
+        Drag to look around
       </div>
     </div>
   );

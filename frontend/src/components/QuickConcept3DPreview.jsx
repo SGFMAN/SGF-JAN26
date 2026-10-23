@@ -30,6 +30,9 @@ const BED_SHORT_M = 1.8;
 const BED_LONG_M = 2.0;
 const VANITY_WIDTH_M = 0.9;
 const VANITY_DEPTH_M = 0.4;
+const WALL_HUNG_VANITY_M = 0.45;
+const WALL_HUNG_VANITY_DEPTH_M = 0.25;
+const WALL_HUNG_GAP_M = 0.34;
 const VANITY_H = 0.85;
 const VANITY_KICK_H = 0.15;
 const VANITY_KICK_INSET = 0.05;
@@ -2673,9 +2676,10 @@ function bathroomVanity3D(room) {
         ? "top"
         : "right";
   const frame = roomWallFrame(room, side);
-  const length = Math.min(VANITY_WIDTH_M, Math.max(0.4, frame.wallLen - 0.05));
+  const hung = room?.vanityWm === "hung";
+  const length = Math.min(hung ? WALL_HUNG_VANITY_M : VANITY_WIDTH_M, Math.max(0.2, frame.wallLen - 0.05));
   const roomDepth = side === "left" || side === "right" ? room.w : room.h;
-  const depth = Math.min(VANITY_DEPTH_M, Math.max(0.15, roomDepth - 0.05));
+  const depth = Math.min(hung ? WALL_HUNG_VANITY_DEPTH_M : VANITY_DEPTH_M, Math.max(0.15, roomDepth - 0.05));
   const maxAlong = Math.max(0, frame.wallLen - length);
   const storedAlong = Number(room?.vanityAlong);
   const alongM = Math.max(0, Math.min(maxAlong, Number.isFinite(storedAlong) ? storedAlong : 0));
@@ -2687,6 +2691,7 @@ function bathroomVanity3D(room) {
     alongM,
     length,
     depth,
+    hung,
   };
 }
 
@@ -2717,7 +2722,7 @@ function addVanityTap(parent, x, z, inward, yTop, cx, cz, chrome) {
 }
 
 function addBathroomVanity(parent, room, cx, cz, mats) {
-  const { rect, inward, along, origin, alongM, length, depth } = bathroomVanity3D(room);
+  const { rect, inward, along, origin, alongM, length, depth, hung } = bathroomVanity3D(room);
   if (!rect || !(rect.w > 0.08) || !(rect.h > 0.08)) return;
   const faceX = Math.abs(inward?.x || 0) >= Math.abs(inward?.y || 0);
   const sign = faceX ? Math.sign(inward?.x || 1) || 1 : Math.sign(inward?.y || 1) || 1;
@@ -2742,9 +2747,10 @@ function addBathroomVanity(parent, room, cx, cz, mats) {
         w: rect.w,
         h: Math.max(0.08, rect.h - VANITY_KICK_INSET),
       };
-  const bodyH = VANITY_H - VANITY_KICK_H;
-  addWorldRect(parent, kick, VANITY_KICK_H, VANITY_KICK_H / 2, mats.fill, mats.softLine, cx, cz);
-  addWorldRect(parent, carcass, bodyH, VANITY_KICK_H + bodyH / 2, mats.fill, mats.softLine, cx, cz);
+  const bodyBase = hung ? WALL_HUNG_GAP_M : VANITY_KICK_H;
+  const bodyH = VANITY_H - bodyBase;
+  if (!hung) addWorldRect(parent, kick, VANITY_KICK_H, VANITY_KICK_H / 2, mats.fill, mats.softLine, cx, cz);
+  addWorldRect(parent, carcass, bodyH, bodyBase + bodyH / 2, mats.fill, mats.softLine, cx, cz);
 
   const alongS = faceX ? Math.sign(along?.y || 1) || 1 : Math.sign(along?.x || 1) || 1;
   const nx = rect.x - cx + rect.w / 2;
@@ -2764,7 +2770,9 @@ function addBathroomVanity(parent, room, cx, cz, mats) {
   const doorOff = (fromStart(doorT0) - across / 2) * alongS;
   const marginY = 0.008;
   const gapY = 0.008;
-  const drawerH = (bodyH - marginY * 2 - gapY * 2) / 3;
+  const drawerCount = hung ? 2 : 3;
+  const drawerGaps = hung ? 1 : 2;
+  const drawerH = (bodyH - marginY * 2 - gapY * drawerGaps) / drawerCount;
   const placeFront = (sizeW, sizeH, y, offset) => {
     addThinBox(
       parent,
@@ -2778,13 +2786,21 @@ function addBathroomVanity(parent, room, cx, cz, mats) {
       mats.softLine
     );
   };
-  for (let i = 0; i < 3; i += 1) {
-    const y = VANITY_KICK_H + marginY + drawerH / 2 + i * (drawerH + gapY);
-    placeFront(colW, drawerH, y, drawerOff);
+  if (hung) {
+    const drawerW = across - sideM * 2;
+    for (let i = 0; i < drawerCount; i += 1) {
+      const y = bodyBase + marginY + drawerH / 2 + i * (drawerH + gapY);
+      placeFront(drawerW, drawerH, y, 0);
+    }
+  } else {
+    for (let i = 0; i < drawerCount; i += 1) {
+      const y = bodyBase + marginY + drawerH / 2 + i * (drawerH + gapY);
+      placeFront(colW, drawerH, y, drawerOff);
+    }
+    const doorH = bodyH - marginY * 2;
+    const doorY = bodyBase + bodyH / 2;
+    placeFront(colW, doorH, doorY, doorOff);
   }
-  const doorH = bodyH - marginY * 2;
-  const doorY = VANITY_KICK_H + bodyH / 2;
-  placeFront(colW, doorH, doorY, doorOff);
 
   const width = length;
   const back = {

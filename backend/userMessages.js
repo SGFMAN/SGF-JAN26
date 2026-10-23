@@ -14,6 +14,10 @@ async function ensureUserMessagesTable(pool) {
     CREATE INDEX IF NOT EXISTS idx_user_messages_to_user_created
       ON user_messages (to_user_id, created_at DESC);
   `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_messages_from_user_created
+      ON user_messages (from_user_id, created_at DESC);
+  `);
 }
 
 module.exports = {

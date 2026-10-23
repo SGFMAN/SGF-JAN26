@@ -2201,8 +2201,10 @@ function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, walls) {
       ctx.strokeStyle = stroke || PLAN_CERAMIC_EDGE;
       ctx.beginPath();
       ctx.rect(vr.x, vr.y, vr.w, vr.h);
+      if (vanity.hung) ctx.setLineDash([5, 4]);
       if (!bw) ctx.fill();
       ctx.stroke();
+      ctx.setLineDash([]);
       ctx.beginPath();
       ctx.ellipse(
         basin.x + basin.w / 2,
@@ -5191,6 +5193,8 @@ const VANITY_WIDTH_M = 0.9;
 const POWDER_VANITY_M = 0.6;
 const VANITY_DEPTH_M = 0.4;
 const POWDER_VANITY_DEPTH_M = 0.25;
+const WALL_HUNG_VANITY_M = 0.45;
+const WALL_HUNG_VANITY_DEPTH_M = 0.25;
 const WM_SIZE_M = 0.6;
 const WM_GAP_M = 0.075;
 const WM_SPACE_M = WM_SIZE_M + WM_GAP_M * 2;
@@ -5555,6 +5559,7 @@ function showerLengthM(room, span) {
 }
 
 function vanityLengthM(room) {
+  if (room?.vanityWm === "hung") return WALL_HUNG_VANITY_M;
   return roomKind(room) === "powder" ? POWDER_VANITY_M : VANITY_WIDTH_M;
 }
 
@@ -6657,7 +6662,7 @@ function controlHint(hover) {
   if (type === "room-delete") return "Delete";
   if (type === "couch-options") return "Couch options";
   if (type === "porch-options") return "Porch steps";
-  if (type === "vanity-options") return "Vanity options";
+  if (type === "vanity-options") return hover.optionLabel || "Vanity options";
   if (type === "vanity-options-full") return "No room for WM";
   if (type === "design-move") return "Move design";
   if (type === "design-rotate") return "Rotate design";
@@ -8068,17 +8073,38 @@ function vanityWmSide(room) {
   return room?.vanityWm === "left" || room?.vanityWm === "right" ? room.vanityWm : null;
 }
 
+function vanityOption(room) {
+  if (
+    room?.vanityWm === "left" ||
+    room?.vanityWm === "right" ||
+    room?.vanityWm === "none" ||
+    room?.vanityWm === "hung"
+  ) {
+    return room.vanityWm;
+  }
+  return null;
+}
+
+function vanityOptionLabel(room) {
+  const opt = vanityOption(room);
+  if (opt === "left") return "Vanity - WM on Left";
+  if (opt === "right") return "Vanity - WM on Right";
+  if (opt === "hung") return "Wall Hung Vanity";
+  return "Vanity - No WM";
+}
+
 /** Step to the next vanity option, skipping washing machine sides that don't fit. */
 function cycleVanityWm(room, innerMetres) {
-  const order = [null, "left", "right"];
-  const i = order.indexOf(vanityWmSide(room));
-  for (let k = 1; k < order.length; k += 1) {
+  const order = ["left", "right", "none", "hung"];
+  let i = order.indexOf(vanityOption(room));
+  if (i < 0) i = -1;
+  for (let k = 1; k <= order.length; k += 1) {
     const opt = order[(i + k) % order.length];
-    if (opt === null) return { ...room, vanityWm: null };
+    if (opt === "none" || opt === "hung") return { ...room, vanityWm: opt };
     const placed = placeVanityWm({ ...room, vanityWm: opt }, innerMetres, "butt");
     if (placed) return placed;
   }
-  return { ...room, vanityWm: null };
+  return { ...room, vanityWm: "none" };
 }
 
 /**
@@ -8112,7 +8138,12 @@ function bathroomVanity(room, innerMetres) {
   const frame = roomWallFrame(room, vanitySide);
   const length = Math.min(vanityLengthM(room), Math.max(0.2, frame.wallLen - 0.05));
   const roomDepth = vanitySide === "left" || vanitySide === "right" ? room.w : room.h;
-  const fullDepth = roomKind(room) === "powder" ? POWDER_VANITY_DEPTH_M : VANITY_DEPTH_M;
+  const hung = room?.vanityWm === "hung";
+  const fullDepth = hung
+    ? WALL_HUNG_VANITY_DEPTH_M
+    : roomKind(room) === "powder"
+      ? POWDER_VANITY_DEPTH_M
+      : VANITY_DEPTH_M;
   const depth = Math.min(fullDepth, Math.max(0.15, roomDepth - 0.05));
   const range = vanityAlongRange(room, frame, length, innerMetres);
   const storedAlong = Number(room?.vanityAlong);
@@ -8179,6 +8210,7 @@ function bathroomVanity(room, innerMetres) {
     innerB,
     rect,
     basin,
+    hung,
     wm,
     grab: rectCenter(rect),
     label: {
@@ -8556,7 +8588,7 @@ function hitBathroomFixtureHandle(room, layout, raw, innerMetres) {
   if (flip) return flip;
   const options = vanityOptionsHandlePx(vanity, layout);
   if (options && Math.hypot(raw.x - options.cx, raw.y - options.cy) <= options.size / 2 + 3) {
-    return { type: "vanity-options", kind: "rotate" };
+    return { type: "vanity-options", kind: "rotate", optionLabel: vanityOptionLabel(room) };
   }
   const hs = fixtureGrabPx(layout);
   const grab = pickClosestGrab(raw, hs, [
@@ -11125,6 +11157,7 @@ function BathroomFixtures({ room, layout, innerMetres, walls, showHandles = fals
             fill="#ffffff"
             stroke={PLAN_CERAMIC_EDGE}
             strokeWidth="1.2"
+            strokeDasharray={vanity.hung ? "5 4" : undefined}
           />
           <ellipse
             cx={basin.x + basin.w / 2}
@@ -13140,9 +13173,17 @@ function DesignModal({
               e.preventDefault();
               const nextRoom = cycleVanityWm(room, innerMetres);
               updateRoom(room.id, nextRoom);
-              const noFit = !vanityWmSide(room) && !vanityWmSide(nextRoom);
+              const changed = vanityOption(room) !== vanityOption(nextRoom);
               setHover(
-                hintAt({ id: room.id, kind: "rotate", type: noFit ? "vanity-options-full" : "vanity-options" }, raw)
+                hintAt(
+                  {
+                    id: room.id,
+                    kind: "rotate",
+                    type: changed ? "vanity-options" : "vanity-options-full",
+                    optionLabel: vanityOptionLabel(nextRoom),
+                  },
+                  raw
+                )
               );
               return;
             }
@@ -13766,7 +13807,12 @@ function DesignModal({
         if (isBathLike(room)) {
           const fixture = hitBathroomFixtureHandle(room, layout, raw, innerMetres);
           if (fixture) {
-            nextHover = { id: room.id, kind: fixture.kind || "move", type: fixture.type };
+            nextHover = {
+              id: room.id,
+              kind: fixture.kind || "move",
+              type: fixture.type,
+              optionLabel: fixture.optionLabel,
+            };
             break;
           }
         }

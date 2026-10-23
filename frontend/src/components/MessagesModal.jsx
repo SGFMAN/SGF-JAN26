@@ -40,11 +40,15 @@ function buildReplyBody(text, original) {
 export default function MessagesModal({ open, onClose, onInboxChange }) {
   const loggedInUserId = getLoggedInUserId();
   const [view, setView] = useState("inbox");
+  const [listView, setListView] = useState("inbox");
   const [messages, setMessages] = useState([]);
+  const [sentMessages, setSentMessages] = useState([]);
   const [users, setUsers] = useState([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
+  const [loadingSent, setLoadingSent] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [inboxError, setInboxError] = useState("");
+  const [sentError, setSentError] = useState("");
   const [composeError, setComposeError] = useState("");
   const [sending, setSending] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState(null);
@@ -90,6 +94,26 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
     }
   }, [onInboxChange]);
 
+  const loadSent = useCallback(async () => {
+    setLoadingSent(true);
+    setSentError("");
+    try {
+      const response = await fetch(`${API_URL}/api/messages/sent`, {
+        headers: getApiHeaders(),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load sent messages");
+      }
+      setSentMessages(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setSentError(err.message || "Failed to load sent messages");
+      setSentMessages([]);
+    } finally {
+      setLoadingSent(false);
+    }
+  }, []);
+
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true);
     try {
@@ -107,21 +131,31 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
   useEffect(() => {
     if (!open) {
       setView("inbox");
+      setListView("inbox");
       setSelectedMessage(null);
       resetCompose();
       return;
     }
 
     loadInbox();
+    loadSent();
     loadUsers();
-  }, [open, loadInbox, loadUsers, resetCompose]);
+  }, [open, loadInbox, loadSent, loadUsers, resetCompose]);
+
+  function showList(folder) {
+    setSelectedMessage(null);
+    setListView(folder);
+    setView(folder);
+  }
 
   async function openMessage(message) {
+    const folder = view === "sent" ? "sent" : "inbox";
+    setListView(folder);
     setDeleteError("");
     setSelectedMessage(message);
     setView("read");
 
-    if (message.read_at) {
+    if (folder === "sent" || message.read_at) {
       return;
     }
 
@@ -152,13 +186,11 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
   }
 
   function handleOk() {
-    setSelectedMessage(null);
-    setView("inbox");
+    showList(listView);
   }
 
-  function backToInbox() {
-    setSelectedMessage(null);
-    setView("inbox");
+  function backToList() {
+    showList(listView);
   }
 
   async function handleDelete() {
@@ -178,7 +210,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
         throw new Error(data.error || "Failed to delete message");
       }
       setSelectedMessage(null);
-      setView("inbox");
+      setView(listView);
       await loadInbox();
     } catch (err) {
       setDeleteError(err.message || "Failed to delete message");
@@ -224,8 +256,8 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
         throw new Error(data.error || "Failed to send message");
       }
       resetCompose();
-      setView("inbox");
-      await loadInbox();
+      setView(listView);
+      await Promise.all([loadInbox(), loadSent()]);
     } catch (err) {
       setComposeError(err.message || "Failed to send message");
     } finally {
@@ -235,7 +267,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
 
   function handleCancelCompose() {
     resetCompose();
-    setView("inbox");
+    setView(listView);
   }
 
   if (!open) {
@@ -299,7 +331,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
             Messages
           </h2>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {view === "inbox" && (
+            {(view === "inbox" || view === "sent") && (
               <button
                 type="button"
                 onClick={() => {
@@ -468,7 +500,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
             <>
               <button
                 type="button"
-                onClick={backToInbox}
+                onClick={backToList}
                 style={{
                   alignSelf: "flex-start",
                   border: "none",
@@ -479,7 +511,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
                   fontSize: "0.9rem",
                 }}
               >
-                ← Back to inbox
+                ← Back to {listView === "sent" ? "sent" : "inbox"}
               </button>
               <div
                 style={{
@@ -489,7 +521,9 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
                 }}
               >
                 <div style={{ marginBottom: "8px", fontWeight: 600, fontSize: "1rem" }}>
-                  From: {selectedMessage.from_user_name || "Unknown user"}
+                  {listView === "sent" ? "To" : "From"}:{" "}
+                  {(listView === "sent" ? selectedMessage.to_user_name : selectedMessage.from_user_name) ||
+                    "Unknown user"}
                 </div>
                 <div style={{ marginBottom: "16px", fontSize: "0.85rem", color: UI.textMuted }}>
                   {formatMessageDate(selectedMessage.created_at)}
@@ -511,18 +545,20 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
               )}
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-                <button
-                  type="button"
-                  onClick={handleReply}
-                  disabled={deleting || !selectedMessage.from_user_id}
-                  style={{
-                    ...actionButtonStyle,
-                    background: MENU.blueActive,
-                    color: MENU.activeText,
-                  }}
-                >
-                  Reply
-                </button>
+                {listView !== "sent" && (
+                  <button
+                    type="button"
+                    onClick={handleReply}
+                    disabled={deleting || !selectedMessage.from_user_id}
+                    style={{
+                      ...actionButtonStyle,
+                      background: MENU.blueActive,
+                      color: MENU.activeText,
+                    }}
+                  >
+                    Reply
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleOk}
@@ -535,7 +571,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
                 >
                   OK
                 </button>
-                {selectedMessage.read_at && (
+                {listView !== "sent" && selectedMessage.read_at && (
                   <button
                     type="button"
                     onClick={handleDelete}
@@ -554,26 +590,61 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
             </>
           )}
 
-          {view === "inbox" && (
+          {(view === "inbox" || view === "sent") && (
             <>
-              <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>Inbox</h3>
+              <div role="tablist" aria-label="Message folders" style={{ display: "flex", gap: "8px" }}>
+                {[
+                  ["inbox", "Inbox"],
+                  ["sent", "Sent"],
+                ].map(([folder, label]) => {
+                  const active = view === folder;
+                  return (
+                    <button
+                      key={folder}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => showList(folder)}
+                      style={{
+                        ...actionButtonStyle,
+                        background: active ? MENU.blueActive : UI.panelBg,
+                        color: active ? MENU.activeText : UI.textPrimary,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
 
-              {loadingInbox && (
+              {view === "inbox" && loadingInbox && (
+                <p style={{ margin: 0, color: UI.textMuted }}>Loading messages…</p>
+              )}
+              {view === "sent" && loadingSent && (
                 <p style={{ margin: 0, color: UI.textMuted }}>Loading messages…</p>
               )}
 
-              {inboxError && !loadingInbox && (
+              {view === "inbox" && inboxError && !loadingInbox && (
                 <p style={{ margin: 0, color: "#cc3333" }}>{inboxError}</p>
               )}
-
-              {!loadingInbox && !inboxError && messages.length === 0 && (
-                <p style={{ margin: 0, color: UI.textMuted }}>No messages yet.</p>
+              {view === "sent" && sentError && !loadingSent && (
+                <p style={{ margin: 0, color: "#cc3333" }}>{sentError}</p>
               )}
 
-              {!loadingInbox && messages.length > 0 && (
+              {view === "inbox" && !loadingInbox && !inboxError && messages.length === 0 && (
+                <p style={{ margin: 0, color: UI.textMuted }}>No messages yet.</p>
+              )}
+              {view === "sent" && !loadingSent && !sentError && sentMessages.length === 0 && (
+                <p style={{ margin: 0, color: UI.textMuted }}>No sent messages yet.</p>
+              )}
+
+              {((view === "inbox" && !loadingInbox && messages.length > 0) ||
+                (view === "sent" && !loadingSent && sentMessages.length > 0)) && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {messages.map((message) => {
-                    const unread = !message.read_at;
+                  {(view === "sent" ? sentMessages : messages).map((message) => {
+                    const unread = view === "inbox" && !message.read_at;
+                    const name =
+                      (view === "sent" ? message.to_user_name : message.from_user_name) || "Unknown user";
                     return (
                       <button
                         key={message.id}
@@ -599,7 +670,7 @@ export default function MessagesModal({ open, onClose, onInboxChange }) {
                           }}
                         >
                           <span style={{ fontWeight: unread ? 700 : 600, color: UI.textPrimary }}>
-                            {message.from_user_name || "Unknown user"}
+                            {view === "sent" ? `To ${name}` : name}
                           </span>
                           <span style={{ fontSize: "0.8rem", color: UI.textMuted, flexShrink: 0 }}>
                             {formatMessageDate(message.created_at)}

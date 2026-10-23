@@ -4784,6 +4784,30 @@ app.get("/api/messages/inbox", async (req, res) => {
   }
 });
 
+app.get("/api/messages/sent", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  const userId = getStaffUserIdFromRequest(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT m.id, m.from_user_id, m.to_user_id, m.body, m.read_at, m.created_at,
+              u.name AS to_user_name
+       FROM user_messages m
+       JOIN users u ON u.id = m.to_user_id
+       WHERE m.from_user_id = $1
+       ORDER BY m.created_at DESC`,
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (e) {
+    console.error("Error fetching sent messages:", e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post("/api/messages", async (req, res) => {
   if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
   const fromUserId = getStaffUserIdFromRequest(req);
