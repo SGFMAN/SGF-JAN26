@@ -124,6 +124,7 @@ function roomKind(room) {
   if (room?.kind === "kitchen") return "kitchen";
   if (room?.kind === "porch") return "porch";
   if (room?.kind === "living") return "living";
+  if (room?.kind === "meals") return "meals";
   return "bedroom";
 }
 
@@ -131,7 +132,7 @@ function roomKind(room) {
 function interiorRooms(rooms) {
   return (rooms || []).filter((r) => {
     const kind = roomKind(r);
-    return kind !== "porch" && kind !== "living" && kind !== "kitchen";
+    return kind !== "porch" && kind !== "living" && kind !== "meals" && kind !== "kitchen";
   });
 }
 
@@ -558,7 +559,7 @@ function addOutlined(parent, geometry, material, lineMat, x, y, z, rotY = 0) {
 // One continuous wall (any length, any axis) with rectangular door openings
 // cut out of it. Built as a single shape, so corners and junctions have no
 // internal seam lines; only the real outer edges are outlined.
-function addWallRun(parent, x0, z0, x1, z1, thickness, openings, fill, lineMat) {
+function addWallRun(parent, x0, z0, x1, z1, thickness, openings, fill, lineMat, extend0 = 0, extend1 = 0) {
   const dx = x1 - x0;
   const dz = z1 - z0;
   const len = Math.hypot(dx, dz);
@@ -567,16 +568,22 @@ function addWallRun(parent, x0, z0, x1, z1, thickness, openings, fill, lineMat) 
   const uz = dz / len;
   const px = -uz;
   const pz = ux;
+  // Pull each end past the vertex so an inside bend (re-entrant corner) is
+  // solid. Convex corners already overlap, so those ends stay put.
+  const cap = Math.max(0, len - 0.05);
+  const e0 = Math.min(Math.max(0, extend0) || 0, cap);
+  const e1 = Math.min(Math.max(0, extend1) || 0, Math.max(0, cap - e0));
+  const total = len + e0 + e1;
   const shape = new THREE.Shape();
   shape.moveTo(0, 0);
-  shape.lineTo(len, 0);
-  shape.lineTo(len, WALL_H);
+  shape.lineTo(total, 0);
+  shape.lineTo(total, WALL_H);
   shape.lineTo(0, WALL_H);
   shape.closePath();
   const holes = [];
   for (const o of openings || []) {
-    const lo = Math.max(0, Math.min(o.lo, o.hi));
-    const hi = Math.min(len, Math.max(o.lo, o.hi));
+    const lo = Math.max(0, Math.min(o.lo, o.hi) + e0);
+    const hi = Math.min(total, Math.max(o.lo, o.hi) + e0);
     if (hi - lo < 0.05) continue;
     const y0 = Number.isFinite(o.y0) ? o.y0 : 0;
     const y1 = Number.isFinite(o.y1) ? o.y1 : PLAN_DOOR_H;
@@ -592,13 +599,17 @@ function addWallRun(parent, x0, z0, x1, z1, thickness, openings, fill, lineMat) 
   }
   const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
   geo.translate(0, 0, -thickness / 2);
-  const mesh = addOutlined(parent, geo, fill, lineMat, x0, 0, z0, Math.atan2(-dz, dx));
+  const sx = x0 - ux * e0;
+  const sz = z0 - uz * e0;
+  const ex = x1 + ux * e1;
+  const ez = z1 + uz * e1;
+  const mesh = addOutlined(parent, geo, fill, lineMat, sx, 0, sz, Math.atan2(-dz, dx));
   if (mesh) {
     mesh.userData.wallSeg = {
-      ax: x0,
-      az: z0,
-      bx: x1,
-      bz: z1,
+      ax: sx,
+      az: sz,
+      bx: ex,
+      bz: ez,
       halfT: thickness / 2,
       y0: 0,
       y1: WALL_H,
@@ -1499,7 +1510,25 @@ function addDoorLeaf(parent, door, cx, cz, mats) {
   return mesh;
 }
 
-function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats, rooms, outer, edgeIndex) {
+// How far to run a wall past this vertex. An inside bend leaves a full-height
+// hole the size of the wall thickness, because each wall stops on the plane
+// through the outside corner. Carry the wall through that square. Outside
+// corners already overlap, so they are left alone.
+function reflexOverlap(prev, vert, next, ccw) {
+  const d1x = vert.x - prev.x;
+  const d1y = vert.y - prev.y;
+  const d2x = next.x - vert.x;
+  const d2y = next.y - vert.y;
+  const l1 = Math.hypot(d1x, d1y);
+  const l2 = Math.hypot(d2x, d2y);
+  if (l1 < 1e-6 || l2 < 1e-6) return 0;
+  const cross = (d1x / l1) * (d2y / l2) - (d1y / l1) * (d2x / l2);
+  const reflex = ccw ? cross < -0.02 : cross > 0.02;
+  if (!reflex) return 0;
+  return Math.min(0.5, WALL_T / Math.max(0.25, Math.abs(cross)));
+}
+
+function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats, rooms, outer, edgeIndex, extend0 = 0, extend1 = 0) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len = Math.hypot(dx, dy);
@@ -1540,7 +1569,9 @@ function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats, rooms, outer, e
     WALL_T,
     [...hits, ...windows],
     mats.wall,
-    mats.softLine
+    mats.softLine,
+    extend0,
+    extend1
   );
   for (const win of windows) addWindowUnit(parent, x0, z0, x1, z1, win, mats);
   const frontDoors = [];
@@ -2454,18 +2485,39 @@ function addHybridFloorRect(parent, rect, alongX, cx, cz, mats) {
 }
 
 function collectInsideRuns(minT, maxT, step, isInside) {
+  const samples = [];
+  for (let t = minT; t <= maxT + 1e-9; t += step) samples.push(t);
+  if (!samples.length || samples[samples.length - 1] < maxT - 1e-6) samples.push(maxT);
+  const inside = samples.map((t) => isInside(t));
+  // Land on the real edge, then tuck 1mm past it so the board meets the wall
+  // face instead of stopping a sample short or running past the corner.
+  const edge = (tIn, tOut) => {
+    let lo = tIn;
+    let hi = tOut;
+    for (let k = 0; k < 16; k += 1) {
+      const m = (lo + hi) / 2;
+      if (isInside(m)) lo = m;
+      else hi = m;
+    }
+    const dir = Math.sign(tOut - tIn) || 1;
+    return lo + dir * 0.001;
+  };
   const runs = [];
   let run = null;
-  for (let t = minT; t <= maxT + 1e-9; t += step) {
-    if (isInside(t)) {
-      if (!run) run = { t0: t, t1: t };
-      else run.t1 = t;
+  for (let i = 0; i < samples.length; i += 1) {
+    if (inside[i]) {
+      if (!run) run = { t0: i === 0 ? samples[0] : edge(samples[i], samples[i - 1]), t1: samples[i] };
+      else run.t1 = samples[i];
     } else if (run) {
+      run.t1 = edge(samples[i - 1], samples[i]);
       runs.push(run);
       run = null;
     }
   }
-  if (run) runs.push(run);
+  if (run) {
+    run.t1 = samples[samples.length - 1];
+    runs.push(run);
+  }
   return runs;
 }
 
@@ -2487,8 +2539,8 @@ function addLivingHybridFloor(parent, inner, rooms, alongX, cx, cz, mats) {
       if (ye - yb < 0.02) continue;
       const runs = collectInsideRuns(b.minX, b.maxX, step, (x) => inLiving({ x, y: yMid }));
       for (const run of runs) {
-        const x = run.t0;
-        const w = run.t1 - run.t0 + step;
+        const x = Math.min(run.t0, run.t1);
+        const w = Math.abs(run.t1 - run.t0);
         if (w < 0.06) continue;
         addHybridPlankStrip(parent, { x, y: yb, w, h: ye - yb }, alongX, i, cx, cz, mats);
       }
@@ -2503,8 +2555,8 @@ function addLivingHybridFloor(parent, inner, rooms, alongX, cx, cz, mats) {
       if (xe - xb < 0.02) continue;
       const runs = collectInsideRuns(b.minY, b.maxY, step, (y) => inLiving({ x: xMid, y }));
       for (const run of runs) {
-        const y = run.t0;
-        const h = run.t1 - run.t0 + step;
+        const y = Math.min(run.t0, run.t1);
+        const h = Math.abs(run.t1 - run.t0);
         if (h < 0.06) continue;
         addHybridPlankStrip(parent, { x: xb, y, w: xe - xb, h }, alongX, i, cx, cz, mats);
       }
@@ -3443,6 +3495,139 @@ function addPantryCabinet(parent, room, cx, cz, mats) {
   );
 }
 
+const MEAL_CHAIR_W = 0.45;
+const MEAL_CHAIR_D = 0.48;
+const MEAL_TYPES_3D = [
+  { id: "r900-2", shape: "rect", w: 0.9, d: 0.9, sides: { n: 1, s: 1, e: 0, w: 0 } },
+  { id: "r900-4", shape: "rect", w: 0.9, d: 0.9, sides: { n: 1, s: 1, e: 1, w: 1 } },
+  { id: "r1800-4", shape: "rect", w: 1.8, d: 0.9, sides: { n: 2, s: 2, e: 0, w: 0 } },
+  { id: "r1800-6", shape: "rect", w: 1.8, d: 0.9, sides: { n: 2, s: 2, e: 1, w: 1 } },
+  { id: "r2400-6", shape: "rect", w: 2.4, d: 0.9, sides: { n: 3, s: 3, e: 0, w: 0 } },
+  { id: "r2400-8", shape: "rect", w: 2.4, d: 0.9, sides: { n: 3, s: 3, e: 1, w: 1 } },
+  { id: "c1000-2", shape: "round", dia: 1, chairs: 2 },
+  { id: "c1000-4", shape: "round", dia: 1, chairs: 4 },
+  { id: "c1500-4", shape: "round", dia: 1.5, chairs: 4 },
+  { id: "c1500-6", shape: "round", dia: 1.5, chairs: 6 },
+];
+
+function mealType3D(room) {
+  return MEAL_TYPES_3D.find((t) => t.id === room?.mealType) || MEAL_TYPES_3D[0];
+}
+
+function mealsLayout3D(room) {
+  const type = mealType3D(room);
+  const rot = roomRotation(room);
+  const uw = rot === 90 || rot === 270 ? room.h : room.w;
+  const uh = rot === 90 || rot === 270 ? room.w : room.h;
+  const tcx = uw / 2;
+  const tcy = uh / 2;
+  const chairs = [];
+  if (type.shape === "round") {
+    const radius = type.dia / 2;
+    for (let i = 0; i < type.chairs; i += 1) {
+      const a = (i / type.chairs) * Math.PI * 2;
+      chairs.push({
+        cx: tcx + Math.sin(a) * radius,
+        cy: tcy - Math.cos(a) * radius,
+        rot: (a * 180) / Math.PI,
+      });
+    }
+  } else {
+    const centers = (span, count) => {
+      const out = [];
+      for (let i = 0; i < count; i += 1) out.push(-span / 2 + ((i + 0.5) * span) / count);
+      return out;
+    };
+    const place = (count, face, cxOf, cyOf) => {
+      const span = face === 0 || face === 180 ? type.w : type.d;
+      for (const along of centers(span, count)) chairs.push({ cx: cxOf(along), cy: cyOf(along), rot: face });
+    };
+    const north = tcy - type.d / 2;
+    const south = tcy + type.d / 2;
+    const west = tcx - type.w / 2;
+    const east = tcx + type.w / 2;
+    if (type.sides.n) place(type.sides.n, 0, (along) => tcx + along, () => north);
+    if (type.sides.s) place(type.sides.s, 180, (along) => tcx + along, () => south);
+    if (type.sides.w) place(type.sides.w, -90, () => west, (along) => tcy + along);
+    if (type.sides.e) place(type.sides.e, 90, () => east, (along) => tcy + along);
+  }
+  const table =
+    type.shape === "round"
+      ? { shape: "round", cx: tcx, cy: tcy, r: type.dia / 2 }
+      : { shape: "rect", x: tcx - type.w / 2, y: tcy - type.d / 2, w: type.w, h: type.d };
+  return { table, chairs };
+}
+
+function addMealChair(parent, x, z, rotDeg, mats) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  group.rotation.y = (-rotDeg * Math.PI) / 180;
+  parent.add(group);
+  addOutlined(group, new THREE.BoxGeometry(MEAL_CHAIR_W, 0.05, MEAL_CHAIR_D), mats.couch, mats.softLine, 0, 0.46, 0);
+  addOutlined(
+    group,
+    new THREE.BoxGeometry(MEAL_CHAIR_W, 0.4, 0.045),
+    mats.couch,
+    mats.softLine,
+    0,
+    0.66,
+    -MEAL_CHAIR_D / 2 + 0.02
+  );
+  for (const [lx, lz] of [
+    [-0.16, -0.14],
+    [0.16, -0.14],
+    [-0.16, 0.12],
+    [0.16, 0.12],
+  ]) {
+    addOutlined(group, new THREE.BoxGeometry(0.04, 0.44, 0.04), mats.timber, mats.timberLine, lx, 0.22, lz);
+  }
+}
+
+function addMealsFurniture(parent, room, cx, cz, mats) {
+  const g = mealsLayout3D(room);
+  const rot = roomRotation(room);
+  if (g.table.shape === "round") {
+    const p = rotatedLocalPoint(room, { x: g.table.cx, y: g.table.cy });
+    const top = new THREE.Mesh(
+      new THREE.CylinderGeometry(g.table.r, g.table.r, 0.04, 40),
+      mats.timber
+    );
+    top.position.set(p.x - cx, 0.74, p.y - cz);
+    parent.add(top);
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.72, 16), mats.timber);
+    pedestal.position.set(p.x - cx, 0.36, p.y - cz);
+    parent.add(pedestal);
+  } else {
+    const rect = rotatedLocalRect(room, g.table);
+    addLooseBox(
+      parent,
+      rect.w,
+      0.04,
+      rect.h,
+      rect.x - cx + rect.w / 2,
+      0.74,
+      rect.y - cz + rect.h / 2,
+      mats.timber,
+      mats.timberLine
+    );
+    const inset = 0.12;
+    const t = g.table;
+    for (const leg of [
+      { x: t.x + inset, y: t.y + inset },
+      { x: t.x + t.w - inset, y: t.y + inset },
+      { x: t.x + inset, y: t.y + t.h - inset },
+      { x: t.x + t.w - inset, y: t.y + t.h - inset },
+    ]) {
+      const p = rotatedLocalPoint(room, leg);
+      addLooseBox(parent, 0.05, 0.72, 0.05, p.x - cx, 0.36, p.y - cz, mats.timber, mats.timberLine);
+    }
+  }
+  for (const chair of g.chairs) {
+    const p = rotatedLocalPoint(room, { x: chair.cx, y: chair.cy });
+    addMealChair(parent, p.x - cx, p.y - cz, chair.rot + rot, mats);
+  }
+}
+
 function buildFurniture(parent, rooms, walls, cx, cz, mats, alongX) {
   const { fill, dark, glass, line, timber, couch } = mats;
   for (const room of rooms || []) {
@@ -3645,6 +3830,8 @@ function buildFurniture(parent, rooms, walls, cx, cz, mats, alongX) {
       }
       for (const back of g.backs) addRoundedWorldRect(parent, back, 0.8, 0.4, 0.05, couch, line, cx, cz);
       for (const arm of g.arms) addRoundedWorldRect(parent, arm, 0.6, 0.3, 0.04, couch, line, cx, cz);
+    } else if (kind === "meals") {
+      addMealsFurniture(parent, room, cx, cz, mats);
     }
   }
 }
@@ -4104,11 +4291,30 @@ export default function QuickConcept3DPreview({
       scene.add(group);
 
       const wallMeshes = [];
+      const outerCcw = ringSignedArea(outer) >= 0;
       for (let i = 0; i < outer.length; i += 1) {
         const a = outer[i];
         const b = outer[(i + 1) % outer.length];
+        const prev = outer[(i - 1 + outer.length) % outer.length];
+        const next = outer[(i + 2) % outer.length];
         const { nx, ny } = inwardNormal(a, b, outer);
-        const meshes = addOuterEdge(group, a, b, planDoors, cx, cz, nx, ny, mats, rooms, outer, i) || [];
+        const meshes =
+          addOuterEdge(
+            group,
+            a,
+            b,
+            planDoors,
+            cx,
+            cz,
+            nx,
+            ny,
+            mats,
+            rooms,
+            outer,
+            i,
+            reflexOverlap(prev, a, b, outerCcw),
+            reflexOverlap(a, b, next, outerCcw)
+          ) || [];
         for (const mesh of meshes) {
           mesh.userData.outward = { x: -nx, z: -ny };
           wallMeshes.push(mesh);

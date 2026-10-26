@@ -650,7 +650,8 @@ function armedBenchWallAt(raw, layout, innerMetres, rooms) {
     return (
       hitRoomHandle(px, raw, hs) ||
       (roomKind(r) === "kitchen" && hitKitchenLayoutHandle(px, raw, hs)) ||
-      hitCouchOptions(r, layout, raw)
+      hitCouchOptions(r, layout, raw) ||
+      hitMealsOptions(r, layout, raw)
     );
   });
   if (onIcon) return null;
@@ -2091,6 +2092,10 @@ function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, walls) {
     drawLivingSetCanvas(ctx, room, layout, bw);
     return;
   }
+  if (kind === "meals") {
+    drawMealsCanvas(ctx, room, layout, bw);
+    return;
+  }
   if (kind === "laundry") {
     drawLaundryCanvas(ctx, room, layout, bw, stroke, innerMetres);
     return;
@@ -2808,7 +2813,7 @@ function drawExportDimensionRuns(ctx, layout, rooms, innerMetres, walls, color) 
   }
 
   for (const r of rooms || []) {
-    if (roomKind(r) === "kitchen" || isLivingSet(r)) continue;
+    if (roomKind(r) === "kitchen" || isPlanOverlay(r)) continue;
     const hSide = nearerHSide(r.y, r.y + r.h, b);
     coords[hSide].push(r.x, r.x + r.w);
     const vSide = nearerVSide(r.x, r.x + r.w, b);
@@ -2856,7 +2861,7 @@ function drawExportDimensionRuns(ctx, layout, rooms, innerMetres, walls, color) 
   const topOverallY = toY(foot.minY) - (showTopInner ? overallOffPx : innerOffPx);
   const leftOverallX = toX(foot.minX) - (showLeftInner ? overallOffPx : innerOffPx);
 
-  const namedRooms = (rooms || []).filter((r) => !isLivingSet(r));
+  const namedRooms = (rooms || []).filter((r) => !isPlanOverlay(r));
   const namer = (side) => dimSpanNamer(side, foot, innerMetres, namedRooms);
 
   if (showTopInner) {
@@ -2988,7 +2993,7 @@ function buildDesignExportCanvas(layout, rooms, options = {}) {
 
   for (const room of rooms || []) {
     const r = roomToPx(room, layout);
-    if (isLivingSet(room) || hasCustomBench(room)) {
+    if (isPlanOverlay(room) || hasCustomBench(room)) {
       drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, exportWalls);
       continue;
     }
@@ -3070,7 +3075,7 @@ function buildDesignExportCanvas(layout, rooms, options = {}) {
 
   ctx.font = '700 12px "Segoe UI", system-ui, sans-serif';
   for (const room of rooms || []) {
-    if (isLivingSet(room)) continue;
+    if (isPlanOverlay(room)) continue;
     const r = roomToPx(room, layout);
     const x = r.x + r.w / 2;
     const y = r.y + r.h / 2;
@@ -5325,6 +5330,7 @@ function roomKind(room) {
   if (room?.kind === "kitchen") return "kitchen";
   if (room?.kind === "porch") return "porch";
   if (room?.kind === "living") return "living";
+  if (room?.kind === "meals") return "meals";
   return "bedroom";
 }
 
@@ -5527,9 +5533,17 @@ function isLivingSet(room) {
   return roomKind(room) === "living";
 }
 
+function isMealsArea(room) {
+  return roomKind(room) === "meals";
+}
+
+function isPlanOverlay(room) {
+  return isLivingSet(room) || isMealsArea(room);
+}
+
 /** Rooms that carve space out of the open living floor (excludes porches and living sets). */
 function walledRooms(rooms) {
-  return (rooms || []).filter((r) => !isPorch(r) && !isLivingSet(r));
+  return (rooms || []).filter((r) => !isPorch(r) && !isPlanOverlay(r));
 }
 
 function isBathLike(room) {
@@ -5636,12 +5650,14 @@ function roomKindLabel(kind) {
   if (kind === "kitchen") return "Kitchen";
   if (kind === "porch") return "Porch";
   if (kind === "living") return "Living Room";
+  if (kind === "meals") return "Meals Area";
   return "Bedroom";
 }
 
 function roomColors(room) {
   const kind = roomKind(room);
   if (kind === "living") return { stroke: ROOM_LIVING, fill: "none" };
+  if (kind === "meals") return { stroke: PLAN_WOOD_EDGE, fill: "none" };
   if (kind === "bathroom") return { stroke: ROOM_PURPLE, fill: BATH_TILE };
   if (kind === "powder" || kind === "laundry" || kind === "laundryRoom") {
     return { stroke: ROOM_PURPLE, fill: HYBRID_PLANKS[1] };
@@ -6663,6 +6679,9 @@ function controlHint(hover) {
   if (type === "robe-resize") return "Resize robe";
   if (type === "room-delete") return "Delete";
   if (type === "couch-options") return "Couch options";
+  if (type === "meals-options") return hover.optionLabel || "Meals area";
+  if (type === "meals-move") return "Drag meals area";
+  if (type === "meals-rotate") return "Rotate meals area";
   if (type === "porch-options") return "Porch steps";
   if (type === "vanity-options") return hover.optionLabel || "Vanity options";
   if (type === "vanity-options-full") return "No room for WM";
@@ -8934,14 +8953,12 @@ function moveBathroomVanity(room, cursorM, grabAlong, innerMetres) {
   const offset = Number.isFinite(grabAlong) ? grabAlong : length / 2;
   const { min, max, butt } = vanityAlongRange(room, roomWallFrame(room, hit.side), length, innerMetres);
   const want = Math.max(min, Math.min(max, hit.t - offset));
-  const next = {
+  return {
     ...room,
     vanitySide: hit.side,
     vanityAlong:
       butt !== null && Math.abs(want - butt) <= VANITY_WM_BUTT_SNAP_M ? butt : snapPlanMm(want),
   };
-  if (!vanityWmSide(next) || !vanityWmConflicts(next, innerMetres)) return next;
-  return placeVanityWm(next, innerMetres, next.vanityAlong) || room;
 }
 
 function moveBathroomToilet(room, cursorM, grabAlong) {
@@ -9297,10 +9314,217 @@ function livingSetGeom(room) {
   };
 }
 
-/** Plan draw order: living sets sit above every room and partition wall. */
+const MEAL_CHAIR_W = 0.45;
+const MEAL_CHAIR_D = 0.48;
+const MEAL_BACK = 0.07;
+const MEAL_CHAIR_FILL = "#f3efe8";
+const MEAL_CHAIR_EDGE = "#6e655c";
+
+const MEAL_TYPES = [
+  { id: "r900-2", label: "900 × 900 table, 2 chairs", shape: "rect", w: 0.9, d: 0.9, sides: { n: 1, s: 1, e: 0, w: 0 } },
+  { id: "r900-4", label: "900 × 900 table, 4 chairs", shape: "rect", w: 0.9, d: 0.9, sides: { n: 1, s: 1, e: 1, w: 1 } },
+  { id: "r1800-4", label: "900 × 1800 table, 4 chairs", shape: "rect", w: 1.8, d: 0.9, sides: { n: 2, s: 2, e: 0, w: 0 } },
+  { id: "r1800-6", label: "900 × 1800 table, 6 chairs", shape: "rect", w: 1.8, d: 0.9, sides: { n: 2, s: 2, e: 1, w: 1 } },
+  { id: "r2400-6", label: "900 × 2400 table, 6 chairs", shape: "rect", w: 2.4, d: 0.9, sides: { n: 3, s: 3, e: 0, w: 0 } },
+  { id: "r2400-8", label: "900 × 2400 table, 8 chairs", shape: "rect", w: 2.4, d: 0.9, sides: { n: 3, s: 3, e: 1, w: 1 } },
+  { id: "c1000-2", label: "Round 1 m table, 2 chairs", shape: "round", dia: 1, chairs: 2 },
+  { id: "c1000-4", label: "Round 1 m table, 4 chairs", shape: "round", dia: 1, chairs: 4 },
+  { id: "c1500-4", label: "Round 1.5 m table, 4 chairs", shape: "round", dia: 1.5, chairs: 4 },
+  { id: "c1500-6", label: "Round 1.5 m table, 6 chairs", shape: "round", dia: 1.5, chairs: 6 },
+];
+
+function mealTypeOf(room) {
+  return MEAL_TYPES.find((t) => t.id === room?.mealType) || MEAL_TYPES[0];
+}
+
+function mealFootprint(type) {
+  const out = MEAL_CHAIR_D / 2;
+  if (type.shape === "round") {
+    const span = type.dia + out * 2;
+    return { w: span, h: span };
+  }
+  const w = type.w + ((type.sides.e || type.sides.w) ? out * 2 : 0);
+  const h = type.d + ((type.sides.n || type.sides.s) ? out * 2 : 0);
+  return { w, h };
+}
+
+function mealSideCenters(span, count) {
+  const centers = [];
+  for (let i = 0; i < count; i += 1) centers.push(-span / 2 + ((i + 0.5) * span) / count);
+  return centers;
+}
+
+/** Table and chairs in unrotated room space. Chairs face +y in their own rotation. */
+function mealsGeom(room) {
+  const type = mealTypeOf(room);
+  const foot = mealFootprint(type);
+  const { w: uw, h: uh } = unrotatedSize(room);
+  const tcx = uw / 2;
+  const tcy = uh / 2;
+  const reach = type.shape === "round" ? type.dia / 2 : 0;
+  const chairs = [];
+  if (type.shape === "round") {
+    const radius = reach;
+    for (let i = 0; i < type.chairs; i += 1) {
+      const a = (i / type.chairs) * Math.PI * 2;
+      chairs.push({
+        cx: tcx + Math.sin(a) * radius,
+        cy: tcy - Math.cos(a) * radius,
+        rot: (a * 180) / Math.PI,
+      });
+    }
+  } else {
+    const place = (count, rot, cxOf, cyOf) => {
+      const span = rot === 0 || rot === 180 ? type.w : type.d;
+      for (const along of mealSideCenters(span, count)) {
+        chairs.push({ cx: cxOf(along), cy: cyOf(along), rot });
+      }
+    };
+    const north = tcy - type.d / 2;
+    const south = tcy + type.d / 2;
+    const west = tcx - type.w / 2;
+    const east = tcx + type.w / 2;
+    if (type.sides.n) place(type.sides.n, 0, (along) => tcx + along, () => north);
+    if (type.sides.s) place(type.sides.s, 180, (along) => tcx + along, () => south);
+    if (type.sides.w) place(type.sides.w, -90, () => west, (along) => tcy + along);
+    if (type.sides.e) place(type.sides.e, 90, () => east, (along) => tcy + along);
+  }
+  const table =
+    type.shape === "round"
+      ? { shape: "round", cx: tcx, cy: tcy, r: type.dia / 2 }
+      : { shape: "rect", x: tcx - type.w / 2, y: tcy - type.d / 2, w: type.w, h: type.d };
+  return { type, foot, table, chairs, options: { x: tcx, y: tcy } };
+}
+
+function cycleMealType(room, innerMetres) {
+  const current = mealTypeOf(room);
+  const i = MEAL_TYPES.findIndex((t) => t.id === current.id);
+  const nextType = MEAL_TYPES[(i + 1) % MEAL_TYPES.length];
+  const foot = mealFootprint(nextType);
+  const rot = roomRotation(room);
+  const w = rot === 90 || rot === 270 ? foot.h : foot.w;
+  const h = rot === 90 || rot === 270 ? foot.w : foot.h;
+  const cx = room.x + room.w / 2;
+  const cy = room.y + room.h / 2;
+  return keepRoomInside(
+    room,
+    { ...room, mealType: nextType.id, x: cx - w / 2, y: cy - h / 2, w, h },
+    innerMetres
+  );
+}
+
+function mealsOptionsHandlePx(room, layout) {
+  const p = mPointToPx(rotatedLocalPoint(room, mealsGeom(room).options), layout);
+  return { cx: p.x, cy: p.y, size: fixtureGrabPx(layout) };
+}
+
+function hitMealsOptions(room, layout, raw) {
+  if (!isMealsArea(room)) return false;
+  const h = mealsOptionsHandlePx(room, layout);
+  return Math.hypot(raw.x - h.cx, raw.y - h.cy) <= h.size / 2 + 3;
+}
+
+function MealsFixtures({ room, layout, showHandles = false }) {
+  const g = mealsGeom(room);
+  const options = mealsOptionsHandlePx(room, layout);
+  const chairW = MEAL_CHAIR_W * layout.scale;
+  const chairD = MEAL_CHAIR_D * layout.scale;
+  const back = MEAL_BACK * layout.scale;
+  const roomRot = roomRotation(room);
+  let table = null;
+  if (g.table.shape === "round") {
+    const c = mPointToPx(rotatedLocalPoint(room, { x: g.table.cx, y: g.table.cy }), layout);
+    table = (
+      <ellipse
+        cx={c.x}
+        cy={c.y}
+        rx={g.table.r * layout.scale}
+        ry={g.table.r * layout.scale}
+        fill={PLAN_WOOD}
+        stroke={PLAN_WOOD_EDGE}
+        strokeWidth="1.2"
+      />
+    );
+  } else {
+    const r = mRectToPx(rotatedLocalRect(room, g.table), layout);
+    table = (
+      <rect x={r.x} y={r.y} width={r.w} height={r.h} fill={PLAN_WOOD} stroke={PLAN_WOOD_EDGE} strokeWidth="1.2" />
+    );
+  }
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {g.chairs.map((chair, i) => {
+        const p = mPointToPx(rotatedLocalPoint(room, { x: chair.cx, y: chair.cy }), layout);
+        return (
+          <g key={`meal-chair-${i}`} transform={`translate(${p.x}, ${p.y}) rotate(${chair.rot + roomRot})`}>
+            <rect
+              x={-chairW / 2}
+              y={-chairD / 2}
+              width={chairW}
+              height={chairD}
+              rx="2"
+              fill={MEAL_CHAIR_FILL}
+              stroke={MEAL_CHAIR_EDGE}
+              strokeWidth="1"
+            />
+            <rect x={-chairW / 2} y={-chairD / 2} width={chairW} height={back} fill={MEAL_CHAIR_EDGE} />
+          </g>
+        );
+      })}
+      {table}
+      {showHandles ? (
+        <OptionsHandle cx={options.cx} cy={options.cy} size={options.size} color={PLAN_WOOD_EDGE} />
+      ) : null}
+    </g>
+  );
+}
+
+function drawMealsCanvas(ctx, room, layout, bw) {
+  const g = mealsGeom(room);
+  const edge = bw ? "#111" : PLAN_WOOD_EDGE;
+  const roomRot = roomRotation(room);
+  ctx.save();
+  ctx.lineWidth = 1.1;
+  for (const chair of g.chairs) {
+    const p = mPointToPx(rotatedLocalPoint(room, { x: chair.cx, y: chair.cy }), layout);
+    const cw = MEAL_CHAIR_W * layout.scale;
+    const cd = MEAL_CHAIR_D * layout.scale;
+    const back = MEAL_BACK * layout.scale;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(((chair.rot + roomRot) * Math.PI) / 180);
+    ctx.fillStyle = bw ? "#ffffff" : MEAL_CHAIR_FILL;
+    ctx.strokeStyle = bw ? "#111" : MEAL_CHAIR_EDGE;
+    ctx.beginPath();
+    ctx.rect(-cw / 2, -cd / 2, cw, cd);
+    if (!bw) ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = bw ? "#111" : MEAL_CHAIR_EDGE;
+    ctx.fillRect(-cw / 2, -cd / 2, cw, back);
+    ctx.restore();
+  }
+  ctx.fillStyle = bw ? "#ffffff" : PLAN_WOOD;
+  ctx.strokeStyle = edge;
+  if (g.table.shape === "round") {
+    const c = mPointToPx(rotatedLocalPoint(room, { x: g.table.cx, y: g.table.cy }), layout);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, g.table.r * layout.scale, 0, Math.PI * 2);
+    if (!bw) ctx.fill();
+    ctx.stroke();
+  } else {
+    const r = mRectToPx(rotatedLocalRect(room, g.table), layout);
+    ctx.beginPath();
+    ctx.rect(r.x, r.y, r.w, r.h);
+    if (!bw) ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Plan draw order: living sets and meals areas sit above every room and partition wall. */
 function roomsStackOrder(rooms) {
   const list = rooms || [];
-  return [...list.filter((r) => !isLivingSet(r)), ...list.filter(isLivingSet)];
+  return [...list.filter((r) => !isPlanOverlay(r)), ...list.filter(isPlanOverlay)];
 }
 
 function couchOptionsHandlePx(room, layout) {
@@ -9393,6 +9617,11 @@ function drawLivingSetCanvas(ctx, room, layout, bw) {
 }
 
 function roomMinSize(room) {
+  if (isMealsArea(room)) {
+    const foot = mealFootprint(mealTypeOf(room));
+    const sideways = roomRotation(room) === 90 || roomRotation(room) === 270;
+    return sideways ? { minW: foot.h, minH: foot.w } : { minW: foot.w, minH: foot.h };
+  }
   if (isLivingSet(room)) {
     const type = livingCouchType(room);
     const along = Math.max(couchWidthM(type), TV_UNIT_W_M);
@@ -12127,7 +12356,7 @@ function DoorSwingMarks({ door, layout, color, showGrab = false }) {
 
 /** Room edge under the cursor that may be dragged to resize (fixed-size sides excluded). */
 function roomResizeEdgeHit(room, verts, raw) {
-  if (hasCustomBench(room)) return null;
+  if (hasCustomBench(room) || isMealsArea(room)) return null;
   const edge = hitTestEdge(verts, raw, true);
   if (edge && isLaundry(room) && !laundrySideResizable(room, roomSideFromEdge(edge.index))) return null;
   return edge;
@@ -12949,7 +13178,8 @@ function DesignModal({
     const active = edit && hover?.id === room.id;
     const colors = roomColors(room);
     const kind = roomKind(room);
-    const hideExtent = kind === "kitchen" || kind === "porch" || (viewMode && kind === "living");
+    const hideExtent =
+      kind === "kitchen" || kind === "porch" || kind === "meals" || (viewMode && kind === "living");
     return (
       <g key={room.id}>
         <rect
@@ -12957,7 +13187,7 @@ function DesignModal({
           y={r.y}
           width={r.w}
           height={r.h}
-          fill={kind === "living" || kind === "porch" || hasCustomBench(room) ? "none" : roomFloorFill(kind, "qc-floor", colors)}
+          fill={kind === "living" || kind === "meals" || kind === "porch" || hasCustomBench(room) ? "none" : roomFloorFill(kind, "qc-floor", colors)}
           stroke={hideExtent ? "none" : active || kind === "living" ? colors.stroke : "#c4b8a8"}
           strokeWidth={active ? PLAN_LINE_ACTIVE : PLAN_LINE}
         />
@@ -12983,12 +13213,14 @@ function DesignModal({
           <LaundryRoomFixtures room={room} layout={layout} innerMetres={innerMetres} showHandles={edit} />
         ) : kind === "living" ? (
           <LivingSetFixtures room={room} layout={layout} showHandles={edit} />
+        ) : kind === "meals" ? (
+          <MealsFixtures room={room} layout={layout} showHandles={edit} />
         ) : kind === "porch" ? (
           <PorchDecking room={room} layout={layout} metres={layout.metres} showHandles={edit} />
         ) : (
           <BedroomFixtures room={room} layout={layout} innerMetres={innerMetres} showHandles={edit} />
         )}
-        {kind === "living" ? renderRoomHandles(room) : null}
+        {kind === "living" || kind === "meals" ? renderRoomHandles(room) : null}
       </g>
     );
   };
@@ -13085,6 +13317,8 @@ function DesignModal({
             ...room,
             ...defaultLaundryLayout(room.w, room.h),
           };
+        } else if (kind === "meals") {
+          room = { ...room, mealType: MEAL_TYPES[0].id };
         }
       }
       onRoomsChange((prev) => prev.concat(snapRoomToGrid(room)));
@@ -13124,26 +13358,17 @@ function DesignModal({
     addRoom("living", LIVING_SET_ALONG_M, LIVING_SET_ACROSS_M);
   }, [addRoom]);
 
+  const addMealsArea = useCallback(() => {
+    const foot = mealFootprint(MEAL_TYPES[0]);
+    addRoom("meals", foot.w, foot.h);
+  }, [addRoom]);
+
   const updateRoom = useCallback(
     (id, unsnapped) => {
       const next = snapRoomToGrid(unsnapped);
-      onRoomsChange((prev) =>
-        prev.map((r) => {
-          if (r.id !== id) return r;
-          if (
-            !isBathLike(next) ||
-            !vanityWmSide(next) ||
-            !vanityWmConflicts(next, innerMetres) ||
-            vanityWmConflicts(r, innerMetres)
-          ) {
-            return next;
-          }
-          const resized = next.x !== r.x || next.y !== r.y || next.w !== r.w || next.h !== r.h;
-          return (resized && placeVanityWm(next, innerMetres)) || r;
-        })
-      );
+      onRoomsChange((prev) => prev.map((r) => (r.id === id ? next : r)));
     },
-    [innerMetres, onRoomsChange]
+    [onRoomsChange]
   );
 
   const onStagePointerDown = useCallback(
@@ -13251,6 +13476,23 @@ function DesignModal({
           e.preventDefault();
           updateRoom(room.id, cycleCouchType(room, innerMetres));
           setHover(hintAt({ id: room.id, kind: "rotate", type: "couch-options" }, raw));
+          return;
+        }
+        if (hitMealsOptions(room, layout, raw)) {
+          e.preventDefault();
+          const nextRoom = cycleMealType(room, innerMetres);
+          updateRoom(room.id, nextRoom);
+          setHover(
+            hintAt(
+              {
+                id: room.id,
+                kind: "rotate",
+                type: "meals-options",
+                optionLabel: mealTypeOf(nextRoom).label,
+              },
+              raw
+            )
+          );
           return;
         }
         if (roomKind(room) === "kitchen" && hitKitchenLayoutHandle(r, raw, hs)) {
@@ -13705,7 +13947,16 @@ function DesignModal({
             ? keepPorchOutside(current, next, layout.metres, { slide: true })
             : keepRoomInside(drag.start, next, innerMetres)
         );
-        setHover(hintAt({ id: drag.id, kind: "move", type: porch ? "porch-move" : "room-move" }, raw));
+        setHover(
+          hintAt(
+            {
+              id: drag.id,
+              kind: "move",
+              type: porch ? "porch-move" : isMealsArea(drag.start) ? "meals-move" : "room-move",
+            },
+            raw
+          )
+        );
         return;
       }
       if (drag?.mode === "edge") {
@@ -13961,6 +14212,15 @@ function DesignModal({
           nextHover = { id: room.id, kind: "rotate", type: "couch-options" };
           break;
         }
+        if (hitMealsOptions(room, layout, raw)) {
+          nextHover = {
+            id: room.id,
+            kind: "rotate",
+            type: "meals-options",
+            optionLabel: mealTypeOf(room).label,
+          };
+          break;
+        }
         if (roomKind(room) === "kitchen" && hitKitchenLayoutHandle(r, raw, hs)) {
           nextHover = { id: room.id, kind: "rotate", type: "kitchen-layout" };
           break;
@@ -13982,7 +14242,11 @@ function DesignModal({
           }
         }
         if (handle === "rotate") {
-          nextHover = { id: room.id, kind: "rotate", type: "room-rotate" };
+          nextHover = {
+            id: room.id,
+            kind: "rotate",
+            type: isMealsArea(room) ? "meals-rotate" : "room-rotate",
+          };
           break;
         }
         if (roomKind(room) === "kitchen") {
@@ -14038,7 +14302,7 @@ function DesignModal({
           nextHover = {
             id: room.id,
             kind: "move",
-            type: isPorch(room) ? "porch-move" : "room-move",
+            type: isPorch(room) ? "porch-move" : isMealsArea(room) ? "meals-move" : "room-move",
           };
           break;
         }
@@ -14391,6 +14655,18 @@ function DesignModal({
             </button>
             <button
               type="button"
+              onClick={addMealsArea}
+              disabled={!layout}
+              style={{
+                ...toolbarButtonStyle(Boolean(layout)),
+                width: "100%",
+                minWidth: 0,
+              }}
+            >
+              Add Meals Area
+            </button>
+            <button
+              type="button"
               onClick={() => setClearOpen(true)}
               disabled={!layout || rooms.length === 0}
               style={{
@@ -14528,7 +14804,7 @@ function DesignModal({
                       strokeLinecap="round"
                     />
                   ) : null}
-                  {rooms.filter((room) => !isLivingSet(room)).map(renderPlanRoom)}
+                  {rooms.filter((room) => !isPlanOverlay(room)).map(renderPlanRoom)}
                   {partitionWallsPx.map((s, i) => (
                     <line
                       key={`iw-${i}`}
@@ -14559,8 +14835,8 @@ function DesignModal({
                     if (!door?.sliding) return null;
                     return <PlanSlidingDoor key={`slide-${room.id}`} door={door} layout={layout} />;
                   })}
-                  {rooms.filter((room) => !isLivingSet(room)).map(renderRoomHandles)}
-                  {rooms.filter(isLivingSet).map(renderPlanRoom)}
+                  {rooms.filter((room) => !isPlanOverlay(room)).map(renderRoomHandles)}
+                  {rooms.filter(isPlanOverlay).map(renderPlanRoom)}
                   {benchPreview && !viewMode ? <BenchDrawPreview preview={benchPreview} layout={layout} /> : null}
                   {walkMarkersRef.current && layout ? (
                     <WalkPathOverlay layout={layout} markers={walkMarkersRef.current} />
@@ -14668,7 +14944,7 @@ function DesignModal({
                   ))
                 )}
                 {rooms.map((room) => {
-                  if (isLivingSet(room)) return null;
+                  if (isPlanOverlay(room)) return null;
                   const host = isPorch(room) ? porchHostRect(room, layout.metres) : room;
                   const r = roomToPx(host, layout);
                   return (
@@ -15144,7 +15420,7 @@ export default function QuickConcept() {
       : null;
   const mapRoomPolys = mapFrame
     ? designRooms
-        .filter((room) => !isLivingSet(room))
+        .filter((room) => !isPlanOverlay(room))
         .map((room) => ({
           room,
           pts: roomToMapPixels(room, mapFrame),
