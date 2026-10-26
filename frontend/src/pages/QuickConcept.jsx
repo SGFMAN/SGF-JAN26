@@ -2137,12 +2137,14 @@ function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, walls) {
       ctx.fillStyle = bw ? "transparent" : "rgba(120, 168, 186, 0.88)";
       ctx.strokeStyle = stroke || "#5d7e8c";
       ctx.lineWidth = 1.4;
-      for (const piece of showerScreenPieces(shower, showerScreenSpan(room, shower, walls))) {
-        const glass = glassPanelPx(piece.rect, piece.side, layout);
-        ctx.beginPath();
-        ctx.rect(glass.x, glass.y, Math.max(1, glass.w), Math.max(1, glass.h));
-        if (!bw) ctx.fill();
-        ctx.stroke();
+      for (const span of showerScreens(room, shower, walls)) {
+        for (const piece of showerScreenPieces(shower, span)) {
+          const glass = glassPanelPx(piece.rect, piece.side, layout);
+          ctx.beginPath();
+          ctx.rect(glass.x, glass.y, Math.max(1, glass.w), Math.max(1, glass.h));
+          if (!bw) ctx.fill();
+          ctx.stroke();
+        }
       }
       const headR = Math.max(3.5, 0.07 * layout.scale);
       ctx.beginPath();
@@ -2168,8 +2170,8 @@ function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, walls) {
       }
       ctx.stroke();
     }
-    const t = tank ? mRectToPx(tank, layout) : null;
-    const b = bowl ? mRectToPx(bowl, layout) : null;
+    const t = !toiletGeom?.hidden && tank ? mRectToPx(tank, layout) : null;
+    const b = !toiletGeom?.hidden && bowl ? mRectToPx(bowl, layout) : null;
     const clearPx = toiletGeom?.clear ? mRectToPx(toiletGeom.clear, layout) : null;
     if (clearPx) {
       ctx.save();
@@ -6674,6 +6676,7 @@ function controlHint(hover) {
   if (type === "shower-rotate") return "Rotate shower";
   if (type === "shower-edit") return "Edit shower screen";
   if (type === "toilet") return "Drag toilet";
+  if (type === "toilet-options") return hover.optionLabel || "Toilet options";
   if (type === "vanity") return "Drag vanity";
   if (type === "laundry-bench") return "Drag bench";
   if (type === "laundry-wm") return "Drag washing machine";
@@ -7193,6 +7196,33 @@ function showerScreenSpan(room, rect, walls) {
   return { ...defaultShowerScreen(rect, showerRotOf(room), walls), peri };
 }
 
+function showerScreenCountOf(room) {
+  return Number(room?.showerScreenCount) === 2 ? 2 : 1;
+}
+
+function secondShowerScreenSpan(room, rect, walls) {
+  const P = showerPerimeterLength(rect);
+  const peri = { p: P };
+  const fromRaw = Number(room?.showerScreen2From);
+  const lenRaw = Number(room?.showerScreen2Len);
+  if (P > 0 && Number.isFinite(fromRaw) && Number.isFinite(lenRaw) && lenRaw > 0) {
+    return {
+      from: ((fromRaw % P) + P) % P,
+      len: Math.min(P, Math.max(SCREEN_MIN_M, lenRaw)),
+      peri,
+    };
+  }
+  const first = showerScreenSpan(room, rect, walls);
+  const from = ((first.from + first.len) % P + P) % P;
+  return { from, len: Math.min(P, first.len), peri };
+}
+
+function showerScreens(room, rect, walls) {
+  const screens = [showerScreenSpan(room, rect, walls)];
+  if (showerScreenCountOf(room) === 2) screens.push(secondShowerScreenSpan(room, rect, walls));
+  return screens;
+}
+
 function showerScreenPieces(rect, span) {
   const pieces = [];
   if (!rect || !span || !(span.len > 0) || !(span.peri?.p > 0)) return pieces;
@@ -7259,17 +7289,26 @@ function closestPerimeterUnwrap(dist, previous, perimeter) {
 
 /** Keep a custom screen on the same edges of the base when the shower turns 90° clockwise. */
 function rotateShowerScreenFields(room, oldCross) {
-  const from = Number(room?.showerScreenFrom);
-  const len = Number(room?.showerScreenLen);
-  if (!Number.isFinite(from) || !Number.isFinite(len) || !(len > 0)) return {};
   const { shower } = bathroomFixtures(room);
   if (!shower) return {};
   const P = showerPerimeterLength(shower);
   if (!(P > 0)) return {};
-  return {
-    showerScreenFrom: (((from + oldCross) % P) + P) % P,
-    showerScreenLen: Math.min(P, len),
+  const out = {};
+  const turn = (from, len) => {
+    if (!Number.isFinite(from) || !Number.isFinite(len) || !(len > 0)) return null;
+    return { from: (((from + oldCross) % P) + P) % P, len: Math.min(P, len) };
   };
+  const first = turn(Number(room?.showerScreenFrom), Number(room?.showerScreenLen));
+  if (first) {
+    out.showerScreenFrom = first.from;
+    out.showerScreenLen = first.len;
+  }
+  const second = turn(Number(room?.showerScreen2From), Number(room?.showerScreen2Len));
+  if (second) {
+    out.showerScreen2From = second.from;
+    out.showerScreen2Len = second.len;
+  }
+  return out;
 }
 
 function glassPanelPx(glass, side, layout) {
@@ -8242,8 +8281,25 @@ function wallBoxRect(origin, along, inward, t0, t1, d0, d1) {
   };
 }
 
-function toiletAlongRange(wallLen, tankAlong) {
-  const extra = Math.max(0, (TOILET_CLEAR_ALONG_M - tankAlong) / 2);
+function toiletStyleOf(room) {
+  return room?.toiletStyle === "plain" || room?.toiletStyle === "none" ? room.toiletStyle : "clear";
+}
+
+function toiletOptionLabel(room) {
+  const style = toiletStyleOf(room);
+  if (style === "plain") return "Standard toilet, no clear space";
+  if (style === "none") return "No toilet";
+  return "Standard toilet, 900 x 1200 clear";
+}
+
+function cycleToiletStyle(room) {
+  const order = ["clear", "plain", "none"];
+  const next = order[(order.indexOf(toiletStyleOf(room)) + 1) % order.length];
+  return { ...room, toiletStyle: next };
+}
+
+function toiletAlongRange(wallLen, tankAlong, style = "clear") {
+  const extra = style === "clear" ? Math.max(0, (TOILET_CLEAR_ALONG_M - tankAlong) / 2) : 0;
   const minAlong = extra;
   const maxAlong = Math.max(minAlong, wallLen - tankAlong - extra);
   return { minAlong, maxAlong };
@@ -8274,7 +8330,8 @@ function bathroomToilet(room) {
   const tankDepth = Math.min(TOILET_TANK_DEPTH_M, Math.max(0.1, roomDepth * 0.35));
   const bowlWidth = Math.min(TOILET_BOWL_WIDTH_M, tankAlong);
   const bowlLength = Math.min(TOILET_BOWL_LENGTH_M, Math.max(0.25, roomDepth - tankDepth - 0.05));
-  const { minAlong, maxAlong } = toiletAlongRange(frame.wallLen, tankAlong);
+  const style = toiletStyleOf(room);
+  const { minAlong, maxAlong } = toiletAlongRange(frame.wallLen, tankAlong, style);
   const storedAlong = Number(room?.toiletAlong);
   const alongM = Number.isFinite(storedAlong)
     ? Math.max(minAlong, Math.min(maxAlong, storedAlong))
@@ -8297,18 +8354,23 @@ function bathroomToilet(room) {
   );
   const clearAlong = TOILET_CLEAR_ALONG_M;
   const clearDepth = Math.min(TOILET_CLEAR_DEPTH_M, Math.max(0, roomDepth - bowlFront));
-  const clear = wallBoxRect(
-    origin,
-    along,
-    inward,
-    mid - clearAlong / 2,
-    mid + clearAlong / 2,
-    bowlFront,
-    bowlFront + clearDepth
-  );
+  const clear =
+    style === "clear"
+      ? wallBoxRect(
+          origin,
+          along,
+          inward,
+          mid - clearAlong / 2,
+          mid + clearAlong / 2,
+          bowlFront,
+          bowlFront + clearDepth
+        )
+      : null;
   const rect = unionRect(tank, bowl);
   return {
     toiletSide,
+    style,
+    hidden: style === "none",
     along,
     inward,
     alongM,
@@ -8531,9 +8593,10 @@ function vanityWmConflicts(room, innerMetres) {
   ) {
     return true;
   }
-  const { shower, toilet, clear, tank, bowl } = bathroomFixtures(room);
+  const { shower, toilet, clear, tank, bowl, toiletGeom } = bathroomFixtures(room);
   const door = doorSwingBox(roomDoorSwing(room, innerMetres));
-  return [shower, toilet, clear, tank, bowl, door].some((r) => rectsOverlapM(zone, r));
+  const toiletBlocks = toiletGeom?.hidden ? [] : [toilet, clear, tank, bowl];
+  return [shower, ...toiletBlocks, door].some((r) => rectsOverlapM(zone, r));
 }
 
 /** Nearest vanity position on its current wall where the washing machine space fits, or null. */
@@ -8558,6 +8621,21 @@ function placeVanityWm(room, innerMetres, preferAlong = null) {
     if (!vanityWmConflicts(next, innerMetres)) return next;
   }
   return null;
+}
+
+/** Settings icon sits just in front of the pan, clear of the move handle. */
+function toiletOptionsHandlePx(geom, layout) {
+  if (!geom?.rect || !geom.inward) return null;
+  const size = fixtureGrabPx(layout);
+  const cx = geom.rect.x + geom.rect.w / 2;
+  const cy = geom.rect.y + geom.rect.h / 2;
+  const front =
+    Math.abs(geom.inward.x) >= Math.abs(geom.inward.y)
+      ? { x: cx + Math.sign(geom.inward.x || 1) * (geom.rect.w / 2), y: cy }
+      : { x: cx, y: cy + Math.sign(geom.inward.y || 1) * (geom.rect.h / 2) };
+  const p = mPointToPx(front, layout);
+  const off = size / 2 + 4;
+  return { cx: p.x + geom.inward.x * off, cy: p.y + geom.inward.y * off, size };
 }
 
 /** Options icon sits just in front of the vanity, centred on it. */
@@ -8586,6 +8664,13 @@ function hitBathroomFixtureHandle(room, layout, raw, innerMetres) {
   if (doorOptions) return doorOptions;
   const flip = hitDoorFlipHandle(door, layout, raw);
   if (flip) return flip;
+  const toiletOptions = toiletOptionsHandlePx(toiletGeom, layout);
+  if (
+    toiletOptions &&
+    Math.hypot(raw.x - toiletOptions.cx, raw.y - toiletOptions.cy) <= toiletOptions.size / 2 + 3
+  ) {
+    return { type: "toilet-options", kind: "rotate", optionLabel: toiletOptionLabel(room) };
+  }
   const options = vanityOptionsHandlePx(vanity, layout);
   if (options && Math.hypot(raw.x - options.cx, raw.y - options.cy) <= options.size / 2 + 3) {
     return { type: "vanity-options", kind: "rotate", optionLabel: vanityOptionLabel(room) };
@@ -8863,7 +8948,7 @@ function moveBathroomToilet(room, cursorM, grabAlong) {
   const hit = nearestRoomSide(room, cursorM);
   if (!hit) return room;
   const tankAlong = Math.min(TOILET_TANK_ALONG_M, Math.max(0.2, hit.wallLen - 0.05));
-  const { minAlong, maxAlong } = toiletAlongRange(hit.wallLen, tankAlong);
+  const { minAlong, maxAlong } = toiletAlongRange(hit.wallLen, tankAlong, toiletStyleOf(room));
   const offset = Number.isFinite(grabAlong) ? grabAlong : tankAlong / 2;
   return {
     ...room,
@@ -11017,7 +11102,9 @@ function BathroomTileFloor({ room, layout }) {
 function ShowerHeadAndGlass({ shower, room, layout, walls }) {
   const rot = showerRotOf(room);
   const parts = showerPlanParts(shower, rot, walls);
-  const pieces = showerScreenPieces(shower, showerScreenSpan(room, shower, walls));
+  const pieces = showerScreens(room, shower, walls).flatMap((span, screen) =>
+    showerScreenPieces(shower, span).map((piece) => ({ ...piece, screen }))
+  );
   const head = mPointToPx(parts.head, layout);
   const headR = Math.max(3.5, 0.07 * layout.scale);
   const spray = Math.max(6, 0.12 * layout.scale);
@@ -11037,7 +11124,7 @@ function ShowerHeadAndGlass({ shower, room, layout, walls }) {
         const glass = glassPanelPx(piece.rect, piece.side, layout);
         return (
           <rect
-            key={`glass-${i}`}
+            key={`glass-${piece.screen}-${i}`}
             x={glass.x}
             y={glass.y}
             width={Math.max(1, glass.w)}
@@ -11089,6 +11176,8 @@ function BathroomFixtures({ room, layout, innerMetres, walls, showHandles = fals
   const showerRotate = shower ? fixtureRotateHandlePx(shower, layout) : null;
   const showerEdit = shower ? showerEditHandlePx(shower, layout) : null;
   const toiletGrab = toilet ? mPointToPx(rectCenter(toilet), layout) : null;
+  const toiletOptions = showHandles ? toiletOptionsHandlePx(toiletGeom, layout) : null;
+  const toiletHidden = Boolean(toiletGeom?.hidden);
   const hs = fixtureGrabPx(layout);
   const drainR = s ? Math.max(2, Math.min(s.w, s.h) * 0.07) : 0;
   const waste = s ? { x: s.x + s.w / 2, y: s.y + s.h / 2 } : null;
@@ -11209,24 +11298,46 @@ function BathroomFixtures({ room, layout, innerMetres, walls, showHandles = fals
           strokeLinecap="round"
         />
       ) : null}
-      {t && b ? (
-        <>
-          <path
-            d={roundedFrontPathD(b, bowlFront)}
-            fill={PLAN_CERAMIC}
-            stroke={PLAN_CERAMIC_EDGE}
-            strokeWidth="1.2"
-          />
-          <rect
-            x={t.x}
-            y={t.y}
-            width={t.w}
-            height={t.h}
-            fill={PLAN_CERAMIC}
-            stroke={PLAN_CERAMIC_EDGE}
-            strokeWidth="1.2"
-          />
-        </>
+      {t && b && !(toiletHidden && !showHandles) ? (
+        toiletHidden ? (
+          <>
+            <path
+              d={roundedFrontPathD(b, bowlFront)}
+              fill="none"
+              stroke={PLAN_CERAMIC_EDGE}
+              strokeWidth="1.2"
+              strokeDasharray="5 4"
+            />
+            <rect
+              x={t.x}
+              y={t.y}
+              width={t.w}
+              height={t.h}
+              fill="none"
+              stroke={PLAN_CERAMIC_EDGE}
+              strokeWidth="1.2"
+              strokeDasharray="5 4"
+            />
+          </>
+        ) : (
+          <>
+            <path
+              d={roundedFrontPathD(b, bowlFront)}
+              fill={PLAN_CERAMIC}
+              stroke={PLAN_CERAMIC_EDGE}
+              strokeWidth="1.2"
+            />
+            <rect
+              x={t.x}
+              y={t.y}
+              width={t.w}
+              height={t.h}
+              fill={PLAN_CERAMIC}
+              stroke={PLAN_CERAMIC_EDGE}
+              strokeWidth="1.2"
+            />
+          </>
+        )
       ) : null}
       {door?.sliding ? null : (
         <PlanDoorSwing
@@ -11259,6 +11370,14 @@ function BathroomFixtures({ room, layout, innerMetres, walls, showHandles = fals
           ) : null}
           {toiletGrab ? (
             <GrabSquare cx={toiletGrab.x} cy={toiletGrab.y} size={hs} color={PLAN_CERAMIC_EDGE} />
+          ) : null}
+          {toiletOptions ? (
+            <OptionsHandle
+              cx={toiletOptions.cx}
+              cy={toiletOptions.cy}
+              size={toiletOptions.size}
+              color={PLAN_CERAMIC_EDGE}
+            />
           ) : null}
           <GrabSquare cx={vanityGrab?.x} cy={vanityGrab?.y} size={hs} color={vanityColor} />
           {vanityOptions ? (
@@ -12165,14 +12284,15 @@ function ShowerScreenModal({ room, walls, onChange, onClose }) {
       const cursor = pxToMetres({ x: e.clientX - box.left, y: e.clientY - box.top }, layout);
       const dist = nearestShowerPerimeter(base, cursor);
       let unwrapped = snapMetresToStep(closestPerimeterUnwrap(dist, drag.last, drag.P), SCREEN_SNAP_M);
+      const prefix = drag.screen === 1 ? "showerScreen2" : "showerScreen";
       if (drag.which === "end") {
         let end = Math.max(drag.from + SCREEN_MIN_M, Math.min(drag.from + drag.P, unwrapped));
         if (drag.from + drag.P - end <= 0.03) end = drag.from + drag.P;
         drag.last = end;
         onChangeRef.current({
           ...roomRef.current,
-          showerScreenFrom: drag.from,
-          showerScreenLen: end - drag.from,
+          [`${prefix}From`]: drag.from,
+          [`${prefix}Len`]: end - drag.from,
         });
       } else {
         let start = Math.max(drag.end - drag.P, Math.min(drag.end - SCREEN_MIN_M, unwrapped));
@@ -12181,8 +12301,8 @@ function ShowerScreenModal({ room, walls, onChange, onClose }) {
         const from = ((start % drag.P) + drag.P) % drag.P;
         onChangeRef.current({
           ...roomRef.current,
-          showerScreenFrom: from,
-          showerScreenLen: drag.end - start,
+          [`${prefix}From`]: from,
+          [`${prefix}Len`]: drag.end - start,
         });
       }
     };
@@ -12213,22 +12333,22 @@ function ShowerScreenModal({ room, walls, onChange, onClose }) {
     originY: pad - shower.y * scale,
   };
   layoutRef.current = layout;
-  const span = showerScreenSpan(room, shower, walls);
+  const screens = showerScreens(room, shower, walls);
+  const twoScreens = showerScreenCountOf(room) === 2;
   const base = mRectToPx(shower, layout);
-  const ends = {
-    start: perimeterSample(shower, span.from),
-    end: perimeterSample(shower, span.from + Math.min(span.len, span.peri.p)),
-  };
-  const full = span.len >= span.peri.p - 0.001;
   const waste = { x: base.x + base.w / 2, y: base.y + base.h / 2 };
   const drainR = Math.max(4, Math.min(base.w, base.h) * 0.07);
 
-  const beginDrag = (which, e) => {
+  const beginDrag = (which, screen, e) => {
     e.preventDefault();
     e.stopPropagation();
-    const current = showerScreenSpan(roomRef.current, showerRef.current, walls);
+    const current =
+      screen === 1
+        ? secondShowerScreenSpan(roomRef.current, showerRef.current, walls)
+        : showerScreenSpan(roomRef.current, showerRef.current, walls);
     dragRef.current = {
       which,
+      screen,
       from: current.from,
       end: current.from + current.len,
       last: which === "start" ? current.from : current.from + current.len,
@@ -12236,7 +12356,29 @@ function ShowerScreenModal({ room, walls, onChange, onClose }) {
     };
   };
 
-  const handleAt = (sample, extend, nudgePx) => {
+  const chooseScreenCount = (count) => {
+    const currentRoom = roomRef.current;
+    const baseRect = showerRef.current;
+    if (!baseRect) return;
+    if (count === 1) {
+      onChangeRef.current({ ...currentRoom, showerScreenCount: 1 });
+      return;
+    }
+    const first = showerScreenSpan(currentRoom, baseRect, walls);
+    const second = secondShowerScreenSpan(currentRoom, baseRect, walls);
+    const next = { ...currentRoom, showerScreenCount: 2 };
+    if (!Number.isFinite(Number(currentRoom?.showerScreenFrom)) || !(Number(currentRoom?.showerScreenLen) > 0)) {
+      next.showerScreenFrom = first.from;
+      next.showerScreenLen = first.len;
+    }
+    if (!Number.isFinite(Number(currentRoom?.showerScreen2From)) || !(Number(currentRoom?.showerScreen2Len) > 0)) {
+      next.showerScreen2From = second.from;
+      next.showerScreen2Len = second.len;
+    }
+    onChangeRef.current(next);
+  };
+
+  const handleAt = (sample, extend, nudgePx, outwardPx) => {
     if (!sample) return null;
     const inward = { x: -sample.outward.x, y: -sample.outward.y };
     const p = mPointToPx(
@@ -12247,28 +12389,40 @@ function ShowerScreenModal({ room, walls, onChange, onClose }) {
       layout
     );
     return {
-      x: p.x + extend.x * nudgePx,
-      y: p.y + extend.y * nudgePx,
+      x: p.x + extend.x * nudgePx + sample.outward.x * outwardPx,
+      y: p.y + extend.y * nudgePx + sample.outward.y * outwardPx,
       angle: (Math.atan2(extend.y, extend.x) * 180) / Math.PI,
     };
   };
-  const startExtend = ends.start ? { x: -ends.start.tangent.x, y: -ends.start.tangent.y } : { x: -1, y: 0 };
-  const endExtend = ends.end ? ends.end.tangent : { x: 1, y: 0 };
-  const nudge = full ? 26 : 0;
-  const startHandle = handleAt(ends.start, startExtend, 18 + nudge);
-  const endHandle = handleAt(ends.end, endExtend, 18 + nudge);
-
-  const arrow = (which, handle) => {
+  const arrow = (which, screen, handle, color) => {
     if (!handle) return null;
     return (
       <g
-        key={which}
+        key={`${screen}-${which}`}
         transform={`translate(${handle.x}, ${handle.y}) rotate(${handle.angle})`}
         style={{ cursor: "grab" }}
-        onPointerDown={(e) => beginDrag(which, e)}
+        onPointerDown={(e) => beginDrag(which, screen, e)}
       >
-        <circle r="18" fill="#ffffff" stroke="#5d7e8c" strokeWidth="2" />
-        <polygon points="11,0 -5,-8 -5,8" fill="#5d7e8c" />
+        <circle r="18" fill="#ffffff" stroke={color} strokeWidth="2" />
+        <polygon points="11,0 -5,-8 -5,8" fill={color} />
+      </g>
+    );
+  };
+  const screenArrows = (screenSpan, screen, color, outwardPx) => {
+    const screenEnds = {
+      start: perimeterSample(shower, screenSpan.from),
+      end: perimeterSample(shower, screenSpan.from + Math.min(screenSpan.len, screenSpan.peri.p)),
+    };
+    const screenFull = screenSpan.len >= screenSpan.peri.p - 0.001;
+    const screenNudge = screenFull ? 26 : 0;
+    const startExtend = screenEnds.start
+      ? { x: -screenEnds.start.tangent.x, y: -screenEnds.start.tangent.y }
+      : { x: -1, y: 0 };
+    const endExtend = screenEnds.end ? screenEnds.end.tangent : { x: 1, y: 0 };
+    return (
+      <g key={`arrows-${screen}`}>
+        {arrow("start", screen, handleAt(screenEnds.start, startExtend, 18 + screenNudge, outwardPx), color)}
+        {arrow("end", screen, handleAt(screenEnds.end, endExtend, 18 + screenNudge, outwardPx), color)}
       </g>
     );
   };
@@ -12315,8 +12469,41 @@ function ShowerScreenModal({ room, walls, onChange, onClose }) {
             Done
           </button>
         </div>
+        <div style={{ display: "flex", width: "100%", gap: 8, marginTop: 12 }} role="radiogroup" aria-label="Number of screens">
+          {[
+            [1, "Single screen"],
+            [2, "Two screens"],
+          ].map(([count, label]) => {
+            const selected = (count === 2) === twoScreens;
+            return (
+              <button
+                key={label}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => chooseScreenCount(count)}
+                style={{
+                  flex: 1,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: selected ? "2px solid #5d7e8c" : "1px solid #ccc",
+                  background: selected ? "#e7f2f6" : "#fff",
+                  color: MONUMENT,
+                  fontWeight: selected ? 700 : 500,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: "0.92rem",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
         <p style={{ margin: "8px 0 10px", width: "100%", fontSize: "0.92rem", color: "#555", lineHeight: 1.35 }}>
-          Drag either arrow. The screen follows the base around the corners, and can go all the way around.
+          {twoScreens
+            ? "Each screen has its own pair of arrows. Drag either end. The screens can overlap."
+            : "Drag either arrow. The screen follows the base around the corners, and can go all the way around."}
         </p>
         <svg
           ref={svgRef}
@@ -12354,8 +12541,8 @@ function ShowerScreenModal({ room, walls, onChange, onClose }) {
           <circle cx={waste.x} cy={waste.y} r={drainR} fill="none" stroke={PLAN_CERAMIC_EDGE} strokeWidth="1.6" />
           <circle cx={waste.x} cy={waste.y} r={Math.max(1.5, drainR * 0.35)} fill={PLAN_CERAMIC_EDGE} />
           <ShowerHeadAndGlass shower={shower} room={room} layout={layout} walls={walls} />
-          {arrow("start", startHandle)}
-          {arrow("end", endHandle)}
+          {screenArrows(screens[0], 0, "#5d7e8c", 0)}
+          {twoScreens && screens[1] ? screenArrows(screens[1], 1, "#b86a2d", 28) : null}
         </svg>
       </div>
     </div>
@@ -13167,6 +13354,23 @@ function DesignModal({
               e.preventDefault();
               updateRoom(room.id, rotateShower90(room));
               setHover(hintAt({ id: room.id, kind: "rotate", type: "shower-rotate" }, raw));
+              return;
+            }
+            if (fixture.type === "toilet-options") {
+              e.preventDefault();
+              const nextRoom = cycleToiletStyle(room);
+              updateRoom(room.id, nextRoom);
+              setHover(
+                hintAt(
+                  {
+                    id: room.id,
+                    kind: "rotate",
+                    type: "toilet-options",
+                    optionLabel: toiletOptionLabel(nextRoom),
+                  },
+                  raw
+                )
+              );
               return;
             }
             if (fixture.type === "vanity-options") {

@@ -2044,38 +2044,54 @@ function addShowerTiles(parent, side, shower, t0, t1, cx, cz, mats) {
   }
 }
 
-function addShowerGlass(parent, side, shower, t0, t1, cx, cz, mats) {
+function showerWallSpans(shower, room, side, walls) {
+  const horizontal = side === "top" || side === "bottom";
+  const a0 = horizontal ? shower.x : shower.y;
+  const a1 = horizontal ? shower.x + shower.w : shower.y + shower.h;
+  const gap =
+    side === "left"
+      ? shower.x - room.x
+      : side === "right"
+        ? room.x + room.w - (shower.x + shower.w)
+        : side === "top"
+          ? shower.y - room.y
+          : room.y + room.h - (shower.y + shower.h);
+  if (gap <= 0.12) return [[a0, a1]];
+  return showerSideAgainstInternal(shower, side, walls);
+}
+
+function addShowerGlass(parent, side, shower, t0, t1, cx, cz, mats, againstWall) {
   const len = t1 - t0;
   if (len < 0.04) return;
-  const gt = 0.01;
-  const inset = 0.012;
+  const gt = 0.005;
+  const inset = againstWall ? 0.022 : 0.001;
+  const mid = (t0 + t1) / 2;
+  let w;
+  let d;
+  let x;
+  let z;
   if (side === "left" || side === "right") {
-    const x = side === "left" ? shower.x + inset : shower.x + shower.w - inset - gt;
-    addThinBox(
-      parent,
-      gt,
-      SHOWER_GLASS_H,
-      len,
-      x + gt / 2 - cx,
-      SHOWER_GLASS_H / 2,
-      (t0 + t1) / 2 - cz,
-      mats.glass,
-      mats.softLine
-    );
+    const x0 = side === "left" ? shower.x + inset : shower.x + shower.w - inset - gt;
+    w = gt;
+    d = len;
+    x = x0 + gt / 2 - cx;
+    z = mid - cz;
   } else {
-    const y = side === "top" ? shower.y + inset : shower.y + shower.h - inset - gt;
-    addThinBox(
-      parent,
-      len,
-      SHOWER_GLASS_H,
-      gt,
-      (t0 + t1) / 2 - cx,
-      SHOWER_GLASS_H / 2,
-      y + gt / 2 - cz,
-      mats.glass,
-      mats.softLine
-    );
+    const y0 = side === "top" ? shower.y + inset : shower.y + shower.h - inset - gt;
+    w = len;
+    d = gt;
+    x = mid - cx;
+    z = y0 + gt / 2 - cz;
   }
+  addOutlined(
+    parent,
+    new THREE.BoxGeometry(w, SHOWER_GLASS_H, d),
+    mats.glass,
+    mats.softLine,
+    x,
+    SHOWER_GLASS_H / 2,
+    z
+  );
 }
 
 function showerGlassChoice(shower, walls) {
@@ -2203,16 +2219,7 @@ function addShowerRail(parent, shower, cx, cz, mats) {
   group.add(elbow);
 }
 
-function showerHeadSide(shower) {
-  if (shower.rot === 0) return "left";
-  if (shower.rot === 2) return "right";
-  if (shower.rot === 1) return "top";
-  return "bottom";
-}
-
-function showerScreenRuns(shower, room) {
-  const fromRaw = Number(room?.showerScreenFrom);
-  const lenRaw = Number(room?.showerScreenLen);
+function showerScreenRunsFrom(shower, fromRaw, lenRaw) {
   const P = 2 * (shower.w + shower.h);
   if (!Number.isFinite(fromRaw) || !Number.isFinite(lenRaw) || !(lenRaw > 0) || !(P > 0)) return null;
   const len = Math.min(P, Math.max(0.15, lenRaw));
@@ -2261,26 +2268,41 @@ function showerScreenRuns(shower, room) {
   return runs;
 }
 
+function showerScreenRuns(shower, room) {
+  if (Number(room?.showerScreenCount) === 2) {
+    const runs = [
+      ...(showerScreenRunsFrom(shower, Number(room?.showerScreenFrom), Number(room?.showerScreenLen)) || []),
+      ...(showerScreenRunsFrom(shower, Number(room?.showerScreen2From), Number(room?.showerScreen2Len)) || []),
+    ];
+    return runs.length ? runs : null;
+  }
+  return showerScreenRunsFrom(shower, Number(room?.showerScreenFrom), Number(room?.showerScreenLen));
+}
+
 function addBathroomShower(parent, room, walls, cx, cz, mats) {
   const shower = showerRect3D(room);
   if (!(shower.w > 0.3) || !(shower.h > 0.3)) return;
   const panels = showerScreenRuns(shower, room) || [showerGlassChoice(shower, walls)];
+  const tiled = new Set();
+  for (const side of ["top", "bottom", "left", "right"]) {
+    const spans = showerWallSpans(shower, room, side, walls);
+    if (spans.length) tiled.add(side);
+    for (const [t0, t1] of spans) addShowerTiles(parent, side, shower, t0, t1, cx, cz, mats);
+  }
   for (const panel of panels) {
-    addShowerGlass(parent, panel.side, shower, panel.t0, panel.t1, cx, cz, mats);
+    addShowerGlass(
+      parent,
+      panel.side,
+      shower,
+      panel.t0,
+      panel.t1,
+      cx,
+      cz,
+      mats,
+      tiled.has(panel.side)
+    );
   }
   addShowerRail(parent, shower, cx, cz, mats);
-  const headSide = showerHeadSide(shower);
-  const headSpan =
-    headSide === "left" || headSide === "right"
-      ? [shower.y, shower.y + shower.h]
-      : [shower.x, shower.x + shower.w];
-  addShowerTiles(parent, headSide, shower, headSpan[0], headSpan[1], cx, cz, mats);
-  for (const side of ["top", "bottom", "left", "right"]) {
-    if (side === headSide) continue;
-    for (const [t0, t1] of showerSideAgainstInternal(shower, side, walls)) {
-      addShowerTiles(parent, side, shower, t0, t1, cx, cz, mats);
-    }
-  }
 }
 
 function addBathroomFloor(parent, room, cx, cz, mats) {
@@ -2916,8 +2938,12 @@ function addBathroomVanity(parent, room, cx, cz, mats) {
   );
 }
 
-function toiletAlongRange(wallLen, tankAlong) {
-  const extra = Math.max(0, (TOILET_CLEAR_ALONG_M - tankAlong) / 2);
+function toiletStyleOf(room) {
+  return room?.toiletStyle === "plain" || room?.toiletStyle === "none" ? room.toiletStyle : "clear";
+}
+
+function toiletAlongRange(wallLen, tankAlong, style = "clear") {
+  const extra = style === "clear" ? Math.max(0, (TOILET_CLEAR_ALONG_M - tankAlong) / 2) : 0;
   const minAlong = extra;
   const maxAlong = Math.max(minAlong, wallLen - tankAlong - extra);
   return { minAlong, maxAlong };
@@ -2937,6 +2963,7 @@ function defaultToiletPlacement(room) {
 function bathroomToilet3D(room) {
   const kind = roomKind(room);
   if (kind !== "bathroom" && kind !== "powder") return null;
+  if (toiletStyleOf(room) === "none") return null;
   const def = defaultToiletPlacement(room);
   const stored = room?.toiletSide;
   const toiletSide =
@@ -2949,7 +2976,7 @@ function bathroomToilet3D(room) {
   const tankDepth = Math.min(TOILET_TANK_DEPTH_M, Math.max(0.1, roomDepth * 0.35));
   const bowlWidth = Math.min(TOILET_BOWL_WIDTH_M, tankAlong);
   const bowlLength = Math.min(TOILET_BOWL_LENGTH_M, Math.max(0.25, roomDepth - tankDepth - 0.05));
-  const { minAlong, maxAlong } = toiletAlongRange(frame.wallLen, tankAlong);
+  const { minAlong, maxAlong } = toiletAlongRange(frame.wallLen, tankAlong, toiletStyleOf(room));
   const storedAlong = Number(room?.toiletAlong);
   const alongM = Number.isFinite(storedAlong)
     ? Math.max(minAlong, Math.min(maxAlong, storedAlong))
@@ -3821,10 +3848,12 @@ function makeMats() {
     side: THREE.DoubleSide,
   });
   ghost.userData.shared = true;
-  const glass = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+  const glass = new THREE.MeshPhongMaterial({
+    color: 0xb7d4df,
     transparent: true,
-    opacity: 0.12,
+    opacity: 0.42,
+    shininess: 90,
+    specular: 0xffffff,
     depthWrite: false,
     side: THREE.DoubleSide,
   });

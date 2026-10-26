@@ -1686,7 +1686,7 @@ export default function StreamSettings() {
                                     <div style={DRAWINGS_UPLOAD_CONSTRUCTION_GROUP}>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          [CONSTRUCTION PHASE] - 1
+                                          [READY TO BUILD / CONSTRUCTION] - 1
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}
@@ -1705,7 +1705,7 @@ export default function StreamSettings() {
                                       </div>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          [CONSTRUCTION PHASE] - 2
+                                          [READY TO BUILD / CONSTRUCTION] - 2
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}
@@ -1724,7 +1724,7 @@ export default function StreamSettings() {
                                       </div>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          [CONSTRUCTION PHASE] - 3
+                                          [READY TO BUILD / CONSTRUCTION] - 3
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}
@@ -1743,7 +1743,7 @@ export default function StreamSettings() {
                                       </div>
                                       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                         <span style={{ fontSize: "0.78rem", fontWeight: 600, color: `${MONUMENT}b3` }}>
-                                          [CONSTRUCTION PHASE] - 4
+                                          [READY TO BUILD / CONSTRUCTION] - 4
                                         </span>
                                         <DrawingNotifySmtpSelect
                                           smtpOptions={smtpSlotEmails}

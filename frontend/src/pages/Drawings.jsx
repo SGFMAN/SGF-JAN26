@@ -28,6 +28,7 @@ import {
   isDesignPhaseStatus,
   isPermitPhaseStatus,
   isPreEngagementPhaseStatus,
+  isReadyToBuildStatus,
 } from "../utils/projectStatus";
 
 function statusAfterWorkingDrawingsApproval(currentStatus) {
@@ -2974,11 +2975,11 @@ export default function Drawings({
         const statusForHint = projectForEmailRouting.status;
         const toHint = isPermitPhaseStatus(statusForHint)
           ? "[PERMIT PHASE]"
-          : isConstructionPhaseStatus(statusForHint)
-            ? "[CONSTRUCTION PHASE]"
+          : isConstructionPhaseStatus(statusForHint) || isReadyToBuildStatus(statusForHint)
+            ? "[READY TO BUILD / CONSTRUCTION]"
             : isDesignPhaseStatus(statusForHint)
               ? "[DESIGN PHASE]"
-              : "the matching status group (Design / Permit / Construction Phase)";
+              : "the matching status group (Design / Permit / Ready to Build / Construction)";
         alert(
           `No recipient addresses in General → Drawings → Drawings Upload — ${toHint}. Configure Settings → Email Settings → General → Drawings → Drawings Upload (VIC/QLD column for this project's state).`
         );

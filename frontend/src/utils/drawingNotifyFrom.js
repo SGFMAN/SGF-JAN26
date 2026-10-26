@@ -16,6 +16,7 @@ import {
   isConstructionPhaseStatus,
   isDesignPhaseStatus,
   isPermitPhaseStatus,
+  isReadyToBuildStatus,
 } from "./projectStatus";
 import { mergeUniqueEmails, resolveStreamSettingsKey } from "./streamDrawingsSettings";
 
@@ -163,7 +164,7 @@ export function resolveDesignToSalespersonFrom(settings, project, _templateFrom)
  * Choice is by project status + state only (upload kind ignored):
  * - Design Phase → all filled [DESIGN PHASE] slots
  * - Permit Phase → all filled [PERMIT PHASE] slots
- * - Construction Phase → all filled [CONSTRUCTION PHASE] slots
+ * - Ready to Build and Construction Phase → all filled [READY TO BUILD / CONSTRUCTION] slots
  *
  * Empty dropdowns are skipped. No cross-group or other fallbacks.
  */
@@ -184,7 +185,7 @@ export function resolveDesignToSalespersonToEmails(settings, project, _templateT
       parseSettingsToEmailList(branch.toCrmEmail2)
     );
   }
-  if (isConstructionPhaseStatus(status)) {
+  if (isConstructionPhaseStatus(status) || isReadyToBuildStatus(status)) {
     return mergeUniqueEmails(
       parseSettingsToEmailList(branch.toConstructionEmail),
       parseSettingsToEmailList(branch.toConstructionEmail2),
