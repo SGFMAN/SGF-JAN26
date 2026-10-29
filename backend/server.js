@@ -1623,6 +1623,9 @@ function mapStreamRow(row) {
 async function ensureSchema() {
   if (!pool) return;
   await ensureAppMeta(pool);
+  // Always add this column even when schema_version is current, so project
+  // GETs do not fail with "column project_folder_path does not exist".
+  await addMissingColumns(pool, "projects", ["project_folder_path"]);
   if (await isSchemaUpToDate(pool)) {
     console.log(`Schema ${SCHEMA_VERSION} already applied — skipping migrations`);
     return;

@@ -4,7 +4,7 @@
  */
 
 /** Bump when ensureSchema() gains new migrations so they run once on deploy. */
-const SCHEMA_VERSION = "2026-06-10-v1";
+const SCHEMA_VERSION = "2026-10-29-v1";
 
 const PLANNING_JF_SCRUB_KEY = "planning_jf_scrub_v1";
 
@@ -53,7 +53,7 @@ async function addMissingColumns(pool, tableName, columnNames, colType = "TEXT")
   const existing = await getExistingColumns(pool, tableName);
   for (const col of columnNames) {
     if (existing.has(col)) continue;
-    await pool.query(`ALTER TABLE ${tableName} ADD COLUMN ${col} ${colType}`);
+    await pool.query(`ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS ${col} ${colType}`);
     existing.add(col);
     console.log(`Added column ${tableName}.${col}`);
   }

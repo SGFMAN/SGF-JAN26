@@ -1,10 +1,10 @@
 import { findSalespersonUserInList } from "./streamNewProjectEmail";
 import { isExcludedFromProjectLists } from "./projectStatus";
 
-const ILLEGAL_SALE_NAME = "simon marchese";
+const ILLEGAL_SALE_NAMES = new Set(["simon marchese", "doug bray"]);
 
 export function isIllegalSaleName(name) {
-  return String(name || "").trim().toLowerCase() === ILLEGAL_SALE_NAME;
+  return ILLEGAL_SALE_NAMES.has(String(name || "").trim().toLowerCase());
 }
 
 export function isSalesTeamUser(user) {
