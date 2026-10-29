@@ -125,7 +125,7 @@ function CumulativeRatesLineChart({
   includeVic = true,
   includeQld = true,
   includeGreen = true,
-  chartTitle = "Cumulative jobs (VIC + QLD + Green streams)",
+  chartTitle = "Cumulative jobs (VIC + QLD + Investment Partners)",
   previousYearMonthlyData,
   showLastYearRates = false,
 }) {
@@ -437,7 +437,7 @@ function MonthlyCompareLineChart({
     },
     showGreen && {
       key: "green",
-      label: "STREAM",
+      label: "IP",
       color: GREEN_COLORS.darker,
       getCount: (m) => m?.greenStreamSalesCount || 0,
       getValue: (m) => m?.greenStreamTotalValue || 0,
@@ -596,7 +596,7 @@ export default function SalesAnalytics() {
     const parts = [
       ratesIncludeVic && "VIC",
       ratesIncludeQld && "QLD",
-      ratesIncludeGreen && "Green streams",
+      ratesIncludeGreen && "Investment Partners",
     ].filter(Boolean);
     if (parts.length === 0) return "Cumulative jobs (no region selected)";
     return `Cumulative jobs (${parts.join(" + ")})`;
@@ -743,7 +743,7 @@ export default function SalesAnalytics() {
         color: QLD_COLORS.darker,
       },
       {
-        name: "Green Streams",
+        name: "Investment Partners",
         value: green,
         percentage: total > 0 ? (green / total) * 100 : 0,
         color: GREEN_COLORS.darker,
@@ -1057,7 +1057,7 @@ export default function SalesAnalytics() {
                 minWidth: "44px",
               }}
             >
-              {selectedView === "line" ? "STREAM" : "GREEN"}
+              IP
             </button>
               </>
             )}
@@ -1322,7 +1322,7 @@ export default function SalesAnalytics() {
                             percentage: prevTotal > 0 ? (previousYearPieData.qld / prevTotal) * 100 : 0,
                           },
                           {
-                            name: "Green Streams",
+                            name: "Investment Partners",
                             value: previousYearPieData.green,
                             percentage: prevTotal > 0 ? (previousYearPieData.green / prevTotal) * 100 : 0,
                           },
@@ -1443,7 +1443,7 @@ export default function SalesAnalytics() {
                         minWidth: "44px",
                       }}
                     >
-                      GREEN
+                      IP
                     </button>
                     <button
                       type="button"
@@ -1523,7 +1523,7 @@ export default function SalesAnalytics() {
                       {[
                         { key: "vic", label: "VIC", accent: VIC_COLORS.darker },
                         { key: "qld", label: "QLD", accent: QLD_COLORS.darker },
-                        { key: "greenStreams", label: "Green", accent: GREEN_COLORS.darker },
+                        { key: "greenStreams", label: "IP", accent: GREEN_COLORS.darker },
                       ].map(({ key, label, accent }) => (
                         <label
                           key={key}
@@ -1675,7 +1675,7 @@ export default function SalesAnalytics() {
                             count: month.greenStreamSalesCount,
                             value: month.greenStreamTotalValue,
                             bg: GREEN_COLORS.darker,
-                            title: `Green streams: ${month.greenStreamSalesCount} - ${formatCurrency(month.greenStreamTotalValue)}`,
+                            title: `Investment Partners: ${month.greenStreamSalesCount} - ${formatCurrency(month.greenStreamTotalValue)}`,
                           });
                         }
                         if (showBarQld && qldBarHeight > 0) {
@@ -1740,7 +1740,7 @@ export default function SalesAnalytics() {
                             h: tgtGreenH,
                             dash: dashGreen,
                             labelValue: monthlySalesTargets.greenStreams,
-                            title: `Target Green Streams: ${monthlySalesTargets.greenStreams}/mo`,
+                            title: `Target Investment Partners: ${monthlySalesTargets.greenStreams}/mo`,
                           });
                         }
                         if (showBarQld) {
@@ -1805,8 +1805,8 @@ export default function SalesAnalytics() {
                               labelValue: adjIntG,
                               title:
                                 adjIntG > maxJobsRounded
-                                  ? `Adjusted Green Streams: ${adjIntG}/mo (outline height capped at ${maxJobsRounded}; annual ${yearlyG}, YTD ${ytdGreen}; ${paceTailG})${paceNote}`
-                                  : `Adjusted Green Streams: ${adjIntG}/mo (annual ${yearlyG}, YTD ${ytdGreen}; ${paceTailG})${paceNote}`,
+                                  ? `Adjusted Investment Partners: ${adjIntG}/mo (outline height capped at ${maxJobsRounded}; annual ${yearlyG}, YTD ${ytdGreen}; ${paceTailG})${paceNote}`
+                                  : `Adjusted Investment Partners: ${adjIntG}/mo (annual ${yearlyG}, YTD ${ytdGreen}; ${paceTailG})${paceNote}`,
                             });
                           }
                         }

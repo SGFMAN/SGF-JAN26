@@ -220,7 +220,7 @@ export default function SalesTotalsDashboard({
               lineHeight: "1.2",
             }}
           >
-            GREEN STREAMS
+            INVESTMENT PARTNERS
           </div>
           <div style={{ flex: 1, marginBottom: "12px" }}>
             <div

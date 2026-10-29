@@ -56,7 +56,7 @@ const HOTLIST_PROJECT_STREAM_OPTIONS_FALLBACK = projectStreamOptions(FALLBACK_ST
 const HOTLIST_SECTION_HEADING = {
   vic: { label: "SGF - VIC", group: "vic" },
   qld: { label: "SGF - QLD", group: "qld" },
-  green: { label: "Green Streams", group: "green" },
+  green: { label: "Investment Partners", group: "green" },
 };
 
 function normalizeHotlistProjectStream(s) {
