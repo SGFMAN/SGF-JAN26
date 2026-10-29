@@ -13,7 +13,6 @@ import {
 import {
   computeSalesPersonFigures,
   filterSalesTeamUsers,
-  isIllegalSaleName,
 } from "../utils/salesPersonFiguresCompute";
 
 import { UI, MENU } from "../utils/uiThemeTokens.js";
@@ -34,20 +33,10 @@ export default function SalesPersonFigures() {
   const [yearView, setYearView] = useState(SALES_YEAR_VIEW.CALENDAR);
   const [savingProjectId, setSavingProjectId] = useState(null);
   const [assignError, setAssignError] = useState(null);
-  const [illegalSaleOpen, setIllegalSaleOpen] = useState(false);
 
   useEffect(() => {
     void loadData();
   }, []);
-
-  useEffect(() => {
-    if (!illegalSaleOpen) return;
-    function handleKeyDown(event) {
-      if (event.key === "Escape") setIllegalSaleOpen(false);
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [illegalSaleOpen]);
 
   async function loadData() {
     try {
@@ -161,7 +150,6 @@ export default function SalesPersonFigures() {
   async function handleAssignSalesperson(projectId, salespersonName) {
     const name = String(salespersonName || "").trim();
     if (!name) return;
-    if (isIllegalSaleName(name)) setIllegalSaleOpen(true);
     await saveSalesperson(projectId, name);
   }
 
@@ -544,117 +532,6 @@ export default function SalesPersonFigures() {
           )}
         </div>
       </div>
-
-      {illegalSaleOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="illegal-sale-title"
-          onClick={() => setIllegalSaleOpen(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 2000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "16px",
-            background:
-              "repeating-linear-gradient(45deg, rgba(180,0,0,0.88) 0 18px, rgba(40,0,0,0.92) 18px 36px)",
-            animation: "sgfIllegalSaleFlash 0.35s steps(2, end) infinite",
-          }}
-        >
-          <style>
-            {`
-              @keyframes sgfIllegalSaleFlash {
-                0%, 49% { filter: brightness(1); }
-                50%, 100% { filter: brightness(1.45); }
-              }
-              @keyframes sgfIllegalSaleShake {
-                0%, 100% { transform: translateX(0) rotate(-1deg); }
-                25% { transform: translateX(-8px) rotate(1deg); }
-                75% { transform: translateX(8px) rotate(-1.5deg); }
-              }
-              @keyframes sgfIllegalSaleTextPulse {
-                0%, 100% { opacity: 1; transform: scale(1); }
-                50% { opacity: 0.72; transform: scale(1.06); }
-              }
-            `}
-          </style>
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "min(560px, 96%)",
-              background: "#8b0000",
-              color: "#fff",
-              border: "8px solid #ffeb3b",
-              boxShadow: "0 0 0 6px #c62828, 0 18px 50px rgba(0,0,0,0.55)",
-              borderRadius: "6px",
-              padding: "28px 24px 22px",
-              textAlign: "center",
-              animation: "sgfIllegalSaleShake 0.22s linear infinite",
-              boxSizing: "border-box",
-            }}
-          >
-            <div
-              style={{
-                fontSize: "0.95rem",
-                fontWeight: 800,
-                letterSpacing: "0.28em",
-                color: "#ffeb3b",
-                marginBottom: "10px",
-              }}
-            >
-              ⚠ WARNING ⚠ WARNING ⚠ WARNING ⚠
-            </div>
-            <h2
-              id="illegal-sale-title"
-              style={{
-                margin: "0 0 10px 0",
-                fontSize: "2.4rem",
-                fontWeight: 900,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-                color: "#fff",
-                textShadow: "0 0 18px #ffeb3b, 2px 2px 0 #000",
-                animation: "sgfIllegalSaleTextPulse 0.45s ease-in-out infinite",
-              }}
-            >
-              Illegal Sale
-            </h2>
-            <p
-              style={{
-                margin: "0 0 22px 0",
-                fontSize: "1.7rem",
-                fontWeight: 800,
-                color: "#ffeb3b",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Don&apos;t Count
-            </p>
-            <button
-              type="button"
-              onClick={() => setIllegalSaleOpen(false)}
-              style={{
-                padding: "10px 22px",
-                borderRadius: "8px",
-                border: "3px solid #ffeb3b",
-                background: "#111",
-                color: "#ffeb3b",
-                fontSize: "1rem",
-                fontWeight: 800,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-              }}
-            >
-              Pick someone else
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
