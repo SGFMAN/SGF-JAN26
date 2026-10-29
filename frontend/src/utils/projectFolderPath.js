@@ -29,8 +29,15 @@ export function folderYearFromProjectYear(y) {
  * Absolute job folder path (same layout as new-project folder step), using the project's
  * stored year so it matches folders already on disk.
  */
+/** Saved admin override. Empty when the folder should be built from the address. */
+export function storedProjectFolderOverride(project) {
+  return String(project?.project_folder_path || "").trim().replace(/[\\/]+$/, "");
+}
+
 export async function computeProjectFolderPathFromRecord(project) {
   if (!project) return "";
+  const stored = storedProjectFolderOverride(project);
+  if (stored) return stored;
   try {
     const settingsResponse = await fetch(`${API_URL}/api/settings`);
     if (!settingsResponse.ok) return "";

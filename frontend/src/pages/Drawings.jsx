@@ -55,7 +55,7 @@ import {
   parseEmailTemplateToAddressList,
   resolveRegionalSalespersonName,
 } from "../utils/drawingNotifyFrom";
-import { buildJobFolderNameSegment, folderYearFromProjectYear } from "../utils/projectFolderPath";
+import { buildJobFolderNameSegment, folderYearFromProjectYear, storedProjectFolderOverride } from "../utils/projectFolderPath";
 import { emailLinkBaseForApiBody } from "../utils/emailLinkBaseForApi";
 import { convertEmailBodyNewlinesToBr } from "../utils/emailBodyNewlines";
 import {
@@ -3415,10 +3415,13 @@ export default function Drawings({
 
       const projectYear = folderYearFromProjectYear(project.year);
       
-      // Construct the file path: root_directory\year\state\suburb - street\1. DRAFTING\DESIGN NOTES\filename
+      // Construct the file path: <job folder>\1. DRAFTING\DESIGN NOTES\filename
       const fileName = file.name;
+      const storedFolder = storedProjectFolderOverride(project);
       const projectFolderName = buildJobFolderNameSegment(project.suburb, project.street);
-      const filePath = `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\1. DRAFTING\\DESIGN NOTES\\${fileName}`;
+      const filePath = storedFolder
+        ? `${storedFolder}\\1. DRAFTING\\DESIGN NOTES\\${fileName}`
+        : `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\1. DRAFTING\\DESIGN NOTES\\${fileName}`;
 
       // Get current drawings history
       let drawingsHistory = [];

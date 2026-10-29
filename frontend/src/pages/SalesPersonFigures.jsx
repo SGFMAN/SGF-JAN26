@@ -13,6 +13,7 @@ import {
 import {
   computeSalesPersonFigures,
   filterSalesTeamUsers,
+  isIllegalSaleName,
 } from "../utils/salesPersonFiguresCompute";
 
 import { UI, MENU } from "../utils/uiThemeTokens.js";
@@ -31,10 +32,22 @@ export default function SalesPersonFigures() {
   const [error, setError] = useState(null);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear().toString());
   const [yearView, setYearView] = useState(SALES_YEAR_VIEW.CALENDAR);
+  const [savingProjectId, setSavingProjectId] = useState(null);
+  const [assignError, setAssignError] = useState(null);
+  const [illegalSaleOpen, setIllegalSaleOpen] = useState(false);
 
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    if (!illegalSaleOpen) return;
+    function handleKeyDown(event) {
+      if (event.key === "Escape") setIllegalSaleOpen(false);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [illegalSaleOpen]);
 
   async function loadData() {
     try {
@@ -106,6 +119,52 @@ export default function SalesPersonFigures() {
   const yearViewToggleLabel =
     yearView === SALES_YEAR_VIEW.CALENDAR ? "Calendar Year" : "Financial Year";
 
+  const salespersonOptions = useMemo(
+    () =>
+      [...salesTeamUsers].sort((a, b) =>
+        String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" })
+      ),
+    [salesTeamUsers]
+  );
+
+  async function saveSalesperson(projectId, salespersonName) {
+    const previousSalesperson =
+      projects.find((project) => project.id === projectId)?.salesperson ?? null;
+    setSavingProjectId(projectId);
+    setAssignError(null);
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === projectId ? { ...project, salesperson: salespersonName } : project
+      )
+    );
+    try {
+      const response = await fetch(`${API_URL}/api/projects/${projectId}`, {
+        method: "PUT",
+        body: JSON.stringify({ salesperson: salespersonName }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        throw new Error(errorText || "Failed to save salesperson");
+      }
+    } catch (err) {
+      setProjects((current) =>
+        current.map((project) =>
+          project.id === projectId ? { ...project, salesperson: previousSalesperson } : project
+        )
+      );
+      setAssignError(err.message || "Could not save salesperson");
+    } finally {
+      setSavingProjectId(null);
+    }
+  }
+
+  async function handleAssignSalesperson(projectId, salespersonName) {
+    const name = String(salespersonName || "").trim();
+    if (!name) return;
+    if (isIllegalSaleName(name)) setIllegalSaleOpen(true);
+    await saveSalesperson(projectId, name);
+  }
+
   return (
     <div
       className="page-container"
@@ -113,16 +172,19 @@ export default function SalesPersonFigures() {
         position: "fixed",
         inset: 0,
         background: LIGHT_MONUMENT,
-        minHeight: "100vh",
+        height: "100vh",
         width: "100vw",
-        overflowY: "auto",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       <div
         style={{
-          margin: "32px auto 24px auto",
+          margin: "24px auto 16px auto",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
+          flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -206,8 +268,10 @@ export default function SalesPersonFigures() {
           display: "flex",
           width: "calc(100vw - 64px)",
           maxWidth: "100%",
-          margin: "50px auto 0 auto",
+          margin: "0 auto 24px auto",
           gap: "32px",
+          flex: 1,
+          minHeight: 0,
         }}
       >
         <div
@@ -217,7 +281,7 @@ export default function SalesPersonFigures() {
             borderRadius: "16px",
             width: "200px",
             minWidth: "200px",
-            height: "758px",
+            height: "100%",
             boxShadow: "0 4px 24px rgba(0,0,0,0.13)",
             padding: "32px 12px",
             boxSizing: "border-box",
@@ -262,40 +326,55 @@ export default function SalesPersonFigures() {
             background: SECTION_GREY,
             borderRadius: "18px",
             flex: 1,
-            minHeight: "758px",
-            height: "758px",
+            minHeight: 0,
+            height: "100%",
             boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
             padding: "24px 32px",
             boxSizing: "border-box",
-            overflow: "auto",
-            overflowX: "hidden",
+            overflow: "hidden",
             color: MONUMENT,
             minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
           }}
         >
           {loading && <p style={{ color: UI.textMuted }}>Loading…</p>}
           {error && <p style={{ color: "#cc3333" }}>Error: {error}</p>}
 
           {!loading && !error && (
-            <>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
               <h2 style={{ margin: "0 0 8px 0", fontSize: "1.35rem", fontWeight: 600, color: MONUMENT }}>
                 {periodLabel}
               </h2>
-              <p style={{ margin: "0 0 24px 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.45 }}>
+              <p style={{ margin: "0 0 16px 0", fontSize: "0.9rem", color: UI.textMuted, lineHeight: 1.45 }}>
                 Sales team members and how many sales they are assigned for this period. Hotlist and Home Office /
-                Studio jobs are excluded.
+                Studio jobs are excluded. Assign a salesperson to any unaccounted project from the list.
               </p>
 
+              <div
+                style={{
+                  display: "flex",
+                  gap: "24px",
+                  flex: 1,
+                  minHeight: 0,
+                  alignItems: "stretch",
+                }}
+              >
               {figures.rows.length === 0 ? (
-                <p style={{ color: UI.textMuted }}>No users with the Sales Team position were found.</p>
+                <p style={{ color: UI.textMuted, margin: 0, flexShrink: 0 }}>
+                  No users with the Sales Team position were found.
+                </p>
               ) : (
                 <div
                   style={{
                     background: WHITE,
                     borderRadius: "12px",
                     border: `1px solid ${UI.outline}`,
-                    overflow: "hidden",
+                    overflow: "auto",
                     maxWidth: "520px",
+                    flexShrink: 0,
+                    alignSelf: "flex-start",
+                    maxHeight: "100%",
                   }}
                 >
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "1rem" }}>
@@ -372,10 +451,210 @@ export default function SalesPersonFigures() {
                   </table>
                 </div>
               )}
-            </>
+
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <h3 style={{ margin: "0 0 8px 0", fontSize: "1.05rem", fontWeight: 600, color: MONUMENT }}>
+                  Unaccounted projects ({figures.unaccounted})
+                </h3>
+                {assignError && (
+                  <p style={{ margin: "0 0 8px 0", color: "#cc3333", fontSize: "0.9rem" }}>{assignError}</p>
+                )}
+                <div
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    background: WHITE,
+                    borderRadius: "12px",
+                    border: `1px solid ${UI.outline}`,
+                  }}
+                >
+                  {figures.unaccountedProjects.length === 0 ? (
+                    <p style={{ margin: 0, padding: "14px 16px", color: UI.textMuted }}>
+                      Every project in this period is assigned to a sales person.
+                    </p>
+                  ) : (
+                    figures.unaccountedProjects.map((project) => (
+                      <div
+                        key={project.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
+                          padding: "10px 14px",
+                          borderBottom: `1px solid ${UI.outline}`,
+                        }}
+                      >
+                        <div
+                          title={project.address}
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            color: MONUMENT,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {project.address}
+                        </div>
+                        <select
+                          aria-label={`Salesperson for ${project.address}`}
+                          value=""
+                          disabled={savingProjectId === project.id || salespersonOptions.length === 0}
+                          onChange={(e) => handleAssignSalesperson(project.id, e.target.value)}
+                          style={{
+                            width: "220px",
+                            flexShrink: 0,
+                            padding: "8px 10px",
+                            borderRadius: "8px",
+                            border: `1px solid ${UI.outline}`,
+                            fontSize: "0.95rem",
+                            fontWeight: 500,
+                            color: MONUMENT,
+                            background: WHITE,
+                            cursor: savingProjectId === project.id ? "wait" : "pointer",
+                            outline: "none",
+                          }}
+                        >
+                          <option value="">
+                            {savingProjectId === project.id ? "Saving…" : "Select salesperson"}
+                          </option>
+                          {salespersonOptions.map((user) => (
+                            <option key={user.id} value={user.name}>
+                              {user.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
+
+      {illegalSaleOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="illegal-sale-title"
+          onClick={() => setIllegalSaleOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "16px",
+            background:
+              "repeating-linear-gradient(45deg, rgba(180,0,0,0.88) 0 18px, rgba(40,0,0,0.92) 18px 36px)",
+            animation: "sgfIllegalSaleFlash 0.35s steps(2, end) infinite",
+          }}
+        >
+          <style>
+            {`
+              @keyframes sgfIllegalSaleFlash {
+                0%, 49% { filter: brightness(1); }
+                50%, 100% { filter: brightness(1.45); }
+              }
+              @keyframes sgfIllegalSaleShake {
+                0%, 100% { transform: translateX(0) rotate(-1deg); }
+                25% { transform: translateX(-8px) rotate(1deg); }
+                75% { transform: translateX(8px) rotate(-1.5deg); }
+              }
+              @keyframes sgfIllegalSaleTextPulse {
+                0%, 100% { opacity: 1; transform: scale(1); }
+                50% { opacity: 0.72; transform: scale(1.06); }
+              }
+            `}
+          </style>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(560px, 96%)",
+              background: "#8b0000",
+              color: "#fff",
+              border: "8px solid #ffeb3b",
+              boxShadow: "0 0 0 6px #c62828, 0 18px 50px rgba(0,0,0,0.55)",
+              borderRadius: "6px",
+              padding: "28px 24px 22px",
+              textAlign: "center",
+              animation: "sgfIllegalSaleShake 0.22s linear infinite",
+              boxSizing: "border-box",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "0.95rem",
+                fontWeight: 800,
+                letterSpacing: "0.28em",
+                color: "#ffeb3b",
+                marginBottom: "10px",
+              }}
+            >
+              ⚠ WARNING ⚠ WARNING ⚠ WARNING ⚠
+            </div>
+            <h2
+              id="illegal-sale-title"
+              style={{
+                margin: "0 0 10px 0",
+                fontSize: "2.4rem",
+                fontWeight: 900,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "#fff",
+                textShadow: "0 0 18px #ffeb3b, 2px 2px 0 #000",
+                animation: "sgfIllegalSaleTextPulse 0.45s ease-in-out infinite",
+              }}
+            >
+              Illegal Sale
+            </h2>
+            <p
+              style={{
+                margin: "0 0 22px 0",
+                fontSize: "1.7rem",
+                fontWeight: 800,
+                color: "#ffeb3b",
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Don&apos;t Count
+            </p>
+            <button
+              type="button"
+              onClick={() => setIllegalSaleOpen(false)}
+              style={{
+                padding: "10px 22px",
+                borderRadius: "8px",
+                border: "3px solid #ffeb3b",
+                background: "#111",
+                color: "#ffeb3b",
+                fontSize: "1rem",
+                fontWeight: 800,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                cursor: "pointer",
+              }}
+            >
+              Pick someone else
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

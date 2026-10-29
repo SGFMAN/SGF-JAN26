@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import WalkingMan from "../components/WalkingMan.jsx";
 import ScubaDive from "../components/ScubaDive.jsx";
+import RunningLogSplash from "../components/RunningLogSplash.jsx";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const PAGE_TEXT = UI.pageText;
@@ -64,6 +65,10 @@ function SandpitMenu({ onPick }) {
         <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Scuba</div>
         <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>Swim the reef</div>
       </button>
+      <button type="button" style={{ ...optionStyle, borderColor: "rgba(240, 180, 41, 0.55)" }} onClick={() => onPick("running")}>
+        <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Running</div>
+        <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>Running log</div>
+      </button>
     </div>
   );
 }
@@ -82,6 +87,7 @@ export default function Sandpit() {
       {mode === null ? <SandpitMenu onPick={setMode} /> : null}
       {mode === "kill" ? <WalkingMan /> : null}
       {mode === "scuba" ? <ScubaDive key="turn-fix" /> : null}
+      {mode === "running" ? <RunningLogSplash /> : null}
       <div style={{ position: "absolute", top: 16, left: 16, zIndex: 5, display: "flex", gap: 8 }}>
         <Link to="/projects" style={hudButtonStyle}>
           Back to Projects

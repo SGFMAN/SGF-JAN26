@@ -9,7 +9,7 @@ import PolytecKitchenCube from "../components/PolytecKitchenCube.jsx";
 import AuthedImg from "../components/AuthedImg";
 import { prefetchAuthedImageBlobUrls } from "../utils/authedImageCache";
 import { resolveNewProjectClientFrom, findSalespersonUserInList } from "../utils/streamNewProjectEmail";
-import { buildJobFolderNameSegment } from "../utils/projectFolderPath";
+import { buildJobFolderNameSegment, storedProjectFolderOverride } from "../utils/projectFolderPath";
 import { parsePlanTracePolygon, serializePlanTracePolygon } from "../utils/planTracePolygon";
 
 import { UI, MENU } from "../utils/uiThemeTokens.js";
@@ -1482,8 +1482,11 @@ export default function Colours({ project, onUpdate }) {
       // Format: root_directory\year\state\suburb - street\8. COLOURS & WINDOWS\filename
       // NOTE: This function ONLY saves the path to the database - it does NOT create folders or copy files
       const fileName = file.name;
+      const storedFolder = storedProjectFolderOverride(project);
       const projectFolderName = buildJobFolderNameSegment(project.suburb, project.street);
-      const filePath = `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\8. COLOURS & WINDOWS\\${fileName}`;
+      const filePath = storedFolder
+        ? `${storedFolder}\\8. COLOURS & WINDOWS\\${fileName}`
+        : `${rootDirectory}\\${projectYear}\\${state}\\${projectFolderName}\\8. COLOURS & WINDOWS\\${fileName}`;
 
       // Store the file path in the database
       const projectName = project?.street && project?.suburb 

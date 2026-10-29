@@ -4,9 +4,8 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import sgfLogoUrl from "../images/SGF Homes.png";
 
 const WALL_H = 2.55;
-const WINDOW_W_M = 1.5;
 const WINDOW_H_M = 0.9;
-const WINDOW_SILL_M = 0.9;
+const WINDOW_HEAD_M = 2.1;
 const WALL_T = 0.1;
 const LINE = 0xb8b8b8;
 const PLAN_DOOR_W = 0.87;
@@ -79,8 +78,12 @@ const DECK_BOARD_M = 0.09;
 const DECK_GAP_M = 0.008;
 const ISO_AZIMUTH = Math.PI / 4;
 const WALK_EYE_HEIGHT_M = 1.5;
+const EYE_LEVEL_HEIGHT_M = 1.5;
+const WALK_BY_HEIGHT_M = 1.8;
 const FLY_HEIGHT_M = 20;
 const FLY_CORNER_MARGIN_M = 5;
+const WALK_BY_MARGIN_M = 10;
+const WALK_BY_SPEED_MPS = 1.8;
 const FLY_LOOP_MS = 45000;
 const WALK_DOOR_DISTANCE_M = 10;
 const WALK_PAUSE_MS = 2000;
@@ -447,13 +450,17 @@ function pathCrossDoor(fromX, fromZ, toX, toZ, hingeX, hingeZ, closedX, closedZ)
   return Math.max(0, Math.min(1, u));
 }
 
-/** Circle radius: plan centre to the furthest corner, plus 5m. Scene XZ, centre subtracted. */
-function flybyRadius(outer, cx, cz) {
+/** Circle radius: plan centre to the furthest corner, plus a margin. Scene XZ, centre subtracted. */
+function orbitRadius(outer, cx, cz, margin) {
   let furthest = 0;
   for (const p of outer || []) {
     furthest = Math.max(furthest, Math.hypot(p.x - cx, p.y - cz));
   }
-  return furthest + FLY_CORNER_MARGIN_M;
+  return furthest + margin;
+}
+
+function flybyRadius(outer, cx, cz) {
+  return orbitRadius(outer, cx, cz, FLY_CORNER_MARGIN_M);
 }
 
 function ringBounds(pts) {
@@ -1201,35 +1208,23 @@ function nearestSinkWallEdge(pts, point, along, outward) {
 }
 
 function windowSpanOnEdge(len, centerT, blocked) {
-  const margin = 0.05;
-  if (len < margin * 2 + 0.4) return null;
-  const width = Math.min(WINDOW_W_M, len - margin * 2);
+  // Same width as the sink, centred on it. Do not slide it along the wall —
+  // that is what put the window over the fridge, pantry, or a door.
+  const width = SINK_ALONG_M;
   let lo = centerT - width / 2;
   let hi = centerT + width / 2;
-  if (lo < margin) {
-    lo = margin;
-    hi = lo + width;
-  }
-  if (hi > len - margin) {
-    hi = len - margin;
-    lo = hi - width;
-  }
+  lo = Math.max(0, lo);
+  hi = Math.min(len, hi);
   for (const block of blocked || []) {
-    if (hi <= block.lo + 0.02 || lo >= block.hi - 0.02) continue;
-    const before = block.lo - margin;
-    const after = len - margin - block.hi;
-    if (after >= width) {
-      lo = block.hi + 0.04;
-      hi = lo + width;
-    } else if (before >= width) {
-      hi = block.lo - 0.04;
-      lo = hi - width;
-    } else {
-      return null;
-    }
+    if (hi <= block.lo + 0.01 || lo >= block.hi - 0.01) continue;
+    const keepLeft = block.lo - lo;
+    const keepRight = hi - block.hi;
+    if (keepLeft >= keepRight && keepLeft >= 0.25) hi = block.lo;
+    else if (keepRight >= 0.25) lo = block.hi;
+    else return null;
   }
-  if (lo < margin - 0.001 || hi > len - margin + 0.001 || hi - lo < width - 0.02) return null;
-  return { lo, hi, y0: WINDOW_SILL_M, y1: WINDOW_SILL_M + WINDOW_H_M, window: true };
+  if (hi - lo < 0.25) return null;
+  return { lo, hi, y0: WINDOW_HEAD_M - WINDOW_H_M, y1: WINDOW_HEAD_M, window: true };
 }
 
 function sinkWindowsForEdge(rooms, outer, edgeIndex, blocked) {
@@ -1242,6 +1237,540 @@ function sinkWindowsForEdge(rooms, outer, edgeIndex, blocked) {
     if (!edge || edge.index !== edgeIndex) continue;
     const span = windowSpanOnEdge(edge.len, edge.t, blocked);
     if (span) out.push(span);
+  }
+  return out;
+}
+
+const BED_WIN_EMPTY_W = 1.51;
+const BED_WIN_EMPTY_H = 1.81;
+const BED_WIN_BED_W = 1.81;
+const BED_WIN_BED_H = 0.45;
+const BED_WIN_MARGIN = 0.05;
+const OPPOSITE_SIDE = { top: "bottom", bottom: "top", left: "right", right: "left" };
+
+function bedroomBedSide(room) {
+  const stored = room?.bedSide;
+  if (stored === "top" || stored === "right" || stored === "bottom" || stored === "left") return stored;
+  return room.w >= room.h ? "top" : "left";
+}
+
+function bedroomBedAlong(room, side) {
+  const frame = roomWallFrame(room, side);
+  const storedAlong = Number(room?.bedAlong);
+  return clampBedAlong(
+    frame.wallLen,
+    Number.isFinite(storedAlong) ? storedAlong : (frame.wallLen - BED_SHORT_M) / 2
+  );
+}
+
+function pointOnFrame(frame, p) {
+  return {
+    along: (p.x - frame.origin.x) * frame.along.x + (p.y - frame.origin.y) * frame.along.y,
+    across: (p.x - frame.origin.x) * frame.inward.x + (p.y - frame.origin.y) * frame.inward.y,
+  };
+}
+
+function doorSpanOnSide(frame, door) {
+  if (!door?.hinge || !door.closed) return null;
+  const h = pointOnFrame(frame, door.hinge);
+  const c = pointOnFrame(frame, door.closed);
+  if (Math.abs(h.across) > 0.2 || Math.abs(c.across) > 0.2) return null;
+  const lo = Math.min(h.along, c.along);
+  const hi = Math.max(h.along, c.along);
+  if (hi < 0.05 || lo > frame.wallLen - 0.05) return null;
+  return { lo: lo - 0.05, hi: hi + 0.05 };
+}
+
+function doorSideOfRoom(room, door) {
+  if (!door) return null;
+  for (const side of ["top", "right", "bottom", "left"]) {
+    if (doorSpanOnSide(roomWallFrame(room, side), door)) return side;
+  }
+  return null;
+}
+
+function bedroomDoor(room, doors) {
+  const stored = room?.doorSide;
+  let fallback = null;
+  for (const door of doors || []) {
+    if (!door?.open || !door.hinge || !door.closed) continue;
+    const inside =
+      door.open.x >= room.x - 0.08 &&
+      door.open.x <= room.x + room.w + 0.08 &&
+      door.open.y >= room.y - 0.08 &&
+      door.open.y <= room.y + room.h + 0.08;
+    if (!inside) continue;
+    if (stored && doorSideOfRoom(room, door) === stored) return door;
+    if (!fallback) fallback = door;
+  }
+  return fallback;
+}
+
+function bedroomRobeSide(room, door) {
+  const stored = room?.robeSide;
+  if (stored === "top" || stored === "right" || stored === "bottom" || stored === "left") return stored;
+  const doorSide = doorSideOfRoom(room, door);
+  if (doorSide === "top" || doorSide === "bottom") return "left";
+  if (doorSide === "right") return "top";
+  if (doorSide === "left") return "bottom";
+  return room.w >= room.h ? "left" : "bottom";
+}
+
+function sideExternalEdge(outer, frame) {
+  const mid = {
+    x: frame.origin.x + frame.along.x * (frame.wallLen / 2),
+    y: frame.origin.y + frame.along.y * (frame.wallLen / 2),
+  };
+  const edge = nearestSinkWallEdge(outer, mid, frame.along, {
+    x: -frame.inward.x,
+    y: -frame.inward.y,
+  });
+  if (!edge || edge.dist > 0.4) return null;
+  return edge;
+}
+
+function spansMinus(spans, block) {
+  const next = [];
+  for (const [a, b] of spans) {
+    if (block.hi <= a + 0.001 || block.lo >= b - 0.001) {
+      next.push([a, b]);
+      continue;
+    }
+    if (block.lo > a + 0.001) next.push([a, Math.min(b, block.lo)]);
+    if (block.hi < b - 0.001) next.push([Math.max(a, block.hi), b]);
+  }
+  return next;
+}
+
+function longestWindowFit(wallLen, width, blocks) {
+  let spans = [[BED_WIN_MARGIN, Math.max(BED_WIN_MARGIN, wallLen - BED_WIN_MARGIN)]];
+  for (const block of blocks) spans = spansMinus(spans, block);
+  spans = spans.filter(([a, b]) => b - a >= width - 0.001);
+  if (!spans.length) return null;
+  spans.sort((a, b) => b[1] - b[0] - (a[1] - a[0]));
+  const [a, b] = spans[0];
+  const lo = a + (b - a - width) / 2;
+  return { lo, hi: lo + width };
+}
+
+function fitWindowNear(wallLen, width, preferLo, blocks) {
+  let lo = preferLo;
+  let hi = lo + width;
+  const min = BED_WIN_MARGIN;
+  const max = wallLen - BED_WIN_MARGIN;
+  if (lo < min) {
+    lo = min;
+    hi = lo + width;
+  }
+  if (hi > max) {
+    hi = max;
+    lo = hi - width;
+  }
+  if (lo < min - 0.001) return null;
+  for (const block of blocks) {
+    if (hi <= block.lo + 0.001 || lo >= block.hi - 0.001) continue;
+    const options = [];
+    const left = block.lo - width;
+    if (left >= min - 0.001 && block.lo <= max + 0.001) options.push(left);
+    if (block.hi >= min - 0.001 && block.hi + width <= max + 0.001) options.push(block.hi);
+    if (!options.length) return null;
+    options.sort((a, b) => Math.abs(a - preferLo) - Math.abs(b - preferLo));
+    lo = options[0];
+    hi = lo + width;
+  }
+  return { lo, hi };
+}
+
+function bedroomWindowOnWall(room, side, kind, door) {
+  const frame = roomWallFrame(room, side);
+  const width = kind === "bed" ? BED_WIN_BED_W : BED_WIN_EMPTY_W;
+  const height = kind === "bed" ? BED_WIN_BED_H : BED_WIN_EMPTY_H;
+  const doorSpan = doorSpanOnSide(frame, door);
+  const blocks = doorSpan ? [doorSpan] : [];
+  const along =
+    kind === "bed"
+      ? fitWindowNear(
+          frame.wallLen,
+          width,
+          bedroomBedAlong(room, side) + (BED_SHORT_M - width) / 2,
+          blocks
+        )
+      : longestWindowFit(frame.wallLen, width, blocks);
+  if (!along) return null;
+  return { frame, along, width, height };
+}
+
+function bedroomWindowSpec(room, outer, doors) {
+  const door = bedroomDoor(room, doors);
+  const robeSide = bedroomRobeSide(room, door);
+  const bedSide = bedroomBedSide(room);
+  const external = ["top", "right", "bottom", "left"].filter(
+    (side) => side !== robeSide && sideExternalEdge(outer, roomWallFrame(room, side))
+  );
+  const empty = external.filter((side) => side !== bedSide);
+  empty.sort((a, b) => {
+    const rank = (side) => {
+      const opposite = side === OPPOSITE_SIDE[bedSide] ? 0 : 1;
+      const hasDoor = doorSideOfRoom(room, door) === side ? 1 : 0;
+      return opposite * 2 + hasDoor;
+    };
+    const diff = rank(a) - rank(b);
+    if (diff) return diff;
+    return roomWallFrame(room, b).wallLen - roomWallFrame(room, a).wallLen;
+  });
+  for (const side of empty) {
+    const spec = bedroomWindowOnWall(room, side, "empty", door);
+    if (spec) return spec;
+  }
+  if (external.includes(bedSide)) return bedroomWindowOnWall(room, bedSide, "bed", door);
+  return null;
+}
+
+function bedroomWindowsForEdge(rooms, outer, edgeIndex, doors, blocked) {
+  const out = [];
+  for (const room of rooms || []) {
+    if (roomKind(room) !== "bedroom") continue;
+    const spec = bedroomWindowSpec(room, outer, doors);
+    if (!spec) continue;
+    const mid = (spec.along.lo + spec.along.hi) / 2;
+    const point = {
+      x: spec.frame.origin.x + spec.frame.along.x * mid,
+      y: spec.frame.origin.y + spec.frame.along.y * mid,
+    };
+    const edge = nearestSinkWallEdge(outer, point, spec.frame.along, {
+      x: -spec.frame.inward.x,
+      y: -spec.frame.inward.y,
+    });
+    if (!edge || edge.index !== edgeIndex || edge.dist > 0.4) continue;
+    let lo = edge.t - spec.width / 2;
+    let hi = edge.t + spec.width / 2;
+    if (lo < 0 || hi > edge.len) {
+      if (spec.width > edge.len) continue;
+      if (lo < 0) {
+        hi -= lo;
+        lo = 0;
+      }
+      if (hi > edge.len) {
+        lo -= hi - edge.len;
+        hi = edge.len;
+      }
+      if (lo < -0.001) continue;
+    }
+    const hitsDoor = (blocked || []).some((block) => hi > block.lo + 0.02 && lo < block.hi - 0.02);
+    if (hitsDoor) continue;
+    out.push({
+      lo,
+      hi,
+      y0: WINDOW_HEAD_M - spec.height,
+      y1: WINDOW_HEAD_M,
+      window: true,
+    });
+  }
+  return out;
+}
+
+const BATH_WIN_FREE_W = 1.51;
+const BATH_WIN_FREE_H = 1.81;
+const BATH_WIN_SHOWER_W = 1.21;
+const BATH_WIN_SHOWER_H = 0.4;
+const BATH_WIN_SHOWER_HEAD = 2.33;
+const BATH_WIN_TOILET_W = 0.6;
+const BATH_WIN_TOILET_H = 0.6;
+
+function bathroomVanitySide(room) {
+  const side = room?.vanitySide;
+  if (side === "top" || side === "right" || side === "bottom" || side === "left") return side;
+  return room.h >= room.w ? "top" : "right";
+}
+
+function showerWallContacts(room) {
+  const shower = showerRect3D(room);
+  const tol = 0.2;
+  const contacts = [];
+  if (shower.y - room.y <= tol) {
+    contacts.push({ side: "top", lo: shower.x - room.x, hi: shower.x + shower.w - room.x });
+  }
+  if (room.y + room.h - (shower.y + shower.h) <= tol) {
+    contacts.push({ side: "bottom", lo: shower.x - room.x, hi: shower.x + shower.w - room.x });
+  }
+  if (shower.x - room.x <= tol) {
+    contacts.push({ side: "left", lo: shower.y - room.y, hi: shower.y + shower.h - room.y });
+  }
+  if (room.x + room.w - (shower.x + shower.w) <= tol) {
+    contacts.push({ side: "right", lo: shower.y - room.y, hi: shower.y + shower.h - room.y });
+  }
+  return contacts.filter((contact) => contact.hi - contact.lo > 0.3);
+}
+
+function showerTapEndSide(room) {
+  const shower = showerRect3D(room);
+  const tol = 0.25;
+  if (shower.rot === 0 && shower.x - room.x <= tol) return "left";
+  if (shower.rot === 2 && room.x + room.w - (shower.x + shower.w) <= tol) return "right";
+  if (shower.rot === 1 && shower.y - room.y <= tol) return "top";
+  if (shower.rot === 3 && room.y + room.h - (shower.y + shower.h) <= tol) return "bottom";
+  return null;
+}
+
+function bathroomWindowOnWall(room, side, width, height, head, center, door, extraBlocks) {
+  const frame = roomWallFrame(room, side);
+  const doorSpan = doorSpanOnSide(frame, door);
+  const blocks = [...(doorSpan ? [doorSpan] : []), ...(extraBlocks || [])];
+  const along =
+    center == null
+      ? longestWindowFit(frame.wallLen, width, blocks)
+      : fitWindowNear(frame.wallLen, width, center - width / 2, blocks);
+  if (!along) return null;
+  return { frame, along, width, height, head };
+}
+
+function bathroomWindowSpec(room, outer, doors) {
+  const door = bedroomDoor(room, doors);
+  const doorSide = doorSideOfRoom(room, door);
+  const vanitySide = bathroomVanitySide(room);
+  const toilet = bathroomToilet3D(room);
+  const toiletSide = toilet?.side || null;
+  const showers = showerWallContacts(room);
+  const tapSide = showerTapEndSide(room);
+  const occupied = new Set(
+    [vanitySide, toiletSide, doorSide, tapSide, ...showers.map((contact) => contact.side)].filter(Boolean)
+  );
+  const isExternal = (side) => sideExternalEdge(outer, roomWallFrame(room, side));
+  const free = ["top", "right", "bottom", "left"].filter((side) => !occupied.has(side) && isExternal(side));
+  free.sort((a, b) => roomWallFrame(room, b).wallLen - roomWallFrame(room, a).wallLen);
+  for (const side of free) {
+    const spec = bathroomWindowOnWall(room, side, BATH_WIN_FREE_W, BATH_WIN_FREE_H, WINDOW_HEAD_M, null, door);
+    if (spec) return spec;
+  }
+  const showerWalls = showers
+    .filter((contact) => contact.side !== tapSide && isExternal(contact.side))
+    .sort((a, b) => b.hi - b.lo - (a.hi - a.lo));
+  for (const contact of showerWalls) {
+    const spec = bathroomWindowOnWall(
+      room,
+      contact.side,
+      BATH_WIN_SHOWER_W,
+      BATH_WIN_SHOWER_H,
+      BATH_WIN_SHOWER_HEAD,
+      (contact.lo + contact.hi) / 2,
+      door
+    );
+    if (spec) return spec;
+  }
+  if (toilet && toiletSide && isExternal(toiletSide)) {
+    const tapContact = tapSide === toiletSide ? showers.find((contact) => contact.side === tapSide) : null;
+    return bathroomWindowOnWall(
+      room,
+      toiletSide,
+      BATH_WIN_TOILET_W,
+      BATH_WIN_TOILET_H,
+      WINDOW_HEAD_M,
+      toilet.alongM + toilet.tankAlong / 2,
+      door,
+      tapContact ? [{ lo: tapContact.lo - 0.05, hi: tapContact.hi + 0.05 }] : null
+    );
+  }
+  return null;
+}
+
+function bathroomWindowsForEdge(rooms, outer, edgeIndex, doors, blocked) {
+  const out = [];
+  for (const room of rooms || []) {
+    if (roomKind(room) !== "bathroom") continue;
+    const spec = bathroomWindowSpec(room, outer, doors);
+    if (!spec) continue;
+    const mid = (spec.along.lo + spec.along.hi) / 2;
+    const point = {
+      x: spec.frame.origin.x + spec.frame.along.x * mid,
+      y: spec.frame.origin.y + spec.frame.along.y * mid,
+    };
+    const edge = nearestSinkWallEdge(outer, point, spec.frame.along, {
+      x: -spec.frame.inward.x,
+      y: -spec.frame.inward.y,
+    });
+    if (!edge || edge.index !== edgeIndex || edge.dist > 0.4) continue;
+    let lo = edge.t - spec.width / 2;
+    let hi = edge.t + spec.width / 2;
+    if (lo < 0 || hi > edge.len) {
+      if (spec.width > edge.len) continue;
+      if (lo < 0) {
+        hi -= lo;
+        lo = 0;
+      }
+      if (hi > edge.len) {
+        lo -= hi - edge.len;
+        hi = edge.len;
+      }
+      if (lo < -0.001) continue;
+    }
+    const hitsDoor = (blocked || []).some((block) => hi > block.lo + 0.02 && lo < block.hi - 0.02);
+    if (hitsDoor) continue;
+    out.push({
+      lo,
+      hi,
+      y0: spec.head - spec.height,
+      y1: spec.head,
+      window: true,
+    });
+  }
+  return out;
+}
+
+const LAUNDRY_WIN_W = 0.61;
+const LAUNDRY_WIN_H = 0.91;
+const LAUNDRY_SINK_M = 0.45;
+const LAUNDRY_WM_M = 0.6;
+const LAUNDRY_WM_GAP_M = 0.075;
+const LAUNDRY_TROUGH_M = 0.6;
+
+function laundryBenchSide(room, doors) {
+  const stored = room?.benchSide;
+  if (stored === "top" || stored === "right" || stored === "bottom" || stored === "left") return stored;
+  const doorSide = doorSideOfRoom(room, bedroomDoor(room, doors)) || room?.doorSide;
+  if (doorSide === "top") return "bottom";
+  if (doorSide === "bottom") return "top";
+  if (doorSide === "left") return "right";
+  if (doorSide === "right") return "left";
+  return room.h >= room.w ? "bottom" : "right";
+}
+
+function wallDoorBlocks(room, side, doors) {
+  const frame = roomWallFrame(room, side);
+  const blocks = [];
+  for (const door of doors || []) {
+    const span = doorSpanOnSide(frame, door);
+    if (span) blocks.push(span);
+  }
+  return blocks;
+}
+
+function laundryBenchGeom(room, doors) {
+  const side = laundryBenchSide(room, doors);
+  const frame = roomWallFrame(room, side);
+  const door = bedroomDoor(room, doors);
+  const doorSide = doorSideOfRoom(room, door) || room?.doorSide;
+  let t0 = 0;
+  let t1 = frame.wallLen;
+  if (doorSide === side) {
+    const span = doorSpanOnSide(frame, door);
+    const width = span ? Math.max(0.2, span.hi - span.lo) : Math.min(0.87, Math.max(0.2, frame.wallLen - 0.05));
+    const open0 = span
+      ? Math.max(0, span.lo)
+      : Math.max(0, Math.min(Math.max(0, frame.wallLen - width), Number(room.doorAlong) || 0));
+    const before = open0;
+    const after = frame.wallLen - (open0 + width);
+    if (after >= before) {
+      t0 = open0 + width;
+      t1 = frame.wallLen;
+    } else {
+      t0 = 0;
+      t1 = open0;
+    }
+  }
+  const length = Math.max(0, t1 - t0);
+  const wmSize = Math.min(LAUNDRY_WM_M, Math.max(0.15, length));
+  const gap = length + 0.001 >= LAUNDRY_WM_M + LAUNDRY_WM_GAP_M * 2 ? LAUNDRY_WM_GAP_M : 0;
+  const wmAlong = Math.max(gap, Math.min(Math.max(gap, length - gap - wmSize), Number(room?.wmAlong) || gap));
+  const sinkSize = Math.min(LAUNDRY_SINK_M, Math.max(0.15, length));
+  const sinkAlong = Math.max(0, Math.min(Math.max(0, length - sinkSize), Number(room?.sinkAlong) || wmAlong + wmSize + gap));
+  const sinkLo = t0 + sinkAlong;
+  const sinkHi = sinkLo + sinkSize;
+  const wmCenter = wmAlong + wmSize / 2;
+  const troughAtEnd = wmCenter < length / 2;
+  let troughLo = t0 + (troughAtEnd ? Math.max(0, length - LAUNDRY_TROUGH_M) : 0);
+  let troughHi = t0 + (troughAtEnd ? length : Math.min(length, LAUNDRY_TROUGH_M));
+  if (troughHi > sinkLo && troughLo < sinkHi) {
+    if (sinkLo - troughLo >= troughHi - sinkHi) troughHi = sinkLo;
+    else troughLo = sinkHi;
+  }
+  const trough = troughHi - troughLo > 0.2 ? { lo: troughLo, hi: troughHi } : null;
+  return { side, frame, t0, length, sinkCenter: (sinkLo + sinkHi) / 2, trough };
+}
+
+function laundryWindowSpec(room, outer, doors) {
+  const bench = laundryBenchGeom(room, doors);
+  const entry = doorSideOfRoom(room, bedroomDoor(room, doors)) || room?.doorSide;
+  const isExternal = (side) => sideExternalEdge(outer, roomWallFrame(room, side));
+  const place = (side, center) => {
+    const extra = [];
+    if (side === bench.side && bench.trough) extra.push(bench.trough);
+    return bathroomWindowOnWall(
+      room,
+      side,
+      LAUNDRY_WIN_W,
+      LAUNDRY_WIN_H,
+      WINDOW_HEAD_M,
+      center,
+      null,
+      [...wallDoorBlocks(room, side, doors), ...extra]
+    );
+  };
+  const clear = ["top", "right", "bottom", "left"].filter(
+    (side) => side !== bench.side && isExternal(side) && wallDoorBlocks(room, side, doors).length === 0
+  );
+  clear.sort((a, b) => {
+    const rank = (side) => (side === OPPOSITE_SIDE[entry] ? 0 : 1);
+    const diff = rank(a) - rank(b);
+    if (diff) return diff;
+    return roomWallFrame(room, b).wallLen - roomWallFrame(room, a).wallLen;
+  });
+  for (const side of clear) {
+    const spec = place(side, null);
+    if (spec) return spec;
+  }
+  if (isExternal(bench.side)) {
+    const spec = place(bench.side, bench.sinkCenter);
+    if (spec) return spec;
+  }
+  const withDoor = ["top", "right", "bottom", "left"].filter(
+    (side) => side !== bench.side && isExternal(side) && wallDoorBlocks(room, side, doors).length > 0
+  );
+  for (const side of withDoor) {
+    const spec = place(side, null);
+    if (spec) return spec;
+  }
+  return null;
+}
+
+function laundryWindowsForEdge(rooms, outer, edgeIndex, doors, blocked) {
+  const out = [];
+  for (const room of rooms || []) {
+    if (roomKind(room) !== "laundryRoom") continue;
+    const spec = laundryWindowSpec(room, outer, doors);
+    if (!spec) continue;
+    const mid = (spec.along.lo + spec.along.hi) / 2;
+    const point = {
+      x: spec.frame.origin.x + spec.frame.along.x * mid,
+      y: spec.frame.origin.y + spec.frame.along.y * mid,
+    };
+    const edge = nearestSinkWallEdge(outer, point, spec.frame.along, {
+      x: -spec.frame.inward.x,
+      y: -spec.frame.inward.y,
+    });
+    if (!edge || edge.index !== edgeIndex || edge.dist > 0.4) continue;
+    let lo = edge.t - spec.width / 2;
+    let hi = edge.t + spec.width / 2;
+    if (lo < 0 || hi > edge.len) {
+      if (spec.width > edge.len) continue;
+      if (lo < 0) {
+        hi -= lo;
+        lo = 0;
+      }
+      if (hi > edge.len) {
+        lo -= hi - edge.len;
+        hi = edge.len;
+      }
+      if (lo < -0.001) continue;
+    }
+    const hitsDoor = (blocked || []).some((block) => hi > block.lo + 0.02 && lo < block.hi - 0.02);
+    if (hitsDoor) continue;
+    out.push({
+      lo,
+      hi,
+      y0: WINDOW_HEAD_M - LAUNDRY_WIN_H,
+      y1: WINDOW_HEAD_M,
+      window: true,
+    });
   }
   return out;
 }
@@ -1368,6 +1897,64 @@ function pointOnSeg(p, a, b, eps = 0.08) {
 
 function doorOnEdge(door, a, b) {
   return door?.hinge && door?.closed && pointOnSeg(door.hinge, a, b) && pointOnSeg(door.closed, a, b);
+}
+
+function edgeDoorBlocks(doors, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  return (doors || [])
+    .filter((d) => d.external && doorOnEdge(d, a, b))
+    .map((door) => {
+      const t0 = (door.hinge.x - a.x) * ux + (door.hinge.y - a.y) * uy;
+      const t1 = (door.closed.x - a.x) * ux + (door.closed.y - a.y) * uy;
+      return { lo: Math.min(t0, t1), hi: Math.max(t0, t1), door };
+    })
+    .sort((p, q) => p.lo - q.lo);
+}
+
+function windowsOnEdge(rooms, outer, edgeIndex, doors, blocked) {
+  return [
+    ...sinkWindowsForEdge(rooms, outer, edgeIndex, blocked),
+    ...bedroomWindowsForEdge(rooms, outer, edgeIndex, doors, blocked),
+    ...bathroomWindowsForEdge(rooms, outer, edgeIndex, doors, blocked),
+    ...laundryWindowsForEdge(rooms, outer, edgeIndex, doors, blocked),
+  ];
+}
+
+export function planWindowQuads(rooms, outer, doors) {
+  const quads = [];
+  const n = outer?.length || 0;
+  if (n < 3) return quads;
+  for (let i = 0; i < n; i += 1) {
+    const a = outer[i];
+    const b = outer[(i + 1) % n];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.04) continue;
+    const ux = dx / len;
+    const uy = dy / len;
+    const hits = edgeDoorBlocks(doors, a, b);
+    const { nx, ny } = inwardNormal(a, b, outer);
+    for (const win of windowsOnEdge(
+      rooms,
+      outer,
+      i,
+      doors,
+      hits.map((hit) => ({ lo: hit.lo, hi: hit.hi }))
+    )) {
+      if (win.hi - win.lo < 0.05) continue;
+      const at = (t, depth) => ({
+        x: a.x + ux * t + nx * depth,
+        y: a.y + uy * t + ny * depth,
+      });
+      quads.push([at(win.lo, 0), at(win.hi, 0), at(win.hi, WALL_T), at(win.lo, WALL_T)]);
+    }
+  }
+  return quads;
 }
 
 // Swing leaves are shown half open. A cavity slider sits in the wall, with about
@@ -1535,14 +2122,7 @@ function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats, rooms, outer, e
   if (len < 0.04) return null;
   const ux = dx / len;
   const uy = dy / len;
-  const hits = (doors || [])
-    .filter((d) => d.external && doorOnEdge(d, a, b))
-    .map((door) => {
-      const t0 = (door.hinge.x - a.x) * ux + (door.hinge.y - a.y) * uy;
-      const t1 = (door.closed.x - a.x) * ux + (door.closed.y - a.y) * uy;
-      return { lo: Math.min(t0, t1), hi: Math.max(t0, t1), door };
-    })
-    .sort((p, q) => p.lo - q.lo);
+  const hits = edgeDoorBlocks(doors, a, b);
   // External wall body sits on the inside of the boundary line.
   let px = -uy;
   let pz = ux;
@@ -1554,12 +2134,8 @@ function addOuterEdge(parent, a, b, doors, cx, cz, nx, ny, mats, rooms, outer, e
   const z0 = a.y - cz + pz * (WALL_T / 2);
   const x1 = b.x - cx + px * (WALL_T / 2);
   const z1 = b.y - cz + pz * (WALL_T / 2);
-  const windows = sinkWindowsForEdge(
-    rooms,
-    outer,
-    edgeIndex,
-    hits.map((hit) => ({ lo: hit.lo, hi: hit.hi }))
-  );
+  const blocked = hits.map((hit) => ({ lo: hit.lo, hi: hit.hi }));
+  const windows = windowsOnEdge(rooms, outer, edgeIndex, doors, blocked);
   const mesh = addWallRun(
     parent,
     x0,
@@ -1594,6 +2170,7 @@ function addPartitionWalls(parent, walls, doors, cx, cz, mats, drawnDoors) {
     if (!groups.has(key)) groups.set(key, { horiz, fixed: horiz ? w.y : w.x, spans: [] });
     groups.get(key).spans.push([Math.min(w.t0, w.t1), Math.max(w.t0, w.t1)]);
   }
+  const runs = [];
   for (const g of groups.values()) {
     const spans = g.spans.slice().sort((a, b) => a[0] - b[0]);
     const openings = [];
@@ -1626,34 +2203,58 @@ function addPartitionWalls(parent, walls, doors, cx, cz, mats, drawnDoors) {
       else merged.push([a, b]);
     }
     for (const [t0, t1] of merged) {
-      const a = g.horiz ? { x: t0, y: g.fixed } : { x: g.fixed, y: t0 };
-      const b = g.horiz ? { x: t1, y: g.fixed } : { x: g.fixed, y: t1 };
-      const len = Math.hypot(b.x - a.x, b.y - a.y);
-      const ux = (b.x - a.x) / len;
-      const uy = (b.y - a.y) / len;
-      const hits = (doors || [])
-        .filter((d) => !d.external && doorOnEdge(d, a, b))
-        .map((door) => {
-          const s0 = (door.hinge.x - a.x) * ux + (door.hinge.y - a.y) * uy;
-          const s1 = (door.closed.x - a.x) * ux + (door.closed.y - a.y) * uy;
-          return { lo: Math.min(s0, s1), hi: Math.max(s0, s1), door };
-        })
-        .sort((p, q) => p.lo - q.lo);
-      addWallRun(
-        parent,
-        a.x - cx,
-        a.y - cz,
-        b.x - cx,
-        b.y - cz,
-        WALL_T,
-        hits,
-        mats.wall,
-        mats.softLine
-      );
-      for (const hit of hits) {
-        addDoorLeaf(parent, hit.door, cx, cz, mats);
-        drawnDoors?.add(hit.door);
+      runs.push({ horiz: g.horiz, fixed: g.fixed, t0, t1 });
+    }
+  }
+  // A room corner stops each wall on the other's centreline, half a thickness
+  // short of the outer face, which leaves a full-height slit. Carry an end
+  // through that square only when another wall is actually there.
+  const meetsWall = (x, y, self) => {
+    for (const r of runs) {
+      if (r === self) continue;
+      if (r.horiz) {
+        if (Math.abs(y - r.fixed) > WALL_T / 2 + 0.004) continue;
+        if (x < r.t0 - 0.004 || x > r.t1 + 0.004) continue;
+        return true;
       }
+      if (Math.abs(x - r.fixed) > WALL_T / 2 + 0.004) continue;
+      if (y < r.t0 - 0.004 || y > r.t1 + 0.004) continue;
+      return true;
+    }
+    return false;
+  };
+  for (const run of runs) {
+    const a = run.horiz ? { x: run.t0, y: run.fixed } : { x: run.fixed, y: run.t0 };
+    const b = run.horiz ? { x: run.t1, y: run.fixed } : { x: run.fixed, y: run.t1 };
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (!(len > 0.04)) continue;
+    const ux = (b.x - a.x) / len;
+    const uy = (b.y - a.y) / len;
+    const hits = (doors || [])
+      .filter((d) => !d.external && doorOnEdge(d, a, b))
+      .map((door) => {
+        const s0 = (door.hinge.x - a.x) * ux + (door.hinge.y - a.y) * uy;
+        const s1 = (door.closed.x - a.x) * ux + (door.closed.y - a.y) * uy;
+        return { lo: Math.min(s0, s1), hi: Math.max(s0, s1), door };
+      })
+      .sort((p, q) => p.lo - q.lo);
+    const overlap = WALL_T / 2;
+    addWallRun(
+      parent,
+      a.x - cx,
+      a.y - cz,
+      b.x - cx,
+      b.y - cz,
+      WALL_T,
+      hits,
+      mats.wall,
+      mats.softLine,
+      meetsWall(a.x, a.y, run) ? overlap : 0,
+      meetsWall(b.x, b.y, run) ? overlap : 0
+    );
+    for (const hit of hits) {
+      addDoorLeaf(parent, hit.door, cx, cz, mats);
+      drawnDoors?.add(hit.door);
     }
   }
 }
@@ -2529,6 +3130,20 @@ function addLivingHybridFloor(parent, inner, rooms, alongX, cx, cz, mats) {
   const pitch = HYBRID_PLANK_M;
   const gap = HYBRID_GAP_M;
   const step = 0.08;
+  // The last board in a row otherwise ends on the plank grid, short of the wall.
+  const boardEdge = (at, dir, isInside) => {
+    const far = at + dir * (pitch / 2 + 0.02);
+    if (isInside(far)) return null;
+    if (!isInside(at)) return null;
+    let lo = at;
+    let hi = far;
+    for (let k = 0; k < 16; k += 1) {
+      const m = (lo + hi) / 2;
+      if (isInside(m)) lo = m;
+      else hi = m;
+    }
+    return lo + dir * 0.001;
+  };
   if (alongX) {
     const y0 = Math.floor(b.minY / pitch) * pitch;
     let i = Math.round(y0 / pitch);
@@ -2542,7 +3157,13 @@ function addLivingHybridFloor(parent, inner, rooms, alongX, cx, cz, mats) {
         const x = Math.min(run.t0, run.t1);
         const w = Math.abs(run.t1 - run.t0);
         if (w < 0.06) continue;
-        addHybridPlankStrip(parent, { x, y: yb, w, h: ye - yb }, alongX, i, cx, cz, mats);
+        const xMid = (run.t0 + run.t1) / 2;
+        const yLo = boardEdge(yMid, -1, (yy) => inLiving({ x: xMid, y: yy }));
+        const yHi = boardEdge(yMid, 1, (yy) => inLiving({ x: xMid, y: yy }));
+        const yStart = yLo == null ? yb : yLo;
+        const yEnd = yHi == null ? ye : yHi;
+        if (yEnd - yStart < 0.02) continue;
+        addHybridPlankStrip(parent, { x, y: yStart, w, h: yEnd - yStart }, alongX, i, cx, cz, mats);
       }
     }
   } else {
@@ -2558,7 +3179,13 @@ function addLivingHybridFloor(parent, inner, rooms, alongX, cx, cz, mats) {
         const y = Math.min(run.t0, run.t1);
         const h = Math.abs(run.t1 - run.t0);
         if (h < 0.06) continue;
-        addHybridPlankStrip(parent, { x: xb, y, w: xe - xb, h }, alongX, i, cx, cz, mats);
+        const yMid = (run.t0 + run.t1) / 2;
+        const xLo = boardEdge(xMid, -1, (xx) => inLiving({ x: xx, y: yMid }));
+        const xHi = boardEdge(xMid, 1, (xx) => inLiving({ x: xx, y: yMid }));
+        const xStart = xLo == null ? xb : xLo;
+        const xEnd = xHi == null ? xe : xHi;
+        if (xEnd - xStart < 0.02) continue;
+        addHybridPlankStrip(parent, { x: xStart, y, w: xEnd - xStart, h }, alongX, i, cx, cz, mats);
       }
     }
   }
@@ -2740,15 +3367,7 @@ function addBedsideTable(parent, ns, inward, cx, cz, mats) {
 }
 
 function bathroomVanity3D(room) {
-  const side =
-    room?.vanitySide === "top" ||
-    room?.vanitySide === "right" ||
-    room?.vanitySide === "bottom" ||
-    room?.vanitySide === "left"
-      ? room.vanitySide
-      : room.h >= room.w
-        ? "top"
-        : "right";
+  const side = bathroomVanitySide(room);
   const frame = roomWallFrame(room, side);
   const hung = room?.vanityWm === "hung";
   const length = Math.min(hung ? WALL_HUNG_VANITY_M : VANITY_WIDTH_M, Math.max(0.2, frame.wallLen - 0.05));
@@ -3047,7 +3666,7 @@ function bathroomToilet3D(room) {
     tankDepth - overlap,
     bowlFront
   );
-  return { tank, bowl, origin, along, inward, alongM, tankAlong, tankDepth, bowlWidth, bowlFront };
+  return { tank, bowl, origin, along, inward, alongM, tankAlong, tankDepth, bowlWidth, bowlFront, side: toiletSide };
 }
 
 function toiletDShape(width, z0, z1) {
@@ -4206,6 +4825,8 @@ export default function QuickConcept3DPreview({
   captureRef,
   walkRef,
   flyByRef,
+  walkByRef,
+  eyeLevelRef,
   walkRoute = null,
 }) {
   const mountRef = useRef(null);
@@ -4239,6 +4860,8 @@ export default function QuickConcept3DPreview({
     const onBlur = { current: null };
     let beginWalkThrough = null;
     let beginFlyBy = null;
+    let beginWalkBy = null;
+    let beginEyeLevel = null;
 
     try {
       const bounds = ringBounds(outer);
@@ -4386,6 +5009,7 @@ export default function QuickConcept3DPreview({
       let walkKeepsWalls = false;
       let flyRun = null;
       let flyKeepsWalls = false;
+      let viewGlide = null;
       let showExteriorShell = false;
       const houseSphere = box.getBoundingSphere(new THREE.Sphere());
       const houseRadius = Math.max(
@@ -4707,6 +5331,46 @@ export default function QuickConcept3DPreview({
         setFrontDoorOpen((dist - anim.from) / span);
       };
 
+      const glideDuration = (toEye) => {
+        const dist = eye.distanceTo(toEye);
+        return Math.max(1100, Math.min(3200, 700 + dist * 70));
+      };
+
+      const startViewGlide = ({ toEye, toAz, toEl, toFov, onDone }) => {
+        walkRun = null;
+        walkKeepsWalls = false;
+        flyRun = null;
+        flyKeepsWalls = false;
+        resetFrontDoor();
+        const dist = eye.distanceTo(toEye);
+        const dAz = wrapAngle(toAz - azimuth);
+        const dEl = toEl - elevation;
+        const dFov = toFov - camera.fov;
+        if (dist < 0.35 && Math.abs(dAz) < 0.08 && Math.abs(dEl) < 0.08 && Math.abs(dFov) < 2) {
+          eye.copy(toEye);
+          azimuth = toAz;
+          elevation = toEl;
+          camera.fov = toFov;
+          camera.updateProjectionMatrix();
+          updateCamera();
+          onDone?.();
+          return;
+        }
+        viewGlide = {
+          fromEye: eye.clone(),
+          toEye: toEye.clone(),
+          fromAz: azimuth,
+          dAz,
+          fromEl: elevation,
+          toEl,
+          fromFov: camera.fov,
+          toFov,
+          start: performance.now(),
+          ms: glideDuration(toEye),
+          onDone,
+        };
+      };
+
       beginWalkThrough = () => {
         cancelFly();
         const door = externalFrontDoor(planDoors);
@@ -4858,33 +5522,101 @@ export default function QuickConcept3DPreview({
           }
         }
         showExteriorShell = true;
-        walkKeepsWalls = true;
-        setWalkLens(true);
         resetFrontDoor();
-        walkRun = { script, index: 0, phase: null, doorLeaves, doorAnim };
-        if (doorAnim) setFrontDoorOpen(0);
-        beginWalkPhase(performance.now());
-        updateWalkDoor(performance.now());
-        updateCamera();
+        const launchWalk = () => {
+          walkKeepsWalls = true;
+          setWalkLens(true);
+          walkRun = { script, index: script[0]?.op === "pan" ? 1 : 0, phase: null, doorLeaves, doorAnim };
+          if (doorAnim) setFrontDoorOpen(0);
+          beginWalkPhase(performance.now());
+          updateWalkDoor(performance.now());
+          updateCamera();
+        };
+        startViewGlide({
+          toEye: start,
+          toAz: firstAz,
+          toEl: 0,
+          toFov: WALK_FOV,
+          onDone: launchWalk,
+        });
       };
 
-      beginFlyBy = () => {
-        if (flyRun) {
+      beginEyeLevel = () => {
+        showExteriorShell = true;
+        const savedEl = elevation;
+        elevation = 0;
+        const stand = Math.max(fitDistanceForAspect(camera.aspect), houseRadius + 1.5);
+        elevation = savedEl;
+        const toAz = azimuth;
+        const toEye = new THREE.Vector3(
+          target.x + Math.sin(toAz) * stand,
+          EYE_LEVEL_HEIGHT_M,
+          target.z + Math.cos(toAz) * stand
+        );
+        startViewGlide({
+          toEye,
+          toAz,
+          toEl: 0,
+          toFov: PERSPECTIVE_FOV,
+          onDone: () => {
+            setWalkLens(false);
+            emitOrbit();
+          },
+        });
+      };
+
+      const beginOrbit = (mode) => {
+        if (flyRun?.mode === mode) {
           cancelFly();
           updateCamera();
           return;
         }
-        cancelWalk();
-        const radius = flybyRadius(outer, cx, cz);
+        const radius = mode === "walk" ? orbitRadius(outer, cx, cz, WALK_BY_MARGIN_M) : flybyRadius(outer, cx, cz);
         if (!(radius > 1)) return;
+        const height = mode === "walk" ? WALK_BY_HEIGHT_M : FLY_HEIGHT_M;
+        const loopMs =
+          mode === "walk"
+            ? Math.max(16000, Math.min(90000, ((Math.PI * 2 * radius) / WALK_BY_SPEED_MPS) * 1000))
+            : FLY_LOOP_MS;
         showExteriorShell = true;
-        flyKeepsWalls = true;
-        setWalkLens(false);
-        flyRun = { radius, start: performance.now(), pitchOffset: 0, yawOffset: 0 };
-        updateCamera();
+        const destAngle = Math.atan2(eye.z, eye.x);
+        const toEye = new THREE.Vector3(Math.cos(destAngle) * radius, height, Math.sin(destAngle) * radius);
+        const dx = target.x - toEye.x;
+        const dy = target.y - toEye.y;
+        const dz = target.z - toEye.z;
+        const dist = Math.hypot(dx, dy, dz) || 1;
+        const toEl = Math.asin(Math.max(-1, Math.min(1, -dy / dist)));
+        const toAz = Math.atan2(-dx, -dz);
+        startViewGlide({
+          toEye,
+          toAz,
+          toEl,
+          toFov: PERSPECTIVE_FOV,
+          onDone: () => {
+            flyKeepsWalls = true;
+            setWalkLens(false);
+            const now = performance.now();
+            let norm = destAngle / (Math.PI * 2);
+            norm = ((norm % 1) + 1) % 1;
+            flyRun = {
+              mode,
+              radius,
+              height,
+              loopMs,
+              start: now - norm * loopMs,
+              pitchOffset: 0,
+              yawOffset: 0,
+            };
+            updateCamera();
+          },
+        });
       };
 
+      beginFlyBy = () => beginOrbit("fly");
+      beginWalkBy = () => beginOrbit("walk");
+
       onDown.current = (e) => {
+        viewGlide = null;
         if (!flyRun) cancelWalk();
         dragging = true;
         lastX = e.clientX;
@@ -4909,6 +5641,7 @@ export default function QuickConcept3DPreview({
       };
       onWheel.current = (e) => {
         e.preventDefault();
+        viewGlide = null;
         if (flyRun) {
           const dist = Math.max(0.3, flyRun.radius);
           flyRun.radius = Math.max(3, flyRun.radius + e.deltaY * 0.0018 * dist);
@@ -4935,6 +5668,8 @@ export default function QuickConcept3DPreview({
 
       if (walkRef) walkRef.current = beginWalkThrough;
       if (flyByRef) flyByRef.current = beginFlyBy;
+      if (walkByRef) walkByRef.current = beginWalkBy;
+      if (eyeLevelRef) eyeLevelRef.current = beginEyeLevel;
 
       if (captureRef) {
         captureRef.current = (outW = 2200, options = {}) => {
@@ -4986,6 +5721,7 @@ export default function QuickConcept3DPreview({
         if (typingTarget(e.target)) return;
         const k = String(e.key || "").toLowerCase();
         if (k !== "w" && k !== "a" && k !== "s" && k !== "d" && k !== "e" && k !== "c") return;
+        viewGlide = null;
         cancelWalk();
         keys.add(k);
         e.preventDefault();
@@ -5005,7 +5741,21 @@ export default function QuickConcept3DPreview({
         const now = performance.now();
         const dt = Math.min(0.05, (now - lastNav) / 1000);
         lastNav = now;
-        if (walkRun) {
+        if (viewGlide) {
+          const t = Math.min(1, (now - viewGlide.start) / Math.max(1, viewGlide.ms));
+          const ease = t * t * (3 - 2 * t);
+          eye.lerpVectors(viewGlide.fromEye, viewGlide.toEye, ease);
+          azimuth = viewGlide.fromAz + viewGlide.dAz * ease;
+          elevation = viewGlide.fromEl + (viewGlide.toEl - viewGlide.fromEl) * ease;
+          camera.fov = viewGlide.fromFov + (viewGlide.toFov - viewGlide.fromFov) * ease;
+          camera.updateProjectionMatrix();
+          updateCamera();
+          if (t >= 1) {
+            const done = viewGlide.onDone;
+            viewGlide = null;
+            done?.();
+          }
+        } else if (walkRun) {
           if (!walkRun.phase) beginWalkPhase(now);
           const phase = walkRun?.phase;
           if (phase?.kind === "pause") {
@@ -5060,8 +5810,13 @@ export default function QuickConcept3DPreview({
           }
           if (walkRun?.doorAnim) updateWalkDoor(now);
         } else if (flyRun) {
-          const angle = (((now - flyRun.start) % FLY_LOOP_MS) / FLY_LOOP_MS) * Math.PI * 2;
-          eye.set(Math.cos(angle) * flyRun.radius, FLY_HEIGHT_M, Math.sin(angle) * flyRun.radius);
+          const loop = flyRun.loopMs || FLY_LOOP_MS;
+          const angle = (((now - flyRun.start) % loop) / loop) * Math.PI * 2;
+          eye.set(
+            Math.cos(angle) * flyRun.radius,
+            flyRun.height || FLY_HEIGHT_M,
+            Math.sin(angle) * flyRun.radius
+          );
           const dx = target.x - eye.x;
           const dy = target.y - eye.y;
           const dz = target.z - eye.z;
@@ -5110,6 +5865,8 @@ export default function QuickConcept3DPreview({
       if (captureRef && captureRef.current) captureRef.current = null;
       if (walkRef && walkRef.current === beginWalkThrough) walkRef.current = null;
       if (flyByRef && flyByRef.current === beginFlyBy) flyByRef.current = null;
+      if (walkByRef && walkByRef.current === beginWalkBy) walkByRef.current = null;
+      if (eyeLevelRef && eyeLevelRef.current === beginEyeLevel) eyeLevelRef.current = null;
       if (group) disposeObject(group);
       ground?.geometry?.dispose();
       if (Array.isArray(ground?.material)) ground.material.forEach((m) => m?.dispose?.());
@@ -5124,7 +5881,7 @@ export default function QuickConcept3DPreview({
       renderer?.dispose();
       if (canvas && canvas.parentNode === mount) mount.removeChild(canvas);
     };
-  }, [metres, rooms, innerMetres, walls, doors, captureRef, walkRef, flyByRef]);
+  }, [metres, rooms, innerMetres, walls, doors, captureRef, walkRef, flyByRef, walkByRef, eyeLevelRef]);
 
   return (
     <div

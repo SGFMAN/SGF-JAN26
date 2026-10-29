@@ -278,13 +278,16 @@ async function resolveAccessibleDrawingsPdfPath(pool, projectRow, { selfHeal = f
       : String(st.root_directory || "").trim();
   if (!rootDir) return null;
 
-  const matchedProjectFolderPath = await findBestProjectFolderPathLenient(
-    rootDir,
-    projectYear,
-    stateUpper,
-    projectRow.suburb,
-    projectRow.street
-  );
+  const overrideFolder = storedProjectFolderPath(projectRow);
+  const matchedProjectFolderPath = overrideFolder
+    ? overrideFolder
+    : await findBestProjectFolderPathLenient(
+        rootDir,
+        projectYear,
+        stateUpper,
+        projectRow.suburb,
+        projectRow.street
+      );
   if (!matchedProjectFolderPath) return null;
 
   const recoveredPath = path.join(matchedProjectFolderPath, "2. PUBLISHED PLANS", fileName);
@@ -319,6 +322,104 @@ function buildJobProjectFolderName(suburb, street) {
   const sub = normalizeAddressHyphensForFilesystem(suburb ?? "").toUpperCase();
   const st = normalizeAddressHyphensForFilesystem(street ?? "");
   return `${sub} - ${st}`.replace(WIN_FILENAME_ILLEGAL_CHARS, "_");
+}
+
+/** Admin override. Empty when the job folder should be built from the address. */
+function storedProjectFolderPath(row) {
+  return String(row?.project_folder_path || "").trim().replace(/[\\/]+$/, "");
+}
+
+function jobFolderForProject(row, rootDir, yearSeg, stateUpper) {
+  const stored = storedProjectFolderPath(row);
+  if (stored) return stored;
+  return path.join(
+    rootDir,
+    String(yearSeg || ""),
+    String(stateUpper || ""),
+    buildJobProjectFolderName(row?.suburb, row?.street)
+  );
+}
+
+function normalizeWinPath(p) {
+  return String(p || "").trim().replace(/\//g, "\\").replace(/\\+$/, "");
+}
+
+function pathIsUnderRoot(folderAbs, rootDir) {
+  const folder = path.resolve(String(folderAbs || ""));
+  const root = path.resolve(String(rootDir || ""));
+  if (!root || root === path.parse(root).root) return false;
+  const folderLower = folder.toLowerCase();
+  const rootLower = root.toLowerCase();
+  return folderLower === rootLower || folderLower.startsWith(rootLower + path.sep);
+}
+
+/** A saved job folder must sit at least year / state / leaf under a configured root. */
+function isJobFolderUnderRoot(folderAbs, rootDir) {
+  if (!pathIsUnderRoot(folderAbs, rootDir)) return false;
+  const rel = path.relative(path.resolve(rootDir), path.resolve(folderAbs));
+  return rel.split(path.sep).filter(Boolean).length >= 3;
+}
+
+/**
+ * Point a stored file path at a new job folder.
+ * Paths under the previous folder keep their tail.
+ * Other files under a configured root that use year\state\leaf\... move onto the new folder too.
+ */
+function retargetJobFilePath(filePath, oldFolder, newFolder, roots) {
+  const original = String(filePath ?? "");
+  const file = normalizeWinPath(original);
+  if (!file) return original;
+  const newN = normalizeWinPath(newFolder);
+  const oldN = normalizeWinPath(oldFolder);
+  const lower = file.toLowerCase();
+  if (oldN) {
+    const oldLower = oldN.toLowerCase();
+    if (lower === oldLower || lower.startsWith(oldLower + "\\")) {
+      return newN + file.slice(oldN.length);
+    }
+  }
+  for (const root of roots || []) {
+    const rootN = normalizeWinPath(root);
+    if (!rootN) continue;
+    const rootLower = rootN.toLowerCase();
+    if (!lower.startsWith(rootLower + "\\")) continue;
+    const parts = file.slice(rootN.length + 1).split("\\");
+    if (parts.length >= 4 && /^\d{4}$/.test(parts[0]) && /^[A-Za-z]{2,4}$/.test(parts[1])) {
+      const tail = parts.slice(3).join("\\");
+      return tail ? `${newN}\\${tail}` : newN;
+    }
+  }
+  return original;
+}
+
+function retargetDeep(value, oldFolder, newFolder, roots) {
+  if (typeof value === "string") return retargetJobFilePath(value, oldFolder, newFolder, roots);
+  if (Array.isArray(value)) return value.map((v) => retargetDeep(v, oldFolder, newFolder, roots));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = retargetDeep(v, oldFolder, newFolder, roots);
+    }
+    return out;
+  }
+  return value;
+}
+
+function retargetStoredValue(value, oldFolder, newFolder, roots) {
+  if (value == null) return value;
+  if (typeof value === "object") {
+    return JSON.stringify(retargetDeep(value, oldFolder, newFolder, roots));
+  }
+  const s = String(value);
+  const trimmed = s.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      return JSON.stringify(retargetDeep(JSON.parse(trimmed), oldFolder, newFolder, roots));
+    } catch {
+      return retargetJobFilePath(s, oldFolder, newFolder, roots);
+    }
+  }
+  return retargetJobFilePath(s, oldFolder, newFolder, roots);
 }
 
 /** Common street-type variants accepted for folder matching. */
@@ -1729,6 +1830,7 @@ async function ensureSchema() {
     'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'on_hold_reason', 'survey_status', 'soil_status', 'agreement_sent', 'hotlist_notes', 'qp_number',
     'planning_jf_planning_property_report_path', 'planning_jf_title_covenant_subdivision_path', 'planning_jf_title_path', 'planning_jf_covenant_path', 'planning_jf_section_173_agreement_path', 'planning_jf_plan_of_subdivision_path', 'planning_jf_ebyda_stormwater_path', 'planning_jf_byda_sewer_main_path', 'planning_jf_internal_sewer_plan_path', 'planning_jf_sewer_main_size_depth_offset_path', 'planning_jf_legal_point_discharge_path', 'planning_jf_property_info_report_path',
     'planning_jf_job_file_pdf_path',
+    'project_folder_path',
     'planning_written_advice', 'planning_written_advice_requested_at', 'planning_written_advice_received_at',
     'planning_town_planning', 'planning_town_planning_requested_at', 'planning_town_planning_received_at',
     'planning_land_flooding_regulation',
@@ -2359,7 +2461,7 @@ app.get("/api/projects/:id", async (req, res) => {
     }
 
     const r = await pool.query(
-      "SELECT id, access_token, name, status, suburb, street, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, drawings_concept_approved_date, drawings_working_approved_date, planning_jca_land_survey_sent_at, planning_jca_land_survey_received_at, planning_soil_test_melbourne_sent_at, planning_soil_test_melbourne_received_at, planning_site_visit_plans_updated_at, planning_mgr_tp_requested, planning_mgr_tp_received, planning_mgr_tp_needed, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, windowframes_colour, windowsurrounds_colour, door_colour, slidingdoor_colour, fascia_gutter_colour, balustrade_colour, hybrid_colour, tile1_colour, carpet_colour, benchtop_colour, cabinet1_colour, cabinet2_colour, tile2_colour, robe_door_colours, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, on_hold_reason, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_land_channel_zones_overlays_sent_at, planning_land_channel_zones_overlays_received_at, planning_land_data_title_covenants_sent_at, planning_land_data_title_covenants_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_septic, planning_septic_requested_at, planning_septic_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, planning_energy_specs_added_to_plans_at, planning_windows_requested_at, planning_windows_received_at, planning_sewer_septic_authority, planning_sewer_septic_application_requested_at, planning_sewer_septic_application_received_at, planning_warranty_insurance_at, planning_asset_protection_sent_at, planning_asset_protection_received_at, planning_bal_specs_added_to_plans, planning_building_permit_requested_at, planning_building_permit_received_at, planning_pic_requested_at, planning_pic_received_at, planning_sewer_connection, planning_sewer_septic_type, planning_sewer_septic_permit, construction_payments_paid, pre_engagement_required, pre_engagement_paid, deposit_type, deposit_required, deposit_paid, base_required, base_paid, frame_required, frame_paid, lock_up_required, lock_up_paid, fix_required, fix_paid, final_required, final_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
+      "SELECT id, access_token, name, status, suburb, street, project_folder_path, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, drawings_concept_approved_date, drawings_working_approved_date, planning_jca_land_survey_sent_at, planning_jca_land_survey_received_at, planning_soil_test_melbourne_sent_at, planning_soil_test_melbourne_received_at, planning_site_visit_plans_updated_at, planning_mgr_tp_requested, planning_mgr_tp_received, planning_mgr_tp_needed, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, windowframes_colour, windowsurrounds_colour, door_colour, slidingdoor_colour, fascia_gutter_colour, balustrade_colour, hybrid_colour, tile1_colour, carpet_colour, benchtop_colour, cabinet1_colour, cabinet2_colour, tile2_colour, robe_door_colours, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, on_hold_reason, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_land_channel_zones_overlays_sent_at, planning_land_channel_zones_overlays_received_at, planning_land_data_title_covenants_sent_at, planning_land_data_title_covenants_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_septic, planning_septic_requested_at, planning_septic_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, planning_energy_specs_added_to_plans_at, planning_windows_requested_at, planning_windows_received_at, planning_sewer_septic_authority, planning_sewer_septic_application_requested_at, planning_sewer_septic_application_received_at, planning_warranty_insurance_at, planning_asset_protection_sent_at, planning_asset_protection_received_at, planning_bal_specs_added_to_plans, planning_building_permit_requested_at, planning_building_permit_received_at, planning_pic_requested_at, planning_pic_received_at, planning_sewer_connection, planning_sewer_septic_type, planning_sewer_septic_permit, construction_payments_paid, pre_engagement_required, pre_engagement_paid, deposit_type, deposit_required, deposit_paid, base_required, base_paid, frame_required, frame_paid, lock_up_required, lock_up_paid, fix_required, fix_paid, final_required, final_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
       [id]
     );
     
@@ -4290,7 +4392,7 @@ app.post("/api/projects/:id/verify-drawings-job-folder", async (req, res) => {
   }
   try {
     const pr = await pool.query(
-      "SELECT id, name, suburb, street, state, year FROM projects WHERE id = $1",
+      "SELECT id, name, suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
       [id]
     );
     if (pr.rows.length === 0) {
@@ -4326,8 +4428,7 @@ app.post("/api/projects/:id/verify-drawings-job-folder", async (req, res) => {
     }
 
     const yearSeg = getProjectYearFolderSegment(row.year);
-    const folderLeaf = buildJobProjectFolderName(row.suburb, row.street);
-    const expectedFolderAbs = path.resolve(path.join(rootDir, yearSeg, stateUpper, folderLeaf));
+    const expectedFolderAbs = path.resolve(jobFolderForProject(row, rootDir, yearSeg, stateUpper));
     const ok = await pathExistsAsDirectory(expectedFolderAbs);
     if (ok) {
       const publishedPlansDir = path.join(expectedFolderAbs, "2. PUBLISHED PLANS");
@@ -4366,7 +4467,7 @@ async function resolveProjectJobFolder(pool, projectId) {
     return { ok: false, status: 400, body: { error: "invalid id", code: "INVALID_ID" } };
   }
   const pr = await pool.query(
-    "SELECT id, name, suburb, street, state, year FROM projects WHERE id = $1",
+    "SELECT id, name, suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
     [id]
   );
   if (pr.rows.length === 0) {
@@ -4408,12 +4509,12 @@ async function resolveProjectJobFolder(pool, projectId) {
     };
   }
   const yearSeg = getProjectYearFolderSegment(row.year);
-  const folderLeaf = buildJobProjectFolderName(row.suburb, row.street);
-  const expectedFolderAbs = path.resolve(path.join(rootDir, yearSeg, stateUpper, folderLeaf));
+  const storedFolder = storedProjectFolderPath(row);
+  const expectedFolderAbs = path.resolve(jobFolderForProject(row, rootDir, yearSeg, stateUpper));
   let folderAbs = "";
   if (await pathExistsAsDirectory(expectedFolderAbs)) {
     folderAbs = expectedFolderAbs;
-  } else {
+  } else if (!storedFolder) {
     const lenient = await findBestProjectFolderPathLenient(
       rootDir,
       yearSeg,
@@ -4437,11 +4538,10 @@ async function resolveProjectJobFolder(pool, projectId) {
       },
     };
   }
-  const rootResolved = path.resolve(rootDir);
-  if (
-    folderAbs !== rootResolved &&
-    !folderAbs.toLowerCase().startsWith(rootResolved.toLowerCase() + path.sep)
-  ) {
+  const roots = [rootDir, sr.rows[0]?.root_directory, sr.rows[0]?.root_directory_qld]
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+  if (!roots.some((root) => pathIsUnderRoot(folderAbs, root))) {
     return {
       ok: false,
       status: 400,
@@ -4546,6 +4646,156 @@ app.post("/api/projects/:id/open-project-folder", async (req, res) => {
   } catch (e) {
     console.error("open-project-folder:", e);
     return res.status(500).json({ error: e.message || "Failed to open project folder" });
+  }
+});
+
+async function effectiveProjectJobFolder(db, row) {
+  const stored = storedProjectFolderPath(row);
+  if (stored) return path.normalize(stored);
+  const stateUpper = String(row?.state || "").trim().toUpperCase();
+  if (!stateUpper) return "";
+  const sr = await db.query("SELECT root_directory, root_directory_qld FROM settings WHERE id = 1");
+  const rootDir = resolveRootDirForProjectDrawings(sr.rows[0] || {}, stateUpper);
+  if (!rootDir) return "";
+  return path.normalize(
+    jobFolderForProject(row, rootDir, getProjectYearFolderSegment(row.year), stateUpper)
+  );
+}
+
+async function configuredProjectRoots(db) {
+  const sr = await db.query("SELECT root_directory, root_directory_qld FROM settings WHERE id = 1");
+  const st = sr.rows[0] || {};
+  return [st.root_directory, st.root_directory_qld].map((v) => String(v || "").trim()).filter(Boolean);
+}
+
+app.get("/api/projects/:id/folder-path", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  try {
+    const pr = await pool.query(
+      "SELECT id, suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
+      [id]
+    );
+    if (pr.rows.length === 0) return res.status(404).json({ error: "Project not found" });
+    const row = pr.rows[0];
+    const folder = await effectiveProjectJobFolder(pool, row);
+    if (!folder) {
+      return res.status(400).json({ error: "Project folder could not be resolved. Check state and File Settings." });
+    }
+    const exists = await pathExistsAsDirectory(folder);
+    return res.json({
+      path: folder,
+      stored: Boolean(storedProjectFolderPath(row)),
+      exists,
+    });
+  } catch (e) {
+    console.error("folder-path GET:", e);
+    return res.status(500).json({ error: e.message || "Failed to load project path" });
+  }
+});
+
+app.put("/api/projects/:id/folder-path", async (req, res) => {
+  if (!requireStaffUserId(req, res)) return;
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await isAdminRequest(req))) {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid id" });
+  const nextRaw = normalizeWinPath(req.body?.path);
+  if (!/^[A-Za-z]:\\/.test(nextRaw) && !/^\\\\/.test(nextRaw)) {
+    return res.status(400).json({ error: "Enter a full folder path, for example Z:\\Jobs\\2026\\VIC\\SUBURB - street" });
+  }
+  try {
+    const exists = await pathExistsAsDirectory(nextRaw);
+    if (!exists) {
+      return res.status(400).json({ error: "That folder does not exist. Create it on disk, then save the path." });
+    }
+    const roots = await configuredProjectRoots(pool);
+    if (!roots.some((root) => isJobFolderUnderRoot(nextRaw, root))) {
+      return res.status(400).json({
+        error: "That folder is outside the job roots in File Settings. Use the year, state, and job folder under the root.",
+      });
+    }
+    const pr = await pool.query(
+      "SELECT id, suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
+      [id]
+    );
+    if (pr.rows.length === 0) return res.status(404).json({ error: "Project not found" });
+    const oldFolder = await effectiveProjectJobFolder(pool, pr.rows[0]);
+    const newFolder = path.normalize(nextRaw);
+
+    const colR = await pool.query(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'projects'
+          AND data_type IN ('text', 'character varying')
+          AND (
+            column_name LIKE '%\\_location' ESCAPE '\\'
+            OR column_name LIKE '%\\_path' ESCAPE '\\'
+            OR column_name = 'drawings_history'
+          )
+          AND column_name <> 'project_folder_path'`
+    );
+    const columns = colR.rows
+      .map((r) => String(r.column_name || ""))
+      .filter((name) => /^[a-z0-9_]+$/.test(name));
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      let updated = 0;
+      if (columns.length) {
+        const current = await client.query(
+          `SELECT ${columns.map((c) => `"${c}"`).join(", ")} FROM projects WHERE id = $1`,
+          [id]
+        );
+        const row = current.rows[0] || {};
+        const sets = [];
+        const values = [];
+        for (const column of columns) {
+          const before = row[column];
+          if (before == null || before === "") continue;
+          const after = retargetStoredValue(before, oldFolder, newFolder, roots);
+          const baseline = retargetStoredValue(before, oldFolder, oldFolder, roots);
+          if (after !== baseline) {
+            values.push(after);
+            sets.push(`"${column}" = $${values.length}`);
+            updated += 1;
+          }
+        }
+        values.push(newFolder);
+        const folderParam = values.length;
+        values.push(id);
+        await client.query(
+          `UPDATE projects
+              SET ${sets.length ? `${sets.join(", ")}, ` : ""}project_folder_path = $${folderParam}, updated_at = NOW()
+            WHERE id = $${values.length}`,
+          values
+        );
+      } else {
+        await client.query(
+          "UPDATE projects SET project_folder_path = $1, updated_at = NOW() WHERE id = $2",
+          [newFolder, id]
+        );
+      }
+      await client.query("COMMIT");
+      return res.json({ ok: true, path: newFolder, updatedPaths: updated });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    console.error("folder-path PUT:", e);
+    return res.status(500).json({ error: e.message || "Failed to save project path" });
   }
 });
 
@@ -8543,7 +8793,7 @@ app.post("/api/emails/send-drawings", async (req, res) => {
   let drawingsPdfPath = null;
   try {
     const projectResult = await pool.query(
-      "SELECT suburb, street, state, year, salesperson, drawings_pdf_location FROM projects WHERE id = $1",
+      "SELECT suburb, street, state, year, salesperson, drawings_pdf_location, project_folder_path FROM projects WHERE id = $1",
       [projectId]
     );
 
@@ -9792,7 +10042,7 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
     let locateProposalClassification = "";
     if (pool) {
       const projectResult = await pool.query(
-        "SELECT name, suburb, street, state, year, classification FROM projects WHERE id = $1",
+        "SELECT name, suburb, street, state, year, classification, project_folder_path FROM projects WHERE id = $1",
         [projectId]
       );
       
@@ -9831,9 +10081,7 @@ app.post("/api/files/locate-proposal", upload.single("file"), async (req, res) =
             return res.status(400).json({ error: "Project state is required to save proposal" });
           }
           
-          // Get suburb and street (ASCII hyphen between parts; unicode dashes normalized)
-          const projectFolderName = buildJobProjectFolderName(project.suburb, project.street);
-          projectPath = path.join(rootDir, projectYear, state, projectFolderName);
+          projectPath = jobFolderForProject(project, rootDir, projectYear, state);
         }
       }
     }
@@ -9991,7 +10239,7 @@ app.post("/api/files/upload-window-order", upload.single("file"), async (req, re
     }
 
     const projectResult = await pool.query(
-      "SELECT suburb, street, state, year FROM projects WHERE id = $1",
+      "SELECT suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
       [projectId]
     );
     if (projectResult.rows.length === 0) {
@@ -10020,13 +10268,9 @@ app.post("/api/files/upload-window-order", upload.single("file"), async (req, re
     if (!/^\d{4}$/.test(projectYear)) {
       return res.status(400).json({ error: "Project year must be YYYY (4 digits)" });
     }
-    const projectFolderName = buildJobProjectFolderName(row.suburb, row.street);
     const fileSafeName = "Windows.PDF";
     const folderPath = path.join(
-      rootDir,
-      projectYear,
-      state,
-      projectFolderName,
+      jobFolderForProject(row, rootDir, projectYear, state),
       WINDOW_ORDER_SUBFOLDER
     );
     const filePath = path.join(folderPath, fileSafeName);
@@ -10076,7 +10320,7 @@ app.post("/api/files/locate-window-order", upload.single("file"), async (req, re
     }
 
     const projectResult = await pool.query(
-      "SELECT suburb, street, state, year FROM projects WHERE id = $1",
+      "SELECT suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
       [projectId]
     );
     if (projectResult.rows.length === 0) {
@@ -10106,8 +10350,7 @@ app.post("/api/files/locate-window-order", upload.single("file"), async (req, re
       return res.status(400).json({ error: "Project year must be YYYY (4 digits)" });
     }
 
-    const projectFolderName = buildJobProjectFolderName(row.suburb, row.street);
-    const projectPath = path.join(rootDir, projectYear, state, projectFolderName);
+    const projectPath = jobFolderForProject(row, rootDir, projectYear, state);
     const fileName = path.basename(req.file.originalname || "window-order.pdf");
     const fileLocation = path.join(projectPath, WINDOW_ORDER_SUBFOLDER, fileName);
 
@@ -11170,7 +11413,7 @@ app.get("/api/files/drawings/:id", async (req, res) => {
 
     // Get project and drawings PDF location
     const projectResult = await pool.query(
-      "SELECT drawings_pdf_location, suburb, street, state, year FROM projects WHERE id = $1",
+      "SELECT drawings_pdf_location, suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
       [id]
     );
 
@@ -11229,7 +11472,7 @@ async function resolveDrawingsPdfForDrag(projectId) {
     throw err;
   }
   const projectResult = await pool.query(
-    "SELECT drawings_pdf_location, suburb, street, state, year FROM projects WHERE id = $1",
+    "SELECT drawings_pdf_location, suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
     [projectId]
   );
   if (projectResult.rows.length === 0) {
@@ -11402,6 +11645,8 @@ function planningJfYearFromProjectRow(projectRow) {
 
 /** Absolute path to `…\\7. PROPERTY INFORMATION` for this project (matches frontend / batch scripts). */
 async function planningJfPropertyInfoDirAbs(pgPool, projectRow) {
+  const stored = storedProjectFolderPath(projectRow);
+  if (stored) return path.join(stored, PLANNING_JF_PROPERTY_INFO_SUBFOLDER);
   const rootR = await pgPool.query("SELECT root_directory FROM settings WHERE id = 1");
   const root = (rootR.rows[0]?.root_directory || "").toString().trim();
   if (!root) {
@@ -11460,7 +11705,7 @@ app.post("/api/projects/:id/planning-jf-upload", upload.single("file"), async (r
     if (ext === ".jpeg") ext = ".jpg";
 
     const pr = await pool.query(
-      "SELECT id, year, state, suburb, street FROM projects WHERE id = $1",
+      "SELECT id, year, state, suburb, street, project_folder_path FROM projects WHERE id = $1",
       [projectId]
     );
     if (pr.rows.length === 0) {
@@ -12020,7 +12265,7 @@ async function resolveSiteVisitPhotosDir(projectId, photoSetKey) {
   }
 
   const projectResult = await pool.query(
-    "SELECT suburb, street, state, year FROM projects WHERE id = $1",
+    "SELECT suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
     [projectId]
   );
   if (projectResult.rows.length === 0) {
@@ -12045,13 +12290,8 @@ async function resolveSiteVisitPhotosDir(projectId, photoSetKey) {
   }
 
   const projectYear = getProjectYearFolderSegment(proj.year);
-  const projectFolderName = buildJobProjectFolderName(proj.suburb, proj.street);
-
   const photosDir = path.join(
-    rootDir,
-    projectYear,
-    stateUpper,
-    projectFolderName,
+    jobFolderForProject(proj, rootDir, projectYear, stateUpper),
     "5. PHOTOS",
     subfolder
   );
@@ -12429,7 +12669,7 @@ async function getVariationsFolderForProjectId(projectId) {
   }
 
   const projectResult = await pool.query(
-    "SELECT suburb, street, state, year FROM projects WHERE id = $1",
+    "SELECT suburb, street, state, year, project_folder_path FROM projects WHERE id = $1",
     [projectId]
   );
 
@@ -12469,8 +12709,7 @@ async function getVariationsFolderForProjectId(projectId) {
   }
 
   const projectYearFolder = getProjectYearFolderSegment(year);
-  const projectFolderName = buildJobProjectFolderName(suburb, street);
-  const projectPath = path.join(rootDir, projectYearFolder, stateUpper, projectFolderName);
+  const projectPath = jobFolderForProject(project, rootDir, projectYearFolder, stateUpper);
 
   const resolved = await resolveVariationsDirectory(projectPath);
   const variationsFolderPath = resolved.variationsPath;

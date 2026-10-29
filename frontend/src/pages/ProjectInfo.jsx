@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { PROJECT_STATUS_OPTIONS as STATUS_OPTIONS } from "../utils/projectStatus";
 import { CLASSIFICATION_OPTIONS } from "../utils/classifications";
 
@@ -6,6 +7,7 @@ import { UI, MENU, INDICATOR } from "../utils/uiThemeTokens.js";
 import { streamColorHover } from "../utils/streamColors.js";
 import { buildSavedButtonStyle } from "../utils/uiButtonStyles.js";
 import { openAuthedPdfInNewTab } from "../utils/openAuthedPdf.js";
+import { getApiHeaders, isUserAdmin } from "../utils/auth";
 import { registerProjectSaveFlush, trackProjectMutation } from "../utils/projectsListCache";
 const MONUMENT = UI.textPrimary;
 const WHITE = UI.cardBg;
@@ -59,6 +61,12 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
   const [onHoldReason, setOnHoldReason] = useState(project?.on_hold_reason || "");
   const [qpNumber, setQpNumber] = useState(project?.qp_number || "");
   const [openingProjectFolder, setOpeningProjectFolder] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showPathOpen, setShowPathOpen] = useState(false);
+  const [pathDraft, setPathDraft] = useState("");
+  const [pathLoading, setPathLoading] = useState(false);
+  const [pathSaving, setPathSaving] = useState(false);
+  const [pathError, setPathError] = useState("");
   const [, setUiButtonStyleRevision] = useState(0);
 
   // Use ref to track latest values for saving
@@ -99,6 +107,20 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
         clearTimeout(projectInfoSaveTimerRef.current);
         projectInfoSaveTimerRef.current = null;
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    isUserAdmin()
+      .then((ok) => {
+        if (!cancelled) setIsAdmin(Boolean(ok));
+      })
+      .catch(() => {
+        if (!cancelled) setIsAdmin(false);
+      });
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -313,6 +335,55 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
     const newValue = e.target.value;
     setProjectInfoNotes(newValue);
     valuesRef.current.projectInfoNotes = newValue;
+  }
+
+  async function openShowPath() {
+    if (!project?.id || !isAdmin) return;
+    setShowPathOpen(true);
+    setPathLoading(true);
+    setPathError("");
+    setPathDraft("");
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${project.id}/folder-path`, {
+        method: "GET",
+        headers: getApiHeaders(),
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not load the project path");
+      setPathDraft(data.path || "");
+    } catch (err) {
+      setPathError(err.message || "Could not load the project path");
+    } finally {
+      setPathLoading(false);
+    }
+  }
+
+  async function saveShowPath() {
+    if (!project?.id || pathSaving) return;
+    const next = pathDraft.trim();
+    if (!next) {
+      setPathError("Enter the project folder path.");
+      return;
+    }
+    setPathSaving(true);
+    setPathError("");
+    try {
+      const res = await fetch(`${API_URL}/api/projects/${project.id}/folder-path`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ path: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not save the project path");
+      setShowPathOpen(false);
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      setPathError(err.message || "Could not save the project path");
+    } finally {
+      setPathSaving(false);
+    }
   }
 
   async function handleOpenProjectFolder() {
@@ -868,6 +939,21 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
             >
               {openingProjectFolder ? "Opening…" : "Project Folder"}
             </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={openShowPath}
+                disabled={!project?.id}
+                style={{
+                  ...projectFolderButtonStyle,
+                  width: "auto",
+                  opacity: project?.id ? 1 : 0.65,
+                  cursor: project?.id ? "pointer" : "default",
+                }}
+              >
+                Show Path
+              </button>
+            )}
             <button
               type="button"
               onClick={async () => {
@@ -934,6 +1020,97 @@ export default function ProjectInfo({ project, onUpdate, onRequestRenovationDupl
           </div>
         </div>
       )}
+      {showPathOpen &&
+        createPortal(
+          <div
+            role="presentation"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.45)",
+              zIndex: 4000,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "24px",
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Show Path"
+              style={{
+                width: "min(720px, 100%)",
+                background: WHITE,
+                color: MONUMENT,
+                borderRadius: "12px",
+                border: FIELD_OUTLINE,
+                padding: "20px",
+                boxSizing: "border-box",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
+              <div style={{ fontSize: "1.05rem", fontWeight: 600 }}>Show Path</div>
+              <div style={{ fontSize: "0.85rem", lineHeight: 1.4 }}>
+                This is the job folder. Saving it updates Project Folder, Show Proposal, drawings, colours, and the other file paths stored for this project.
+              </div>
+              <input
+                type="text"
+                value={pathDraft}
+                disabled={pathLoading || pathSaving}
+                onChange={(e) => setPathDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void saveShowPath();
+                  }
+                }}
+                spellCheck={false}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: "10px 12px",
+                  fontFamily: "monospace",
+                  fontSize: "0.85rem",
+                  color: MONUMENT,
+                  border: FIELD_OUTLINE,
+                  borderRadius: "8px",
+                }}
+              />
+              {pathError ? (
+                <div style={{ color: "#8a1f1f", fontSize: "0.85rem" }}>{pathError}</div>
+              ) : null}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pathSaving) return;
+                    setShowPathOpen(false);
+                  }}
+                  disabled={pathSaving}
+                  style={{ ...projectFolderButtonStyle, width: "auto" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveShowPath()}
+                  disabled={pathLoading || pathSaving || !pathDraft.trim()}
+                  style={{
+                    ...projectFolderButtonStyle,
+                    width: "auto",
+                    opacity: pathLoading || pathSaving || !pathDraft.trim() ? 0.65 : 1,
+                  }}
+                >
+                  {pathSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

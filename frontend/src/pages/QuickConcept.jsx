@@ -30,7 +30,7 @@ import {
   nearestParamOnLoop,
   snapLoopParam,
 } from "../utils/kitchenCustomRun.js";
-import QuickConcept3DPreview, { walkSplinePlanPoints } from "../components/QuickConcept3DPreview";
+import QuickConcept3DPreview, { planWindowQuads, walkSplinePlanPoints } from "../components/QuickConcept3DPreview";
 import sgfHomesLogo from "../images/SGF Homes.png";
 import ModalBackdrop from "../components/ModalBackdrop";
 import { useEmailSendOverlay } from "../components/EmailSendOverlay";
@@ -2474,6 +2474,30 @@ function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, walls) {
   if (geom) drawBedroomDoorRobe(ctx, geom, layout, bw);
 }
 
+function drawPlanWindows(ctx, rooms, layout, innerMetres, bw) {
+  const quads = planWindowQuads(
+    roomsWithPorchSteps(rooms, layout.metres),
+    layout.metres,
+    collectDesignDoors(rooms, layout.metres, innerMetres || layout.metres)
+  );
+  if (!quads.length) return;
+  ctx.save();
+  ctx.lineJoin = "miter";
+  ctx.lineWidth = 1.1;
+  ctx.strokeStyle = bw ? "#111111" : WALL_FILL;
+  ctx.fillStyle = "#ffffff";
+  for (const quad of quads) {
+    const pts = quad.map((p) => mPointToPx(p, layout));
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawPorchFrontDoorOpening(ctx, door, layout, bw) {
   const opening = porchFrontDoorOpening(door);
   if (!opening) return;
@@ -3051,6 +3075,8 @@ function buildDesignExportCanvas(layout, rooms, options = {}) {
       if (door?.sliding) drawSlidingDoorCanvas(ctx, door, layout, bw);
     }
   }
+
+  drawPlanWindows(ctx, rooms, layout, innerMetres, bw);
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -4236,18 +4262,11 @@ function ConfirmModal({ title, message, confirmLabel = "Delete", onConfirm, onCa
   );
 }
 
-function Design3DModal({
-  layout,
-  rooms,
-  walkRoute = null,
-  onAddLocation,
-  onAddPoint,
-  onAddFinish,
-  onClearWalk,
-  onClose,
-}) {
+function Design3DModal({ layout, rooms, walkRoute = null, onClose }) {
   const walkRef = useRef(null);
   const flyByRef = useRef(null);
+  const walkByRef = useRef(null);
+  const eyeLevelRef = useRef(null);
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Escape") return;
@@ -4330,6 +4349,8 @@ function Design3DModal({
               doors={planDoors}
               walkRef={walkRef}
               flyByRef={flyByRef}
+              walkByRef={walkByRef}
+              eyeLevelRef={eyeLevelRef}
               walkRoute={walkRoute}
             />
           </div>
@@ -4358,22 +4379,27 @@ function Design3DModal({
             >
               Fly By
             </button>
-            <button type="button" onClick={onAddLocation} style={toolbarButtonStyle(true)}>
-              Add location
-            </button>
-            <button type="button" onClick={onAddPoint} style={toolbarButtonStyle(true)}>
-              Add point
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                walkByRef.current?.();
+              }}
+              style={{ ...toolbarButtonStyle(true), position: "relative", zIndex: 2 }}
+            >
+              Walk By
             </button>
             <button
               type="button"
-              onClick={onAddFinish}
-              disabled={Boolean(walkRoute?.finish)}
-              style={toolbarButtonStyle(!walkRoute?.finish)}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                eyeLevelRef.current?.();
+              }}
+              style={{ ...toolbarButtonStyle(true), position: "relative", zIndex: 2 }}
             >
-              Add finish
-            </button>
-            <button type="button" onClick={onClearWalk} style={toolbarButtonStyle(true)}>
-              Clear
+              Eye Level
             </button>
           </div>
           <button type="button" onClick={onClose} style={toolbarButtonStyle(true)} autoFocus>
@@ -10323,9 +10349,21 @@ function roundMm(v) {
 }
 
 function translateDesign(metres, rooms, dx, dy) {
+  const moved = metres.map((p) => ({ x: roundMm(p.x + dx), y: roundMm(p.y + dy) }));
   return {
-    metres: metres.map((p) => ({ x: roundMm(p.x + dx), y: roundMm(p.y + dy) })),
-    rooms: rooms.map((r) => ({ ...r, x: roundMm(r.x + dx), y: roundMm(r.y + dy) })),
+    metres: moved,
+    rooms: rooms.map((r) => {
+      const next = { ...r, x: roundMm(r.x + dx), y: roundMm(r.y + dy) };
+      if (isPorch(r) && r.porchRun) return applyPorchRun(next, r.porchRun, moved);
+      if (r.porchParts?.length) {
+        next.porchParts = r.porchParts.map((part) => ({
+          ...part,
+          x: roundMm(part.x + dx),
+          y: roundMm(part.y + dy),
+        }));
+      }
+      return next;
+    }),
   };
 }
 
@@ -13171,6 +13209,13 @@ function DesignModal({
   const partitionWallCornersPx = layout
     ? partitionWallCorners(partitionWalls).map((c) => wallCornerToLayoutPx(c, layout))
     : [];
+  const planWindowPx = layout
+    ? planWindowQuads(
+        roomsWithPorchSteps(rooms, layout.metres),
+        layout.metres,
+        collectDesignDoors(rooms, layout.metres, innerMetres || layout.metres)
+      ).map((quad) => quad.map((p) => mPointToPx(p, layout)))
+    : [];
 
   const renderPlanRoom = (room) => {
     const r = roomToPx(room, layout);
@@ -14830,6 +14875,16 @@ function DesignModal({
                       />
                     );
                   })}
+                  {planWindowPx.map((pts, i) => (
+                    <polygon
+                      key={`win-${i}`}
+                      points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                      fill="#ffffff"
+                      stroke={WALL_FILL}
+                      strokeWidth="1.1"
+                      strokeLinejoin="miter"
+                    />
+                  ))}
                   {rooms.map((room) => {
                     const door = roomDoorSwing(room, innerMetres);
                     if (!door?.sliding) return null;
@@ -15144,19 +15199,6 @@ function DesignModal({
           layout={layout}
           rooms={rooms}
           walkRoute={{ start: shownWalkStart, stops: walkStops, finish: walkFinish }}
-          onAddLocation={() => {
-            addWalkLocation();
-            setThreeDOpen(false);
-          }}
-          onAddPoint={() => {
-            addWalkPoint();
-            setThreeDOpen(false);
-          }}
-          onAddFinish={() => {
-            addWalkFinish();
-            setThreeDOpen(false);
-          }}
-          onClearWalk={clearWalkSetup}
           onClose={() => setThreeDOpen(false)}
         />
       ) : null}
