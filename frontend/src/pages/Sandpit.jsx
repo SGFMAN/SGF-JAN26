@@ -2,7 +2,9 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import WalkingMan from "../components/WalkingMan.jsx";
 import ScubaDive from "../components/ScubaDive.jsx";
-import RunningLogSplash from "../components/RunningLogSplash.jsx";
+import EscapeIsland from "../escapeIsland/EscapeIsland.jsx";
+import Clockwork from "../clockwork/Clockwork.jsx";
+import GarminRuns from "../components/GarminRuns.jsx";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const PAGE_TEXT = UI.pageText;
@@ -41,7 +43,9 @@ function SandpitMenu({ onPick }) {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 18,
+        gap: 14,
+        overflowY: "auto",
+        padding: "28px 16px",
         background:
           "radial-gradient(ellipse at 50% 115%, rgba(14, 92, 112, 0.85) 0%, rgba(7, 18, 28, 0.96) 52%, #05080c 100%)",
       }}
@@ -65,9 +69,17 @@ function SandpitMenu({ onPick }) {
         <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Scuba</div>
         <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>Swim the reef</div>
       </button>
-      <button type="button" style={{ ...optionStyle, borderColor: "rgba(240, 180, 41, 0.55)" }} onClick={() => onPick("running")}>
-        <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Running</div>
-        <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>Running log</div>
+      <button type="button" style={{ ...optionStyle, borderColor: "rgba(240, 180, 41, 0.55)" }} onClick={() => onPick("garmin")}>
+        <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Garmin Runs</div>
+        <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>Running activities</div>
+      </button>
+      <button type="button" style={{ ...optionStyle, borderColor: "rgba(80, 190, 140, 0.7)" }} onClick={() => onPick("island")}>
+        <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Escape Island</div>
+        <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>A small adventure</div>
+      </button>
+      <button type="button" style={{ ...optionStyle, borderColor: "rgba(212, 179, 106, 0.75)" }} onClick={() => onPick("clockwork")}>
+        <div style={{ fontSize: "1.2rem", fontWeight: 750, letterSpacing: "0.02em", lineHeight: 1.25 }}>The Clockwork Conspiracy</div>
+        <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>A town adventure</div>
       </button>
     </div>
   );
@@ -87,7 +99,9 @@ export default function Sandpit() {
       {mode === null ? <SandpitMenu onPick={setMode} /> : null}
       {mode === "kill" ? <WalkingMan /> : null}
       {mode === "scuba" ? <ScubaDive key="turn-fix" /> : null}
-      {mode === "running" ? <RunningLogSplash /> : null}
+      {mode === "garmin" ? <GarminRuns /> : null}
+      {mode === "island" ? <EscapeIsland onExit={() => setMode(null)} /> : null}
+      {mode === "clockwork" ? <Clockwork onExit={() => setMode(null)} /> : null}
       <div style={{ position: "absolute", top: 16, left: 16, zIndex: 5, display: "flex", gap: 8 }}>
         <Link to="/projects" style={hudButtonStyle}>
           Back to Projects

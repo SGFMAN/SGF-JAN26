@@ -212,6 +212,7 @@ const {
   getStaffUserIdFromRequest,
   requireStaffUserId,
 } = require("./staffIdentity");
+const { registerGarminRuns } = require("./garminRuns");
 const app = express();
 
 /** False until migrations finish; API returns 503 until then (server listens immediately). */
@@ -893,6 +894,8 @@ const pool = process.env.DATABASE_URL
           : undefined,
     })
   : null;
+
+registerGarminRuns(app, { pool });
 
 function isRetryableDbError(err) {
   const code = String(err?.code || "");

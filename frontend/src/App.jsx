@@ -42,6 +42,7 @@ import Sales from "./pages/Sales";
 import SalesTotals from "./pages/SalesTotals";
 import SalesAnalytics from "./pages/SalesAnalytics";
 import SalesPersonFigures from "./pages/SalesPersonFigures";
+import ClaimUnaccountedSales from "./pages/ClaimUnaccountedSales";
 import SalesProjectsOverview from "./pages/SalesProjectsOverview";
 import SalesBreakdowns from "./pages/SalesBreakdowns";
 import ApproveConcept from "./pages/ApproveConcept";
@@ -153,6 +154,7 @@ export default function App() {
             <Route path="/sales-totals" element={<Auth><SalesAccessRoute><SalesTotals /></SalesAccessRoute></Auth>} />
             <Route path="/sales-analytics" element={<Auth><SalesAccessRoute><SalesAnalytics /></SalesAccessRoute></Auth>} />
             <Route path="/sales-person-figures" element={<Auth><SalesAccessRoute><SalesPersonFigures /></SalesAccessRoute></Auth>} />
+            <Route path="/sales-person-figures/claim" element={<Auth><SalesAccessRoute><ClaimUnaccountedSales /></SalesAccessRoute></Auth>} />
             <Route path="/sales-projects-overview" element={<Auth><SalesAccessRoute><SalesProjectsOverview /></SalesAccessRoute></Auth>} />
             <Route path="/sales-breakdowns" element={<Auth><SalesAccessRoute><SalesBreakdowns /></SalesAccessRoute></Auth>} />
             <Route path="/email-generator" element={<Auth><AdminAccessRoute><EmailGenerator /></AdminAccessRoute></Auth>} />

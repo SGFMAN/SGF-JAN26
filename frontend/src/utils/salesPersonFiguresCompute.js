@@ -86,8 +86,67 @@ export function computeSalesPersonFigures(periodProjects, salesTeamUsers) {
     unaccountedProjects: unaccountedProjects.map((project) => ({
       id: project.id,
       address: formatProjectAddress(project),
+      salesperson: String(project.salesperson ?? "").trim(),
     })),
     totalSales: salesProjects.length,
     totalAccounted,
   };
+}
+
+/**
+ * Rank the sales team for the race board.
+ * People with sales are ordered by count. Unaccounted sales sit in that same
+ * order when there are any, without taking a place. Zero-sale people stay at the bottom.
+ */
+export function buildSalesLeaderboard(figures) {
+  const withSales = [];
+  const withoutSales = [];
+  for (const row of figures?.rows || []) {
+    if (row.salesCount > 0) withSales.push(row);
+    else withoutSales.push(row);
+  }
+
+  withSales.sort(
+    (a, b) =>
+      b.salesCount - a.salesCount ||
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+  );
+  withoutSales.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+  let rank = 0;
+  let lastCount = null;
+  const ranked = withSales.map((row) => {
+    if (row.salesCount !== lastCount) {
+      rank += 1;
+      lastCount = row.salesCount;
+    }
+    return { ...row, rank, kind: "person" };
+  });
+
+  const scored = ranked.map((row) => ({ ...row }));
+  const unaccounted = Number(figures?.unaccounted) || 0;
+  if (unaccounted > 0) {
+    scored.push({
+      userId: "unaccounted",
+      name: "Unaccounted",
+      salesCount: unaccounted,
+      kind: "unaccounted",
+      rank: null,
+    });
+    scored.sort((a, b) => {
+      if (b.salesCount !== a.salesCount) return b.salesCount - a.salesCount;
+      if (a.kind === "unaccounted") return 1;
+      if (b.kind === "unaccounted") return -1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+  }
+
+  const bars = [
+    ...scored,
+    ...withoutSales.map((row) => ({ ...row, rank: null, kind: "person" })),
+  ];
+  const max = bars.reduce((highest, bar) => Math.max(highest, bar.salesCount), 0);
+  const leaders = ranked.filter((row) => row.rank === 1);
+
+  return { bars, max, leaders };
 }
