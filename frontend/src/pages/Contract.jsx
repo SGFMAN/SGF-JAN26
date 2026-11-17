@@ -8,26 +8,29 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const CONTRACT_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
+const CONTRACT_STATUS_SGF_OPTIONS = ["Incomplete", "Complete"];
 const SUPPORTING_DOCUMENTS_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 const WATER_AUTHORITY_OPTIONS = ["Not Required", "Barwon Water", "Greater Western Water", "South East Water"];
 const WATER_DECLARATION_STATUS_OPTIONS = ["Not Sent", "Sent", "Complete"];
 
 export default function Contract({ project, onUpdate }) {
   const [contractStatus, setContractStatus] = useState(project?.contract_status || "Not Sent");
+  const [contractStatusSgf, setContractStatusSgf] = useState(project?.contract_status_sgf || "Incomplete");
   const [supportingDocumentsStatus, setSupportingDocumentsStatus] = useState(project?.supporting_documents_status || "Not Sent");
   const [waterAuthority, setWaterAuthority] = useState(project?.water_authority || "Not Required");
   const [waterDeclarationStatus, setWaterDeclarationStatus] = useState(project?.water_declaration_status || "Not Sent");
   const [notes, setNotes] = useState(project?.notes || "");
   
-  const valuesRef = useRef({ contractStatus, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes });
+  const valuesRef = useRef({ contractStatus, contractStatusSgf, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes });
 
   useEffect(() => {
-    valuesRef.current = { contractStatus, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes };
-  }, [contractStatus, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes]);
+    valuesRef.current = { contractStatus, contractStatusSgf, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes };
+  }, [contractStatus, contractStatusSgf, supportingDocumentsStatus, waterAuthority, waterDeclarationStatus, notes]);
 
   useEffect(() => {
     if (!project) return;
     setContractStatus(project.contract_status || "Not Sent");
+    setContractStatusSgf(project.contract_status_sgf || "Incomplete");
     setSupportingDocumentsStatus(project.supporting_documents_status || "Not Sent");
     setWaterAuthority(project.water_authority || "Not Required");
     setWaterDeclarationStatus(project.water_declaration_status || "Not Sent");
@@ -73,6 +76,7 @@ export default function Contract({ project, onUpdate }) {
         deposit: project?.deposit || null,
         project_cost: project?.project_cost || null,
         contract_status: fieldName === "contract_status" ? (value === "" ? null : value) : currentValues.contractStatus,
+        contract_status_sgf: fieldName === "contract_status_sgf" ? (value === "" ? null : value) : currentValues.contractStatusSgf,
         supporting_documents_status: fieldName === "supporting_documents_status" ? (value === "" ? null : value) : currentValues.supportingDocumentsStatus,
         water_authority: fieldName === "water_authority" ? (value === "" ? null : value) : currentValues.waterAuthority,
         water_declaration_status: fieldName === "water_declaration_status" ? (value === "" ? null : value) : currentValues.waterDeclarationStatus,
@@ -87,6 +91,10 @@ export default function Contract({ project, onUpdate }) {
       // If contract status changes to "Complete", always update the complete date/time to current date/time
       if (fieldName === "contract_status" && value === "Complete") {
         updateData.contract_complete_date = new Date().toISOString();
+      }
+
+      if (fieldName === "contract_status_sgf" && value === "Complete") {
+        updateData.contract_sgf_complete_date = new Date().toISOString();
       }
       
       // If supporting documents status changes to "Sent", always update the sent date/time to current date/time
@@ -149,6 +157,13 @@ export default function Contract({ project, onUpdate }) {
     await saveField("contract_status", newStatus);
   }
 
+  async function handleContractStatusSgfChange(e) {
+    const newStatus = e.target.value;
+    setContractStatusSgf(newStatus);
+    valuesRef.current.contractStatusSgf = newStatus;
+    await saveField("contract_status_sgf", newStatus);
+  }
+
   async function handleSupportingDocumentsStatusChange(e) {
     const newStatus = e.target.value;
     setSupportingDocumentsStatus(newStatus);
@@ -189,12 +204,20 @@ export default function Contract({ project, onUpdate }) {
         Contract
       </h2>
       {project && (
-        <div style={{ marginTop: "24px", display: "flex", gap: "24px", flexWrap: "wrap" }}>
+        <div
+          style={{
+            marginTop: "24px",
+            display: "grid",
+            gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+            gap: "24px",
+            alignItems: "start",
+          }}
+        >
           {/* Column 1 - Contract */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
-                Contract Status
+                Contract Status - Client
               </div>
               <select
                 name="contractStatus"
@@ -269,8 +292,64 @@ export default function Contract({ project, onUpdate }) {
             )}
           </div>
 
-          {/* Column 2 - Supporting Documents */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
+          {/* Column 2 - Contract Status - SGF */}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                Contract Status - SGF
+              </div>
+              <select
+                name="contractStatusSgf"
+                value={contractStatusSgf}
+                onChange={handleContractStatusSgfChange}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  fontSize: "1rem",
+                  color: MONUMENT,
+                  background: WHITE,
+                  boxSizing: "border-box",
+                  cursor: "pointer",
+                  display: "inline-block",
+                  maxWidth: "100%",
+                }}
+              >
+                {CONTRACT_STATUS_SGF_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {contractStatusSgf === "Complete" && project?.contract_sgf_complete_date && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
+                  Complete Date & Time
+                </div>
+                <div
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "1rem",
+                    color: MONUMENT,
+                    background: WHITE,
+                    boxSizing: "border-box",
+                    maxWidth: "100%",
+                  }}
+                >
+                  {formatDateTime(project.contract_sgf_complete_date)}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Column 3 - Supporting Documents */}
+          <div style={{ minWidth: 0 }}>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Supporting Documents Status
@@ -348,8 +427,8 @@ export default function Contract({ project, onUpdate }) {
             )}
           </div>
 
-          {/* Column 3 - Water Authority & Water Declaration */}
-          <div style={{ flex: "1", minWidth: "200px" }}>
+          {/* Column 4 - Water */}
+          <div style={{ minWidth: 0 }}>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
                 Water Authority
@@ -459,8 +538,8 @@ export default function Contract({ project, onUpdate }) {
             )}
           </div>
 
-          {/* Column 4 - Notes */}
-          <div style={{ flex: "1", minWidth: "200px", display: "flex", flexDirection: "column", height: "100%" }}>
+          {/* Column 5 - Notes */}
+          <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
             <div style={{ fontSize: "0.9rem", color: UI.textMuted, marginBottom: "6px" }}>
               Notes
             </div>

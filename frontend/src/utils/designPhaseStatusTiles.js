@@ -122,12 +122,14 @@ function getSiteVisitStatusIndicator(project) {
 
 function isOverviewContractComplete(project) {
   const contractStatus = field(project, "contract_status", "contractStatus") || "Not Sent";
+  const sgfStatus = field(project, "contract_status_sgf", "contractStatusSgf") || "Incomplete";
   const supportingDocsStatus =
     field(project, "supporting_documents_status", "supportingDocumentsStatus") || "Not Sent";
   const waterDeclStatus = field(project, "water_declaration_status", "waterDeclarationStatus");
   const waterAuthority = field(project, "water_authority", "waterAuthority") || "Not Required";
   return (
     contractStatus === "Complete" &&
+    sgfStatus === "Complete" &&
     supportingDocsStatus === "Complete" &&
     (waterDeclStatus === "Complete" || waterAuthority === "Not Required")
   );
@@ -145,11 +147,13 @@ export function getColoursStatusText(project) {
   return field(project, "colours_status", "coloursStatus") || "Not Sent";
 }
 
-/** Replace {Contract Status} and {Color Status} with Overview status text. */
+/** Replace contract and colour status tokens with Overview status text. */
 export function replaceContractAndColorStatusTokens(text, project) {
   if (text == null) return text;
   let replaced = String(text);
-  replaced = replaced.replace(/\{Contract Status\}/g, getContractStatusText(project));
+  const contractText = getContractStatusText(project);
+  replaced = replaced.replace(/\{Contract Status - Client\}/g, contractText);
+  replaced = replaced.replace(/\{Contract Status\}/g, contractText);
   replaced = replaced.replace(/\{Color Status\}/g, getColoursStatusText(project));
   return replaced;
 }
@@ -282,7 +286,7 @@ export const OVERVIEW_STATUS_HEADINGS = [
   { key: "site-visit", label: "Site Visit" },
   { key: "colours", label: "Colours" },
   { key: "windows", label: "Windows" },
-  { key: "contract", label: "Contract" },
+  { key: "contract", label: "Contract Status" },
   { key: "survey-soils", label: "Survey & Soils" },
   { key: "town-planning", label: "Town Planning" },
   { key: "bal", label: "BAL" },
@@ -343,7 +347,7 @@ export function buildDesignPhaseStatusTiles(project) {
     },
     {
       key: "contract",
-      label: "Contract",
+      label: "Contract Status",
       value: getContractStatusText(project),
       indicatorStyle: getContractStatusIndicator(project),
       view: "contract",

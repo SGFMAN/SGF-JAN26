@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import sgfLogoUrl from "../images/SGF Homes.png";
 
 const WALL_H = 2.55;
-const WINDOW_H_M = 0.9;
+const WINDOW_H_M = 1.2;
 const WINDOW_HEAD_M = 2.1;
 const WALL_T = 0.1;
 const LINE = 0xb8b8b8;
@@ -26,6 +26,7 @@ const SINK_ALONG_M = 1.155;
 const SINK_ACROSS_M = 0.495;
 const SINK_RIGHT_M = 0.05;
 const BED_SHORT_M = 1.8;
+const BED_SINGLE_M = 0.92;
 const BED_LONG_M = 2.0;
 const VANITY_WIDTH_M = 0.9;
 const VANITY_DEPTH_M = 0.4;
@@ -1254,12 +1255,39 @@ function bedroomBedSide(room) {
   return room.w >= room.h ? "top" : "left";
 }
 
+function bedAlongLenOf(room) {
+  return room?.bedStyle === "single" ? BED_SINGLE_M : BED_SHORT_M;
+}
+
+function bedsideOf(room) {
+  if (room?.bedside === "right" || room?.bedside === "none") return room.bedside;
+  return "left";
+}
+
+function bedStartIsLeft(frame) {
+  const leftX = -frame.inward.y;
+  const leftY = frame.inward.x;
+  return -frame.along.x * leftX + -frame.along.y * leftY > 0;
+}
+
+function bedsideClampKey(room, frame) {
+  if (room?.bedStyle !== "single") return "both";
+  const which = bedsideOf(room);
+  if (which === "none") return "none";
+  const startIsLeft = bedStartIsLeft(frame);
+  if (which === "left") return startIsLeft ? "start" : "end";
+  return startIsLeft ? "end" : "start";
+}
+
 function bedroomBedAlong(room, side) {
   const frame = roomWallFrame(room, side);
+  const alongLen = bedAlongLenOf(room);
   const storedAlong = Number(room?.bedAlong);
   return clampBedAlong(
     frame.wallLen,
-    Number.isFinite(storedAlong) ? storedAlong : (frame.wallLen - BED_SHORT_M) / 2
+    Number.isFinite(storedAlong) ? storedAlong : (frame.wallLen - alongLen) / 2,
+    alongLen,
+    bedsideClampKey(room, frame)
   );
 }
 
@@ -1307,6 +1335,7 @@ function bedroomDoor(room, doors) {
 }
 
 function bedroomRobeSide(room, door) {
+  if (room?.robeStyle === "none") return null;
   const stored = room?.robeSide;
   if (stored === "top" || stored === "right" || stored === "bottom" || stored === "left") return stored;
   const doorSide = doorSideOfRoom(room, door);
@@ -1392,7 +1421,7 @@ function bedroomWindowOnWall(room, side, kind, door) {
       ? fitWindowNear(
           frame.wallLen,
           width,
-          bedroomBedAlong(room, side) + (BED_SHORT_M - width) / 2,
+          bedroomBedAlong(room, side) + (bedAlongLenOf(room) - width) / 2,
           blocks
         )
       : longestWindowFit(frame.wallLen, width, blocks);
@@ -1469,13 +1498,8 @@ function bedroomWindowsForEdge(rooms, outer, edgeIndex, doors, blocked) {
   return out;
 }
 
-const BATH_WIN_FREE_W = 1.51;
-const BATH_WIN_FREE_H = 1.81;
-const BATH_WIN_SHOWER_W = 1.21;
-const BATH_WIN_SHOWER_H = 0.4;
-const BATH_WIN_SHOWER_HEAD = 2.33;
 const BATH_WIN_TOILET_W = 0.6;
-const BATH_WIN_TOILET_H = 0.6;
+const BATH_WIN_H = 0.45;
 
 function bathroomVanitySide(room) {
   const side = room?.vanitySide;
@@ -1483,32 +1507,36 @@ function bathroomVanitySide(room) {
   return room.h >= room.w ? "top" : "right";
 }
 
-function showerWallContacts(room) {
-  const shower = showerRect3D(room);
+function showerEdgeOnRoomSide(room, shower, side) {
   const tol = 0.2;
-  const contacts = [];
-  if (shower.y - room.y <= tol) {
-    contacts.push({ side: "top", lo: shower.x - room.x, hi: shower.x + shower.w - room.x });
-  }
-  if (room.y + room.h - (shower.y + shower.h) <= tol) {
-    contacts.push({ side: "bottom", lo: shower.x - room.x, hi: shower.x + shower.w - room.x });
-  }
-  if (shower.x - room.x <= tol) {
-    contacts.push({ side: "left", lo: shower.y - room.y, hi: shower.y + shower.h - room.y });
-  }
-  if (room.x + room.w - (shower.x + shower.w) <= tol) {
-    contacts.push({ side: "right", lo: shower.y - room.y, hi: shower.y + shower.h - room.y });
-  }
-  return contacts.filter((contact) => contact.hi - contact.lo > 0.3);
+  if (side === "top") return shower.y - room.y <= tol;
+  if (side === "bottom") return room.y + room.h - (shower.y + shower.h) <= tol;
+  if (side === "left") return shower.x - room.x <= tol;
+  if (side === "right") return room.x + room.w - (shower.x + shower.w) <= tol;
+  return false;
 }
 
-function showerTapEndSide(room) {
+function showerWindowSpec(room, outer, door) {
   const shower = showerRect3D(room);
-  const tol = 0.25;
-  if (shower.rot === 0 && shower.x - room.x <= tol) return "left";
-  if (shower.rot === 2 && room.x + room.w - (shower.x + shower.w) <= tol) return "right";
-  if (shower.rot === 1 && shower.y - room.y <= tol) return "top";
-  if (shower.rot === 3 && room.y + room.h - (shower.y + shower.h) <= tol) return "bottom";
+  const length = Math.max(shower.w, shower.h);
+  const depth = Math.min(shower.w, shower.h);
+  const width = length - 0.3;
+  if (width < 0.3) return null;
+  const square = Math.abs(length - depth) < 0.05;
+  const longIsX = shower.w >= shower.h;
+  const head = shower.rot === 0 ? "left" : shower.rot === 1 ? "top" : shower.rot === 2 ? "right" : "bottom";
+  const sides = square ? ["top", "right", "bottom", "left"] : longIsX ? ["top", "bottom"] : ["left", "right"];
+  for (const side of sides) {
+    if (side === head || !showerEdgeOnRoomSide(room, shower, side)) continue;
+    if (!sideExternalEdge(outer, roomWallFrame(room, side))) continue;
+    const center =
+      side === "top" || side === "bottom" ? shower.x + shower.w / 2 - room.x : shower.y + shower.h / 2 - room.y;
+    const spec = bathroomWindowOnWall(room, side, width, BATH_WIN_H, WINDOW_HEAD_M, center, door);
+    if (!spec) continue;
+    const mid = (spec.along.lo + spec.along.hi) / 2;
+    if (Math.abs(mid - center) > 0.08) continue;
+    return spec;
+  }
   return null;
 }
 
@@ -1526,51 +1554,19 @@ function bathroomWindowOnWall(room, side, width, height, head, center, door, ext
 
 function bathroomWindowSpec(room, outer, doors) {
   const door = bedroomDoor(room, doors);
-  const doorSide = doorSideOfRoom(room, door);
-  const vanitySide = bathroomVanitySide(room);
+  const showerWin = showerWindowSpec(room, outer, door);
+  if (showerWin) return showerWin;
   const toilet = bathroomToilet3D(room);
-  const toiletSide = toilet?.side || null;
-  const showers = showerWallContacts(room);
-  const tapSide = showerTapEndSide(room);
-  const occupied = new Set(
-    [vanitySide, toiletSide, doorSide, tapSide, ...showers.map((contact) => contact.side)].filter(Boolean)
+  if (!toilet?.side || !sideExternalEdge(outer, roomWallFrame(room, toilet.side))) return null;
+  return bathroomWindowOnWall(
+    room,
+    toilet.side,
+    BATH_WIN_TOILET_W,
+    BATH_WIN_H,
+    WINDOW_HEAD_M,
+    toilet.alongM + toilet.tankAlong / 2,
+    door
   );
-  const isExternal = (side) => sideExternalEdge(outer, roomWallFrame(room, side));
-  const free = ["top", "right", "bottom", "left"].filter((side) => !occupied.has(side) && isExternal(side));
-  free.sort((a, b) => roomWallFrame(room, b).wallLen - roomWallFrame(room, a).wallLen);
-  for (const side of free) {
-    const spec = bathroomWindowOnWall(room, side, BATH_WIN_FREE_W, BATH_WIN_FREE_H, WINDOW_HEAD_M, null, door);
-    if (spec) return spec;
-  }
-  const showerWalls = showers
-    .filter((contact) => contact.side !== tapSide && isExternal(contact.side))
-    .sort((a, b) => b.hi - b.lo - (a.hi - a.lo));
-  for (const contact of showerWalls) {
-    const spec = bathroomWindowOnWall(
-      room,
-      contact.side,
-      BATH_WIN_SHOWER_W,
-      BATH_WIN_SHOWER_H,
-      BATH_WIN_SHOWER_HEAD,
-      (contact.lo + contact.hi) / 2,
-      door
-    );
-    if (spec) return spec;
-  }
-  if (toilet && toiletSide && isExternal(toiletSide)) {
-    const tapContact = tapSide === toiletSide ? showers.find((contact) => contact.side === tapSide) : null;
-    return bathroomWindowOnWall(
-      room,
-      toiletSide,
-      BATH_WIN_TOILET_W,
-      BATH_WIN_TOILET_H,
-      WINDOW_HEAD_M,
-      toilet.alongM + toilet.tankAlong / 2,
-      door,
-      tapContact ? [{ lo: tapContact.lo - 0.05, hi: tapContact.hi + 0.05 }] : null
-    );
-  }
-  return null;
 }
 
 function bathroomWindowsForEdge(rooms, outer, edgeIndex, doors, blocked) {
@@ -2353,6 +2349,7 @@ function addWorldRectThin(parent, rect, height, yCenter, fill, lineMat, cx, cz) 
 }
 
 function robeGeom3D(room) {
+  if (room?.robeStyle === "none") return null;
   const side =
     room?.robeSide === "top" ||
     room?.robeSide === "right" ||
@@ -2484,12 +2481,13 @@ function wallBoxRect(origin, along, inward, t0, t1, d0, d1) {
   };
 }
 
-function clampBedAlong(wallLen, along) {
-  const alongLen = BED_SHORT_M;
-  const sidePad = NIGHTSTAND_M + NIGHTSTAND_GAP_M;
+function clampBedAlong(wallLen, along, alongLen = BED_SHORT_M, side = "both") {
+  const pad = NIGHTSTAND_M + NIGHTSTAND_GAP_M;
+  const padStart = side === "both" || side === "start" ? pad : 0;
+  const padEnd = side === "both" || side === "end" ? pad : 0;
   const maxAlong = Math.max(0, wallLen - alongLen);
-  const paddedMin = sidePad;
-  const paddedMax = wallLen - alongLen - sidePad;
+  const paddedMin = padStart;
+  const paddedMax = wallLen - alongLen - padEnd;
   if (paddedMax >= paddedMin) {
     const raw = Number.isFinite(along) ? along : (paddedMin + paddedMax) / 2;
     return Math.max(paddedMin, Math.min(paddedMax, raw));
@@ -2506,55 +2504,81 @@ function bedroomBedGroup(room) {
         ? "top"
         : "left";
   const frame = roomWallFrame(room, bedSide);
-  const alongLen = BED_SHORT_M;
+  const alongLen = bedAlongLenOf(room);
   const depth = BED_LONG_M;
   const storedAlong = Number(room?.bedAlong);
   const alongM = clampBedAlong(
     frame.wallLen,
-    Number.isFinite(storedAlong) ? storedAlong : (frame.wallLen - alongLen) / 2
+    Number.isFinite(storedAlong) ? storedAlong : (frame.wallLen - alongLen) / 2,
+    alongLen,
+    bedsideClampKey(room, frame)
   );
   const { origin, along, inward } = frame;
   const bed = wallBoxRect(origin, along, inward, alongM, alongM + alongLen, 0, depth);
   const nsSize = NIGHTSTAND_M;
   const nsGap = NIGHTSTAND_GAP_M;
-  const nightstands = [
-    wallBoxRect(origin, along, inward, alongM - nsGap - nsSize, alongM - nsGap, 0.02, 0.02 + nsSize),
-    wallBoxRect(
-      origin,
-      along,
-      inward,
-      alongM + alongLen + nsGap,
-      alongM + alongLen + nsGap + nsSize,
-      0.02,
-      0.02 + nsSize
-    ),
-  ];
-  const pillowGap = Math.min(0.08, alongLen * 0.12);
-  const pillowAlong = Math.min(0.58, Math.max(0.18, (alongLen - pillowGap) * 0.42));
-  const pillowUsed = pillowAlong * 2 + pillowGap;
-  const pillowStart = alongM + Math.max(0, (alongLen - pillowUsed) / 2);
+  const tableAt = (end) => {
+    if (end === "start") {
+      const t1 = alongM - nsGap;
+      return wallBoxRect(origin, along, inward, t1 - nsSize, t1, 0.02, 0.02 + nsSize);
+    }
+    const t0 = alongM + alongLen + nsGap;
+    return wallBoxRect(origin, along, inward, t0, t0 + nsSize, 0.02, 0.02 + nsSize);
+  };
+  const nightstands = [];
+  if (room?.bedStyle !== "single") {
+    nightstands.push(tableAt("start"), tableAt("end"));
+  } else {
+    const which = bedsideOf(room);
+    if (which !== "none") {
+      const startIsLeft = bedStartIsLeft(frame);
+      const placeStart = which === "left" ? startIsLeft : !startIsLeft;
+      nightstands.push(tableAt(placeStart ? "start" : "end"));
+    }
+  }
   const pillowDepth = Math.min(0.36, Math.max(0.22, depth * 0.18));
   const pillowInset = 0.05;
-  const pillows = [
-    wallBoxRect(
-      origin,
-      along,
-      inward,
-      pillowStart,
-      pillowStart + pillowAlong,
-      pillowInset,
-      pillowInset + pillowDepth
-    ),
-    wallBoxRect(
-      origin,
-      along,
-      inward,
-      pillowStart + pillowAlong + pillowGap,
-      pillowStart + pillowAlong + pillowGap + pillowAlong,
-      pillowInset,
-      pillowInset + pillowDepth
-    ),
-  ];
+  let pillows;
+  if (room?.bedStyle === "single") {
+    const pillowAlong = Math.min(0.48, Math.max(0.28, alongLen * 0.52));
+    const pillowStart = alongM + (alongLen - pillowAlong) / 2;
+    pillows = [
+      wallBoxRect(
+        origin,
+        along,
+        inward,
+        pillowStart,
+        pillowStart + pillowAlong,
+        pillowInset,
+        pillowInset + pillowDepth
+      ),
+    ];
+  } else {
+    const pillowGap = Math.min(0.08, alongLen * 0.12);
+    const pillowAlong = Math.min(0.58, Math.max(0.18, (alongLen - pillowGap) * 0.42));
+    const pillowUsed = pillowAlong * 2 + pillowGap;
+    const pillowStart = alongM + Math.max(0, (alongLen - pillowUsed) / 2);
+    pillows = [
+      wallBoxRect(
+        origin,
+        along,
+        inward,
+        pillowStart,
+        pillowStart + pillowAlong,
+        pillowInset,
+        pillowInset + pillowDepth
+      ),
+      wallBoxRect(
+        origin,
+        along,
+        inward,
+        pillowStart + pillowAlong + pillowGap,
+        pillowStart + pillowAlong + pillowGap + pillowAlong,
+        pillowInset,
+        pillowInset + pillowDepth
+      ),
+    ];
+  }
   return { bed, nightstands, pillows, inward };
 }
 
@@ -4061,6 +4085,222 @@ function addCooktop(parent, cook, cx, cz, mats) {
   }
 }
 
+function addUnderbenchOven(parent, room, cx, cz, mats) {
+  const placed = resolveKitchenAppliance(room, "cook");
+  const cook = kitchenCookRect(room);
+  if (!placed || !(cook.w > 0.05) || !(cook.h > 0.05)) return;
+  let front =
+    placed.bench.alongAxis === "x"
+      ? { x: 0, y: placed.bench.wall === "min" ? 1 : -1 }
+      : { x: placed.bench.wall === "min" ? 1 : -1, y: 0 };
+  front = rotatedLocalVec(room, front);
+  const fl = Math.hypot(front.x, front.y) || 1;
+  front = { x: front.x / fl, y: front.y / fl };
+  const faceX = Math.abs(front.x) >= Math.abs(front.y);
+  const sign = faceX ? Math.sign(front.x) || 1 : Math.sign(front.y) || 1;
+  const px = cook.x - cx + cook.w / 2;
+  const pz = cook.y - cz + cook.h / 2;
+  const kick = 0.12;
+  const gap = 0.005;
+  const oven = 0.58;
+  const ovenTop = BENCH_HEIGHT_M - BENCH_TOP_M - gap;
+  const ovenBottom = ovenTop - oven;
+  const face = (wAlong, h, t, y, proud, material, lineMat) => {
+    const off = BENCH_DEPTH_M / 2 + proud + t / 2;
+    addThinBox(
+      parent,
+      faceX ? t : wAlong,
+      h,
+      faceX ? wAlong : t,
+      px + (faceX ? sign * off : 0),
+      y,
+      pz + (faceX ? 0 : sign * off),
+      material,
+      lineMat
+    );
+  };
+  const bodyD = 0.54;
+  const bodyOff = BENCH_DEPTH_M / 2 + 0.004 - bodyD / 2;
+  addBox(
+    parent,
+    faceX ? bodyD : oven,
+    oven,
+    faceX ? oven : bodyD,
+    px + (faceX ? sign * bodyOff : 0),
+    ovenBottom + oven / 2,
+    pz + (faceX ? 0 : sign * bodyOff),
+    mats.steel,
+    mats.softLine
+  );
+  const side = 0.018;
+  const controlH = 0.07;
+  const controlY = ovenTop - 0.012 - controlH / 2;
+  face(oven - side * 2, controlH, 0.008, controlY, 0.006, mats.dark, mats.darkLine);
+  const knobY = controlY;
+  const knobAt = oven * 0.22;
+  for (const shift of [-knobAt, knobAt]) {
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.017, 0.012, 18), mats.chrome);
+    const off = BENCH_DEPTH_M / 2 + 0.02;
+    if (faceX) {
+      knob.rotation.z = Math.PI / 2;
+      knob.position.set(px + sign * off, knobY, pz + shift);
+    } else {
+      knob.rotation.x = Math.PI / 2;
+      knob.position.set(px + shift, knobY, pz + sign * off);
+    }
+    parent.add(knob);
+  }
+  face(0.07, 0.022, 0.004, knobY, 0.014, mats.dark, mats.darkLine);
+  const bottomH = 0.078;
+  const doorBottom = ovenBottom + bottomH + 0.008;
+  const doorTop = controlY - controlH / 2 - 0.008;
+  const doorH = doorTop - doorBottom;
+  const doorY = (doorTop + doorBottom) / 2;
+  const doorW = oven - side * 2;
+  face(doorW, doorH, 0.012, doorY, 0.006, mats.dark, mats.darkLine);
+  face(doorW - 0.07, doorH - 0.07, 0.006, doorY - 0.008, 0.016, mats.doorGlass, mats.softLine);
+  face(Math.min(0.42, doorW * 0.72), 0.016, 0.012, doorTop - 0.04, 0.026, mats.chrome, mats.softLine);
+  const drawerTop = ovenBottom - 0.004;
+  const drawerH = drawerTop - kick;
+  if (drawerH > 0.04) {
+    face(oven, drawerH, 0.018, kick + drawerH / 2, 0.002, mats.fill, mats.line);
+    face(Math.min(0.16, oven * 0.28), 0.016, 0.012, kick + drawerH / 2, 0.022, mats.chrome, mats.softLine);
+  }
+}
+
+function addFridgeCabinet(parent, room, cx, cz, mats) {
+  const rect = kitchenFridgeRect(room);
+  const placed = resolveKitchenAppliance(room, "fridge");
+  const px = rect.x - cx + rect.w / 2;
+  const pz = rect.y - cz + rect.h / 2;
+  if (!placed) {
+    addBox(parent, rect.w, FRIDGE_H_M, rect.h, px, FRIDGE_H_M / 2, pz, mats.steel, mats.softLine);
+    return;
+  }
+  let front =
+    placed.bench.alongAxis === "x"
+      ? { x: 0, y: placed.bench.wall === "min" ? 1 : -1 }
+      : { x: placed.bench.wall === "min" ? 1 : -1, y: 0 };
+  front = rotatedLocalVec(room, front);
+  const fl = Math.hypot(front.x, front.y) || 1;
+  front = { x: front.x / fl, y: front.y / fl };
+  const faceX = Math.abs(front.x) >= Math.abs(front.y);
+  const sign = faceX ? Math.sign(front.x) || 1 : Math.sign(front.y) || 1;
+  const across = faceX ? rect.h : rect.w;
+  const depth = faceX ? rect.w : rect.h;
+  const boxT = 0.02;
+  const boxD = Math.min(0.6, Math.max(0.2, depth - 0.15));
+  const sideGap = 0.015;
+  const rearGap = 0.015;
+  const topGap = 0.08;
+  const fridgeH = FRIDGE_H_M;
+  const boxH = fridgeH + topGap + boxT;
+  const boxShift = (depth - boxD) / 2;
+  const boxCx = px - (faceX ? sign * boxShift : 0);
+  const boxCz = pz - (faceX ? 0 : sign * boxShift);
+  const sideAt = across / 2 - boxT / 2;
+  const backAt = boxD / 2 - boxT / 2;
+  const innerAcross = Math.max(0.05, across - boxT * 2);
+  const panel = (w, h, d, x, y, z) => addThinBox(parent, w, h, d, x, y, z, mats.fill, mats.line);
+  if (faceX) {
+    panel(boxD, boxH, boxT, boxCx, boxH / 2, pz - sideAt);
+    panel(boxD, boxH, boxT, boxCx, boxH / 2, pz + sideAt);
+    panel(boxT, boxH, innerAcross, boxCx - sign * backAt, boxH / 2, pz);
+    panel(boxD, boxT, innerAcross, boxCx, boxH - boxT / 2, pz);
+  } else {
+    panel(boxT, boxH, boxD, px - sideAt, boxH / 2, boxCz);
+    panel(boxT, boxH, boxD, px + sideAt, boxH / 2, boxCz);
+    panel(innerAcross, boxH, boxT, px, boxH / 2, boxCz - sign * backAt);
+    panel(innerAcross, boxT, boxD, px, boxH - boxT / 2, boxCz);
+  }
+  const fridgeAcross = Math.max(0.3, across - boxT * 2 - sideGap * 2);
+  const fridgeDepth = Math.max(0.3, depth - boxT - rearGap);
+  const fromBack = (boxT + rearGap + depth) / 2;
+  const towardFront = fromBack - depth / 2;
+  const fridgeCx = px + (faceX ? sign * towardFront : 0);
+  const fridgeCz = pz + (faceX ? 0 : sign * towardFront);
+  if (faceX) {
+    addBox(parent, fridgeDepth, fridgeH, fridgeAcross, fridgeCx, fridgeH / 2, pz, mats.steel, mats.softLine);
+  } else {
+    addBox(parent, fridgeAcross, fridgeH, fridgeDepth, px, fridgeH / 2, fridgeCz, mats.steel, mats.softLine);
+  }
+  const drawerH = 0.62;
+  const doorBottom = drawerH + 0.016;
+  const doorH = Math.max(0.4, fridgeH - doorBottom - 0.03);
+  const doorMidY = doorBottom + doorH / 2;
+  const frontOff = fridgeDepth / 2 + 0.004;
+  const seamX = fridgeCx + (faceX ? sign * frontOff : 0);
+  const seamZ = fridgeCz + (faceX ? 0 : sign * frontOff);
+  addThinBox(
+    parent,
+    faceX ? 0.006 : 0.008,
+    doorH,
+    faceX ? 0.008 : 0.006,
+    faceX ? seamX : px,
+    doorMidY,
+    faceX ? pz : seamZ,
+    mats.dark,
+    mats.darkLine
+  );
+  addThinBox(
+    parent,
+    faceX ? 0.008 : Math.max(0.2, fridgeAcross - 0.04),
+    0.012,
+    faceX ? Math.max(0.2, fridgeAcross - 0.04) : 0.008,
+    faceX ? seamX : px,
+    drawerH,
+    faceX ? pz : seamZ,
+    mats.dark,
+    mats.darkLine
+  );
+  const drawerFaceH = drawerH - 0.045;
+  const drawerFaceY = 0.02 + drawerFaceH / 2;
+  const drawerOff = fridgeDepth / 2 + 0.012;
+  const drawerAcross = Math.max(0.2, fridgeAcross - 0.024);
+  const drawerCx = fridgeCx + (faceX ? sign * drawerOff : 0);
+  const drawerCz = fridgeCz + (faceX ? 0 : sign * drawerOff);
+  addThinBox(
+    parent,
+    faceX ? 0.02 : drawerAcross,
+    drawerFaceH,
+    faceX ? drawerAcross : 0.02,
+    faceX ? drawerCx : px,
+    drawerFaceY,
+    faceX ? pz : drawerCz,
+    mats.steel,
+    mats.softLine
+  );
+  const pullW = Math.min(0.46, drawerAcross * 0.5);
+  const pullOff = drawerOff + 0.014;
+  addThinBox(
+    parent,
+    faceX ? 0.016 : pullW,
+    0.022,
+    faceX ? pullW : 0.016,
+    faceX ? fridgeCx + sign * pullOff : px,
+    drawerFaceY + drawerFaceH / 2 - 0.07,
+    faceX ? pz : fridgeCz + sign * pullOff,
+    mats.chrome,
+    mats.softLine
+  );
+  const handleLen = 0.28;
+  const handleOff = 0.045;
+  const handleProud = frontOff + 0.008;
+  for (const dir of [-1, 1]) {
+    addThinBox(
+      parent,
+      faceX ? 0.016 : 0.02,
+      handleLen,
+      faceX ? 0.02 : 0.016,
+      faceX ? fridgeCx + sign * handleProud : px + dir * handleOff,
+      doorMidY,
+      faceX ? pz + dir * handleOff : fridgeCz + sign * handleProud,
+      mats.chrome,
+      mats.softLine
+    );
+  }
+}
+
 function addPantryCabinet(parent, room, cx, cz, mats) {
   const rect = kitchenPantryRect(room);
   const placed = resolveKitchenAppliance(room, "pantry");
@@ -4283,12 +4523,14 @@ function buildFurniture(parent, rooms, walls, cx, cz, mats, alongX) {
         );
       }
       const robe = robeGeom3D(room);
-      for (const nib of robe.nibs) {
-        addWorldRect(parent, nib, WALL_H, WALL_H / 2, mats.wall, mats.softLine, cx, cz);
-      }
-      addWorldRect(parent, robe.rect, ROBE_H_M, ROBE_H_M / 2, fill, mats.softLine, cx, cz);
-      for (const door of robe.doors) {
-        addWorldRectThin(parent, door, ROBE_DOOR_H_M, ROBE_DOOR_H_M / 2, mats.mirror, mats.softLine, cx, cz);
+      if (robe) {
+        for (const nib of robe.nibs) {
+          addWorldRect(parent, nib, WALL_H, WALL_H / 2, mats.wall, mats.softLine, cx, cz);
+        }
+        addWorldRect(parent, robe.rect, ROBE_H_M, ROBE_H_M / 2, fill, mats.softLine, cx, cz);
+        for (const door of robe.doors) {
+          addWorldRectThin(parent, door, ROBE_DOOR_H_M, ROBE_DOOR_H_M / 2, mats.mirror, mats.softLine, cx, cz);
+        }
       }
     } else if (kind === "bathroom") {
       addBathroomFloor(parent, room, cx, cz, mats);
@@ -4373,9 +4615,10 @@ function buildFurniture(parent, rooms, walls, cx, cz, mats, alongX) {
       const hasAppliances = Boolean(resolveKitchenAppliance(room, "cook"));
       const cook = kitchenCookRect(room);
       const sink = kitchenSinkRect(room);
-      const fridge = kitchenFridgeRect(room);
       const shrink = BENCH_DEPTH_M - BENCH_CARCASS_M;
-      const carcassH = BENCH_HEIGHT_M - BENCH_TOP_M;
+      const kick = 0.12;
+      const carcassH = BENCH_HEIGHT_M - BENCH_TOP_M - kick;
+      const carcassY = kick + carcassH / 2;
       for (const bench of benches) {
         const longIsX = bench.w >= bench.h;
         const carcass = longIsX
@@ -4391,7 +4634,19 @@ function buildFurniture(parent, rooms, walls, cx, cz, mats, alongX) {
             carcassH,
             piece.h,
             piece.x - cx + piece.w / 2,
-            carcassH / 2,
+            carcassY,
+            piece.y - cz + piece.h / 2,
+            fill,
+            line
+          );
+          const kickInset = 0.04;
+          addLooseBox(
+            parent,
+            Math.max(0.05, piece.w - kickInset * 2),
+            kick,
+            Math.max(0.05, piece.h - kickInset * 2),
+            piece.x - cx + piece.w / 2,
+            kick / 2,
             piece.y - cz + piece.h / 2,
             fill,
             line
@@ -4413,19 +4668,10 @@ function buildFurniture(parent, rooms, walls, cx, cz, mats, alongX) {
       }
       if (!hasAppliances) continue;
       addCooktop(parent, cook, cx, cz, mats);
+      addUnderbenchOven(parent, room, cx, cz, mats);
       addKitchenSink(parent, room, cx, cz, mats);
       addPantryCabinet(parent, room, cx, cz, mats);
-      addBox(
-        parent,
-        fridge.w,
-        FRIDGE_H_M,
-        fridge.h,
-        fridge.x - cx + fridge.w / 2,
-        FRIDGE_H_M / 2,
-        fridge.y - cz + fridge.h / 2,
-        fill,
-        line
-      );
+      addFridgeCabinet(parent, room, cx, cz, mats);
     } else if (kind === "porch") {
       const parts = room.porchParts?.length ? room.porchParts : [room];
       for (const part of parts) {

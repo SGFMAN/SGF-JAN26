@@ -39,6 +39,12 @@ export const PROCESS_RULES = {
         check: (project) => project?.contract_status === "Complete"
       },
       {
+        field: "contract_status_sgf",
+        value: "Complete",
+        label: "SGF has signed the contract",
+        check: (project) => (project?.contract_status_sgf || "Incomplete") === "Complete"
+      },
+      {
         field: "supporting_documents_status",
         value: "Complete",
         label: "The client has supplied their supporting documents",

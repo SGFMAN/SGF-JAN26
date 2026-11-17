@@ -2,9 +2,11 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import WalkingMan from "../components/WalkingMan.jsx";
 import ScubaDive from "../components/ScubaDive.jsx";
+import PlanetWalk from "../components/PlanetWalk.jsx";
+import ForestDusk from "../components/ForestDusk.jsx";
 import EscapeIsland from "../escapeIsland/EscapeIsland.jsx";
 import Clockwork from "../clockwork/Clockwork.jsx";
-import GarminRuns from "../components/GarminRuns.jsx";
+import LostExpedition from "../lostExpedition/LostExpedition.jsx";
 import { UI } from "../utils/uiThemeTokens.js";
 
 const PAGE_TEXT = UI.pageText;
@@ -69,9 +71,13 @@ function SandpitMenu({ onPick }) {
         <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Scuba</div>
         <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>Swim the reef</div>
       </button>
-      <button type="button" style={{ ...optionStyle, borderColor: "rgba(240, 180, 41, 0.55)" }} onClick={() => onPick("garmin")}>
-        <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Garmin Runs</div>
-        <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>Running activities</div>
+      <button type="button" style={{ ...optionStyle, borderColor: "rgba(180, 160, 255, 0.7)" }} onClick={() => onPick("planet")}>
+        <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Little Planet</div>
+        <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>Walk a tiny world</div>
+      </button>
+      <button type="button" style={{ ...optionStyle, borderColor: "rgba(150, 90, 190, 0.75)" }} onClick={() => onPick("forest")}>
+        <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Dusk Wood</div>
+        <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>A heavy man in a dark forest</div>
       </button>
       <button type="button" style={{ ...optionStyle, borderColor: "rgba(80, 190, 140, 0.7)" }} onClick={() => onPick("island")}>
         <div style={{ fontSize: "1.35rem", fontWeight: 750, letterSpacing: "0.03em" }}>Escape Island</div>
@@ -80,6 +86,10 @@ function SandpitMenu({ onPick }) {
       <button type="button" style={{ ...optionStyle, borderColor: "rgba(212, 179, 106, 0.75)" }} onClick={() => onPick("clockwork")}>
         <div style={{ fontSize: "1.2rem", fontWeight: 750, letterSpacing: "0.02em", lineHeight: 1.25 }}>The Clockwork Conspiracy</div>
         <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>A town adventure</div>
+      </button>
+      <button type="button" style={{ ...optionStyle, borderColor: "rgba(90, 170, 110, 0.75)" }} onClick={() => onPick("expedition")}>
+        <div style={{ fontSize: "1.2rem", fontWeight: 750, letterSpacing: "0.02em", lineHeight: 1.25 }}>The Lost Expedition</div>
+        <div style={{ marginTop: 6, fontSize: "0.82rem", opacity: 0.72 }}>A jungle adventure</div>
       </button>
     </div>
   );
@@ -99,9 +109,11 @@ export default function Sandpit() {
       {mode === null ? <SandpitMenu onPick={setMode} /> : null}
       {mode === "kill" ? <WalkingMan /> : null}
       {mode === "scuba" ? <ScubaDive key="turn-fix" /> : null}
-      {mode === "garmin" ? <GarminRuns /> : null}
+      {mode === "planet" ? <PlanetWalk /> : null}
+      {mode === "forest" ? <ForestDusk /> : null}
       {mode === "island" ? <EscapeIsland onExit={() => setMode(null)} /> : null}
       {mode === "clockwork" ? <Clockwork onExit={() => setMode(null)} /> : null}
+      {mode === "expedition" ? <LostExpedition onExit={() => setMode(null)} /> : null}
       <div style={{ position: "absolute", top: 16, left: 16, zIndex: 5, display: "flex", gap: 8 }}>
         <Link to="/projects" style={hudButtonStyle}>
           Back to Projects

@@ -2174,6 +2174,15 @@ function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, walls) {
         ctx.lineTo(head.x + dx * (headR + spray), head.y + dy * (headR + spray));
       }
       ctx.stroke();
+      const size = showerSizeLabelAnchor(shower, room, layout, walls);
+      ctx.save();
+      ctx.font = `700 ${size.font}px "Segoe UI", system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.translate(size.x, size.y);
+      if (size.vertical) ctx.rotate(-Math.PI / 2);
+      drawHaloText(ctx, size.text, 0, 0, stroke || PLAN_CERAMIC_EDGE, "rgba(255,255,255,0.92)");
+      ctx.restore();
     }
     const t = !toiletGeom?.hidden && tank ? mRectToPx(tank, layout) : null;
     const b = !toiletGeom?.hidden && bowl ? mRectToPx(bowl, layout) : null;
@@ -2471,7 +2480,7 @@ function drawExportRoomFixtures(ctx, room, layout, bw, innerMetres, walls) {
     }
   }
   const geom = bedroomDoorAndRobe(room, innerMetres);
-  if (geom) drawBedroomDoorRobe(ctx, geom, layout, bw);
+  if (geom) drawBedroomDoorRobe(ctx, geom, layout, bw, { includeRobe: !geom.hidden });
 }
 
 function drawPlanWindows(ctx, rooms, layout, innerMetres, bw) {
@@ -5202,7 +5211,54 @@ const KITCHEN_LAYOUTS = [
 const PORCH_W_M = 1.5;
 const PORCH_H_M = 2.0;
 const BED_SHORT_M = 1.8;
+const BED_SINGLE_M = 0.92;
 const BED_LONG_M = 2.0;
+
+function bedStyleOf(room) {
+  return room?.bedStyle === "single" ? "single" : "double";
+}
+
+function bedAlongLenOf(room) {
+  return bedStyleOf(room) === "single" ? BED_SINGLE_M : BED_SHORT_M;
+}
+
+function bedOptionLabel(room) {
+  if (bedStyleOf(room) !== "single") return "Double bed with two bedside tables";
+  const side = bedsideOf(room);
+  if (side === "right") return "Single bed, right bedside table";
+  if (side === "none") return "Single bed, no tables";
+  return "Single bed, left bedside table";
+}
+
+function bedsideOf(room) {
+  if (room?.bedside === "right" || room?.bedside === "none") return room.bedside;
+  return "left";
+}
+
+/** True when the start of the wall (decreasing along) is the bed's left, seen from the foot. */
+function bedStartIsLeft(frame) {
+  const leftX = -frame.inward.y;
+  const leftY = frame.inward.x;
+  return -frame.along.x * leftX + -frame.along.y * leftY > 0;
+}
+
+/** Which end of the bed keeps a nightstand gap: both, start, end, or none. */
+function bedsideClampKey(room, frame) {
+  if (bedStyleOf(room) !== "single") return "both";
+  const which = bedsideOf(room);
+  if (which === "none") return "none";
+  const startIsLeft = bedStartIsLeft(frame);
+  if (which === "left") return startIsLeft ? "start" : "end";
+  return startIsLeft ? "end" : "start";
+}
+
+function robeStyleOf(room) {
+  return room?.robeStyle === "none" ? "none" : "robe";
+}
+
+function robeOptionLabel(room) {
+  return robeStyleOf(room) === "none" ? "No robe" : "Robe";
+}
 const SHOWER_LONG_M = 1.8;
 const SHOWER_SHORT_M = 0.9;
 const SHOWER_LEN_MIN_M = 0.9;
@@ -6631,13 +6687,14 @@ function bedGroupSidePad() {
   return NIGHTSTAND_M + NIGHTSTAND_GAP_M;
 }
 
-/** Keep 1800 bed + 400 nightstands as a rigid group; never shrink the tables. */
-function clampBedAlong(wallLen, along) {
-  const alongLen = BED_SHORT_M;
-  const sidePad = bedGroupSidePad();
+/** Keep the bed and its nightstands as a rigid group; never shrink the tables. */
+function clampBedAlong(wallLen, along, alongLen = BED_SHORT_M, side = "both") {
+  const pad = bedGroupSidePad();
+  const padStart = side === "both" || side === "start" ? pad : 0;
+  const padEnd = side === "both" || side === "end" ? pad : 0;
   const maxAlong = Math.max(0, wallLen - alongLen);
-  const paddedMin = sidePad;
-  const paddedMax = wallLen - alongLen - sidePad;
+  const paddedMin = padStart;
+  const paddedMax = wallLen - alongLen - padEnd;
   if (paddedMax >= paddedMin) {
     const raw = Number.isFinite(along) ? along : (paddedMin + paddedMax) / 2;
     return Math.max(paddedMin, Math.min(paddedMax, raw));
@@ -6701,7 +6758,9 @@ function controlHint(hover) {
   if (!hover) return "";
   const type = hover.type;
   if (type === "bed") return "Drag bed";
+  if (type === "bed-options") return hover.optionLabel || "Bed options";
   if (type === "robe") return "Drag robe";
+  if (type === "robe-options") return hover.optionLabel || "Robe options";
   if (type === "robe-resize") return "Resize robe";
   if (type === "room-delete") return "Delete";
   if (type === "couch-options") return "Couch options";
@@ -8499,6 +8558,7 @@ function bedroomDoorAndRobe(room, innerMetres) {
     robeAlongM,
     robeWallLen,
     robeGrab: rectCenter(robeRect),
+    hidden: robeStyleOf(room) === "none",
     ...robeTextSpots(robeRect, robeSide === "left" || robeSide === "right", robeInward),
   };
 }
@@ -8580,13 +8640,98 @@ function hitLayoutRect(rectM, layout, raw, pad = 4) {
   );
 }
 
+function cycleBedStyle(room) {
+  const geom = bedroomBed(room);
+  let nextStyle = "double";
+  let nextBedside = "left";
+  if (bedStyleOf(room) !== "single") {
+    nextStyle = "single";
+    nextBedside = "left";
+  } else if (bedsideOf(room) === "left") {
+    nextStyle = "single";
+    nextBedside = "right";
+  } else if (bedsideOf(room) === "right") {
+    nextStyle = "single";
+    nextBedside = "none";
+  }
+  const nextRoom = { ...room, bedStyle: nextStyle, bedside: nextBedside, bedSide: geom.bedSide };
+  const frame = roomWallFrame(nextRoom, geom.bedSide);
+  const nextLen = nextStyle === "single" ? BED_SINGLE_M : BED_SHORT_M;
+  const center = geom.alongM + geom.alongLen / 2;
+  return {
+    ...nextRoom,
+    bedAlong: snapPlanMm(
+      clampBedAlong(frame.wallLen, center - nextLen / 2, nextLen, bedsideClampKey(nextRoom, frame))
+    ),
+  };
+}
+
+function cycleRobeStyle(room, innerMetres) {
+  const geom = bedroomDoorAndRobe(room, innerMetres);
+  const next = robeStyleOf(room) === "none" ? "robe" : "none";
+  const pinned = geom
+    ? {
+        robeSide: geom.robeSide,
+        robeAlong: snapPlanMm(geom.robeAlongM),
+        robeWidth: snapPlanMm(geom.robeWidth),
+      }
+    : {};
+  return { ...room, ...pinned, robeStyle: next };
+}
+
+/** Settings icon sits at the foot of the bed, clear of the move handle. */
+function bedOptionsHandlePx(geom, layout) {
+  if (!geom?.bed || !geom.inward) return null;
+  const size = fixtureGrabPx(layout);
+  const cx = geom.bed.x + geom.bed.w / 2;
+  const cy = geom.bed.y + geom.bed.h / 2;
+  const front =
+    Math.abs(geom.inward.x) >= Math.abs(geom.inward.y)
+      ? { x: cx + Math.sign(geom.inward.x || 1) * (geom.bed.w / 2), y: cy }
+      : { x: cx, y: cy + Math.sign(geom.inward.y || 1) * (geom.bed.h / 2) };
+  const p = mPointToPx(front, layout);
+  const off = size / 2 + 4;
+  return { cx: p.x + geom.inward.x * off, cy: p.y + geom.inward.y * off, size };
+}
+
+/** Settings icon sits in front of the robe, offset so it clears the width label. */
+function robeOptionsHandlePx(geom, layout) {
+  if (!geom?.robeInnerA || !geom?.robeInnerB || !geom.robeInward) return null;
+  const size = fixtureGrabPx(layout);
+  const shift = 0.32;
+  const front = mPointToPx(
+    {
+      x: (geom.robeInnerA.x + geom.robeInnerB.x) / 2 + (geom.robeAlong?.x || 0) * shift,
+      y: (geom.robeInnerA.y + geom.robeInnerB.y) / 2 + (geom.robeAlong?.y || 0) * shift,
+    },
+    layout
+  );
+  const off = size / 2 + 4;
+  return { cx: front.x + geom.robeInward.x * off, cy: front.y + geom.robeInward.y * off, size };
+}
+
 function hitBedroomFixtureHandle(room, layout, raw, innerMetres) {
   const geom = bedroomDoorAndRobe(room, innerMetres);
+  const bedGeom = bedroomBed(room);
   const options = hitDoorOptionsHandle(geom, layout, raw);
   if (options) return options;
   const flip = hitDoorFlipHandle(geom, layout, raw);
   if (flip) return flip;
-  const resize = hitBedroomRobeResizeHandle(geom, layout, raw);
+  const bedOptions = bedOptionsHandlePx(bedGeom, layout);
+  if (
+    bedOptions &&
+    Math.hypot(raw.x - bedOptions.cx, raw.y - bedOptions.cy) <= bedOptions.size / 2 + 3
+  ) {
+    return { type: "bed-options", kind: "rotate", optionLabel: bedOptionLabel(room) };
+  }
+  const robeOptions = robeOptionsHandlePx(geom, layout);
+  if (
+    robeOptions &&
+    Math.hypot(raw.x - robeOptions.cx, raw.y - robeOptions.cy) <= robeOptions.size / 2 + 3
+  ) {
+    return { type: "robe-options", kind: "rotate", optionLabel: robeOptionLabel(room) };
+  }
+  const resize = geom?.hidden ? null : hitBedroomRobeResizeHandle(geom, layout, raw);
   if (resize) return resize;
   const { bed, nightstands, group } = bedLayout(room, innerMetres);
   if (geom?.robeRect && hitLayoutRect(geom.robeRect, layout, raw, 2)) {
@@ -9004,12 +9149,15 @@ function moveBedroomBed(room, cursorM, grabAlong, innerMetres) {
   const pinned = pinBedroomFixtures(room, innerMetres);
   const hit = nearestRoomSide(pinned, cursorM);
   if (!hit) return pinned;
-  const alongLen = BED_SHORT_M;
+  const frame = roomWallFrame(pinned, hit.side);
+  const alongLen = bedAlongLenOf(pinned);
   const offset = Number.isFinite(grabAlong) ? grabAlong : alongLen / 2;
   return {
     ...pinned,
     bedSide: hit.side,
-    bedAlong: snapPlanMm(clampBedAlong(hit.wallLen, hit.t - offset)),
+    bedAlong: snapPlanMm(
+      clampBedAlong(hit.wallLen, hit.t - offset, alongLen, bedsideClampKey(pinned, frame))
+    ),
   };
 }
 
@@ -9182,6 +9330,44 @@ function pointInRoom(p, room) {
     p.y >= room.y &&
     p.y <= room.y + room.h
   );
+}
+
+function pointOnLivingFurniture(p, room) {
+  const g = livingSetGeom(room);
+  return [g.tvUnit, g.table, ...(g.bodies || [])].some((rect) => rect && pointInRoom(p, rect));
+}
+
+/** Clear living floor: inside the walls, and not on a room or a piece of furniture. */
+function hitOpenFloor(raw, layout, rooms, innerMetres) {
+  if (!innerMetres || innerMetres.length < 3 || !(layout?.scale > 0)) return false;
+  const p = pxToMetres(raw, layout);
+  if (!pointInPolygon(p, innerMetres)) return false;
+  for (const room of rooms || []) {
+    if (isLivingSet(room)) {
+      if (pointOnLivingFurniture(p, room)) return false;
+      continue;
+    }
+    if (isPorch(room)) {
+      if (porchFootprints(room).some((part) => pointInRoom(p, part))) return false;
+      continue;
+    }
+    if (pointInRoom(p, room)) return false;
+  }
+  return true;
+}
+
+/** Open floor, or the empty background around the plan. Rooms, furniture and the porch stay put. */
+function hitDesignDragSurface(raw, layout, rooms, innerMetres) {
+  if (hitOpenFloor(raw, layout, rooms, innerMetres)) return true;
+  if (!layout?.metres || layout.metres.length < 3 || !(layout.scale > 0)) return false;
+  const p = pxToMetres(raw, layout);
+  if (pointInOrOnPolygon(p, layout.metres)) return false;
+  for (const room of rooms || []) {
+    if (!isPorch(room)) continue;
+    if (porchFootprints(room).some((part) => pointInRoom(p, part))) return false;
+    if (porchStepFlight(room, layout.metres).some((step) => pointInRoom(p, step))) return false;
+  }
+  return true;
 }
 
 function pointOnSegment(p, a, b, eps = 1e-6) {
@@ -10397,7 +10583,6 @@ function designHandlesPx(layout, rooms) {
   const top = foot.minY * layout.scale + layout.originY - off;
   return {
     size,
-    move: { cx: foot.minX * layout.scale + layout.originX - off, cy: top },
     rotate: { cx: foot.maxX * layout.scale + layout.originX + off, cy: top },
     centre: {
       x: ((foot.minX + foot.maxX) / 2) * layout.scale + layout.originX,
@@ -10410,9 +10595,8 @@ function hitDesignHandle(layout, rooms, raw) {
   const h = designHandlesPx(layout, rooms);
   if (!h) return null;
   const half = h.size / 2 + 4;
-  const near = (p) => Math.abs(raw.x - p.cx) <= half && Math.abs(raw.y - p.cy) <= half;
-  if (near(h.move)) return "design-move";
-  if (near(h.rotate)) return "design-rotate";
+  const p = h.rotate;
+  if (Math.abs(raw.x - p.cx) <= half && Math.abs(raw.y - p.cy) <= half) return "design-rotate";
   return null;
 }
 
@@ -10503,32 +10687,6 @@ function WalkPathOverlay({ layout, markers }) {
   );
 }
 
-function DesignMoveHandle({ cx, cy, size, color }) {
-  if (cx == null || cy == null) return null;
-  const arm = size * 0.32;
-  const head = Math.max(2, size * 0.12);
-  return (
-    <g>
-      <rect
-        x={cx - size / 2}
-        y={cy - size / 2}
-        width={size}
-        height={size}
-        rx={2}
-        fill={WHITE}
-        stroke={color}
-        strokeWidth="1.5"
-      />
-      <line x1={cx - arm} y1={cy} x2={cx + arm} y2={cy} stroke={color} strokeWidth="1.3" />
-      <line x1={cx} y1={cy - arm} x2={cx} y2={cy + arm} stroke={color} strokeWidth="1.3" />
-      <polygon points={`${cx - arm},${cy} ${cx - arm + head},${cy - head} ${cx - arm + head},${cy + head}`} fill={color} />
-      <polygon points={`${cx + arm},${cy} ${cx + arm - head},${cy - head} ${cx + arm - head},${cy + head}`} fill={color} />
-      <polygon points={`${cx},${cy - arm} ${cx - head},${cy - arm + head} ${cx + head},${cy - arm + head}`} fill={color} />
-      <polygon points={`${cx},${cy + arm} ${cx - head},${cy + arm - head} ${cx + head},${cy + arm - head}`} fill={color} />
-    </g>
-  );
-}
-
 function buildingBounds(metres) {
   const xs = metres.map((p) => p.x);
   const ys = metres.map((p) => p.y);
@@ -10566,7 +10724,7 @@ function planFootprintBounds(metres, rooms) {
   return { minX, minY, maxX, maxY };
 }
 
-function drawBedroomDoorRobe(ctx, geom, layout, bw) {
+function drawBedroomDoorRobe(ctx, geom, layout, bw, { includeRobe = true } = {}) {
   if (!geom) return;
   const to = (p) => mPointToPx(p, layout);
   const color = bw ? "#111111" : PLAN_WOOD_EDGE;
@@ -10591,61 +10749,67 @@ function drawBedroomDoorRobe(ctx, geom, layout, bw) {
       ctx.arc(hinge.x, hinge.y, radius, start, end, !geom.cw);
       ctx.stroke();
     }
-    const rr = mRectToPx(geom.robeRect, layout);
-    ctx.fillStyle = "transparent";
-    ctx.beginPath();
-    ctx.rect(rr.x, rr.y, rr.w, rr.h);
-    ctx.stroke();
-    for (const nib of robeNibRects(geom)) {
-      const n = mRectToPx(nib, layout);
-      ctx.strokeRect(n.x, n.y, n.w, n.h);
-    }
-    for (const door of robeSlidingDoorRects(geom)) {
-      const d = mRectToPx(door, layout);
-      ctx.strokeRect(d.x, d.y, d.w, d.h);
+    if (includeRobe) {
+      const rr = mRectToPx(geom.robeRect, layout);
+      ctx.fillStyle = "transparent";
+      ctx.beginPath();
+      ctx.rect(rr.x, rr.y, rr.w, rr.h);
+      ctx.stroke();
+      for (const nib of robeNibRects(geom)) {
+        const n = mRectToPx(nib, layout);
+        ctx.strokeRect(n.x, n.y, n.w, n.h);
+      }
+      for (const door of robeSlidingDoorRects(geom)) {
+        const d = mRectToPx(door, layout);
+        ctx.strokeRect(d.x, d.y, d.w, d.h);
+      }
     }
   } else {
-    for (const nib of robeNibRects(geom)) {
-      const n = mRectToPx(nib, layout);
-      ctx.fillStyle = WALL_FILL;
-      ctx.fillRect(n.x, n.y, n.w, n.h);
-    }
-    const rr = mRectToPx(geom.robeRect, layout);
-    ctx.fillStyle = PLAN_LINEN;
-    ctx.strokeStyle = "#2f2f2f";
-    ctx.lineWidth = 1.1;
-    ctx.beginPath();
-    ctx.rect(rr.x, rr.y, rr.w, rr.h);
-    ctx.fill();
-    ctx.stroke();
-    for (const door of robeSlidingDoorRects(geom)) {
-      const d = robeDoorPx(door, geom, layout);
-      ctx.fillStyle = "#ffffff";
+    if (includeRobe) {
+      for (const nib of robeNibRects(geom)) {
+        const n = mRectToPx(nib, layout);
+        ctx.fillStyle = WALL_FILL;
+        ctx.fillRect(n.x, n.y, n.w, n.h);
+      }
+      const rr = mRectToPx(geom.robeRect, layout);
+      ctx.fillStyle = PLAN_LINEN;
       ctx.strokeStyle = "#2f2f2f";
       ctx.lineWidth = 1.1;
       ctx.beginPath();
-      ctx.rect(d.x, d.y, d.w, d.h);
+      ctx.rect(rr.x, rr.y, rr.w, rr.h);
       ctx.fill();
       ctx.stroke();
+      for (const door of robeSlidingDoorRects(geom)) {
+        const d = robeDoorPx(door, geom, layout);
+        ctx.fillStyle = "#ffffff";
+        ctx.strokeStyle = "#2f2f2f";
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.rect(d.x, d.y, d.w, d.h);
+        ctx.fill();
+        ctx.stroke();
+      }
     }
     drawPlanDoorSwingCanvas(ctx, geom, layout);
   }
   const dl = to(geom.doorLabel);
-  const rl = to(geom.robeLabel);
-  const rt = to(geom.robeTitle);
   ctx.font = '700 11px "Segoe UI", system-ui, sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   drawHaloText(ctx, formatPlanMm(geom.doorWidth), dl.x, dl.y, color, "rgba(255,255,255,0.95)");
-  for (const [spot, text] of [
-    [rt, "ROBE"],
-    [rl, formatPlanMm(geom.robeWidth)],
-  ]) {
-    ctx.save();
-    ctx.translate(spot.x, spot.y);
-    if (geom.robeTitle.vertical) ctx.rotate(-Math.PI / 2);
-    drawHaloText(ctx, text, 0, 0, color, "rgba(255,255,255,0.95)");
-    ctx.restore();
+  if (includeRobe) {
+    const rl = to(geom.robeLabel);
+    const rt = to(geom.robeTitle);
+    for (const [spot, text] of [
+      [rt, "ROBE"],
+      [rl, formatPlanMm(geom.robeWidth)],
+    ]) {
+      ctx.save();
+      ctx.translate(spot.x, spot.y);
+      if (geom.robeTitle.vertical) ctx.rotate(-Math.PI / 2);
+      drawHaloText(ctx, text, 0, 0, color, "rgba(255,255,255,0.95)");
+      ctx.restore();
+    }
   }
   ctx.restore();
 }
@@ -10653,7 +10817,16 @@ function drawBedroomDoorRobe(ctx, geom, layout, bw) {
 function defaultBedPlacement(room) {
   const side = room.w >= room.h ? "top" : "left";
   const frame = roomWallFrame(room, side);
-  return { side, along: clampBedAlong(frame.wallLen, (frame.wallLen - BED_SHORT_M) / 2) };
+  const alongLen = bedAlongLenOf(room);
+  return {
+    side,
+    along: clampBedAlong(
+      frame.wallLen,
+      (frame.wallLen - alongLen) / 2,
+      alongLen,
+      bedsideClampKey(room, frame)
+    ),
+  };
 }
 
 /** Bed 1800 along the wall, 2000 into the room; pillow end against the wall. */
@@ -10665,7 +10838,7 @@ function bedroomBed(room) {
       ? stored
       : def.side;
   const frame = roomWallFrame(room, bedSide);
-  const alongLen = BED_SHORT_M;
+  const alongLen = bedAlongLenOf(room);
   const depth = BED_LONG_M;
   const storedAlong = Number(room?.bedAlong);
   const alongM = clampBedAlong(
@@ -10674,49 +10847,61 @@ function bedroomBed(room) {
       ? storedAlong
       : def.side === bedSide
         ? def.along
-        : (frame.wallLen - alongLen) / 2
+        : (frame.wallLen - alongLen) / 2,
+    alongLen,
+    bedsideClampKey(room, frame)
   );
   const origin = frame.origin;
   const along = frame.along;
   const inward = frame.inward;
   const bed = wallBoxRect(origin, along, inward, alongM, alongM + alongLen, 0, depth);
-  const gap = Math.min(0.08, alongLen * 0.12);
-  const pillowAlong = Math.min(0.58, Math.max(0.18, (alongLen - gap) * 0.42));
-  const used = pillowAlong * 2 + gap;
-  const start = alongM + Math.max(0, (alongLen - used) / 2);
   const pillowDepth = Math.min(0.36, Math.max(0.22, depth * 0.18));
   const pillowInset = 0.05;
-  const pillows = [
-    wallBoxRect(
-      origin,
-      along,
-      inward,
-      start,
-      start + pillowAlong,
-      pillowInset,
-      pillowInset + pillowDepth
-    ),
-    wallBoxRect(
-      origin,
-      along,
-      inward,
-      start + pillowAlong + gap,
-      start + pillowAlong + gap + pillowAlong,
-      pillowInset,
-      pillowInset + pillowDepth
-    ),
-  ];
+  const pillows = [];
+  if (bedStyleOf(room) === "single") {
+    const pillowAlong = Math.min(0.48, Math.max(0.28, alongLen * 0.52));
+    const start = alongM + (alongLen - pillowAlong) / 2;
+    pillows.push(
+      wallBoxRect(origin, along, inward, start, start + pillowAlong, pillowInset, pillowInset + pillowDepth)
+    );
+  } else {
+    const gap = Math.min(0.08, alongLen * 0.12);
+    const pillowAlong = Math.min(0.58, Math.max(0.18, (alongLen - gap) * 0.42));
+    const used = pillowAlong * 2 + gap;
+    const start = alongM + Math.max(0, (alongLen - used) / 2);
+    pillows.push(
+      wallBoxRect(origin, along, inward, start, start + pillowAlong, pillowInset, pillowInset + pillowDepth),
+      wallBoxRect(
+        origin,
+        along,
+        inward,
+        start + pillowAlong + gap,
+        start + pillowAlong + gap + pillowAlong,
+        pillowInset,
+        pillowInset + pillowDepth
+      )
+    );
+  }
   const nsGap = NIGHTSTAND_GAP_M;
   const nsSize = NIGHTSTAND_M;
   const nightstands = [];
-  const sideSpaces = [
-    { start: alongM - nsGap, dir: -1 },
-    { start: alongM + alongLen + nsGap, dir: 1 },
-  ];
-  for (const slot of sideSpaces) {
-    const t0 = slot.dir < 0 ? slot.start - nsSize : slot.start;
-    const t1 = t0 + nsSize;
-    nightstands.push(wallBoxRect(origin, along, inward, t0, t1, 0.02, 0.02 + nsSize));
+  const tableAt = (end) => {
+    if (end === "start") {
+      const t1 = alongM - nsGap;
+      return wallBoxRect(origin, along, inward, t1 - nsSize, t1, 0.02, 0.02 + nsSize);
+    }
+    const t0 = alongM + alongLen + nsGap;
+    return wallBoxRect(origin, along, inward, t0, t0 + nsSize, 0.02, 0.02 + nsSize);
+  };
+  if (bedStyleOf(room) !== "single") {
+    nightstands.push(tableAt("start"), tableAt("end"));
+  } else {
+    const which = bedsideOf(room);
+    if (which !== "none") {
+      const startIsLeft = bedStartIsLeft(frame);
+      const placeStart = which === "left" ? startIsLeft : !startIsLeft;
+      nightstands.push(tableAt(placeStart ? "start" : "end"));
+    }
   }
   const duvetInset = 0.055;
   const duvet = {
@@ -10736,6 +10921,7 @@ function bedroomBed(room) {
   }
   const group = unionRects([bed, ...nightstands]);
   return {
+    bedStyle: bedStyleOf(room),
     bedSide,
     along,
     inward,
@@ -10920,6 +11106,11 @@ function BedroomFixtures({ room, layout, innerMetres, showHandles = false }) {
   const doorOptions = geom ? doorOptionsHandlePx(geom, layout) : null;
   const robeGrab = geom ? mPointToPx(geom.robeGrab, layout) : null;
   const bedGrab = mPointToPx(rectCenter(group || bed), layout);
+  const bedGeom = bedroomBed(room);
+  const bedOptions = showHandles ? bedOptionsHandlePx(bedGeom, layout) : null;
+  const robeHidden = Boolean(geom?.hidden);
+  const robeOptions = showHandles ? robeOptionsHandlePx(geom, layout) : null;
+  const robePx = geom ? mRectToPx(geom.robeRect, layout) : null;
   const hs = fixtureGrabPx(layout);
   const radius = geom ? Math.max(1, geom.doorWidth * layout.scale) : 0;
   return (
@@ -10982,8 +11173,20 @@ function BedroomFixtures({ room, layout, innerMetres, showHandles = false }) {
           strokeWidth="1"
         />
       ))}
-      {geom ? <PlanWoodRobe geom={geom} layout={layout} /> : null}
-      {geom && robeTitle ? (
+      {geom && robeHidden && showHandles && robePx ? (
+        <rect
+          x={robePx.x}
+          y={robePx.y}
+          width={robePx.w}
+          height={robePx.h}
+          fill="none"
+          stroke="#2f2f2f"
+          strokeWidth="1.2"
+          strokeDasharray="5 4"
+        />
+      ) : null}
+      {geom && !robeHidden ? <PlanWoodRobe geom={geom} layout={layout} /> : null}
+      {geom && !robeHidden && robeTitle ? (
         <text
             x={robeTitle.x}
             y={robeTitle.y}
@@ -11002,7 +11205,7 @@ function BedroomFixtures({ room, layout, innerMetres, showHandles = false }) {
             ROBE
           </text>
       ) : null}
-      {geom && robeLabel ? (
+      {geom && !robeHidden && robeLabel ? (
         <text
           x={robeLabel.x}
           y={robeLabel.y}
@@ -11044,8 +11247,19 @@ function BedroomFixtures({ room, layout, innerMetres, showHandles = false }) {
       {showHandles ? (
         <>
           <GrabSquare cx={bedGrab.x} cy={bedGrab.y} size={hs} color={PLAN_WOOD_EDGE} />
+          {bedOptions ? (
+            <OptionsHandle
+              cx={bedOptions.cx}
+              cy={bedOptions.cy}
+              size={bedOptions.size}
+              color={PLAN_WOOD_EDGE}
+            />
+          ) : null}
           <GrabSquare cx={robeGrab?.x} cy={robeGrab?.y} size={hs} color={color} />
-          {geom
+          {robeOptions ? (
+            <OptionsHandle cx={robeOptions.cx} cy={robeOptions.cy} size={robeOptions.size} color={color} />
+          ) : null}
+          {geom && !robeHidden
             ? robeResizeHandles(geom).map((h) => {
                 const p = mPointToPx(h.point, layout);
                 return (
@@ -11366,6 +11580,33 @@ function BathroomTileFloor({ room, layout }) {
   );
 }
 
+function showerSizeLabel(shower) {
+  if (!shower) return "";
+  const a = Math.min(shower.w, shower.h);
+  const b = Math.max(shower.w, shower.h);
+  return `${formatPlanMm(a)} x ${formatPlanMm(b)}`;
+}
+
+function showerSizeLabelAnchor(shower, room, layout, walls) {
+  const s = mRectToPx(shower, layout);
+  const longPx = Math.max(s.w, s.h);
+  const shortPx = Math.min(s.w, s.h);
+  const font = Math.max(8, Math.min(15, longPx / 9));
+  const place = showerGlassPlacement(
+    shower,
+    showerRotOf(room),
+    showerGlassFlip(shower, showerRotOf(room), walls)
+  );
+  const nudge = Math.min(shortPx * 0.22, Math.max(6, font * 0.85));
+  let x = s.x + s.w / 2;
+  let y = s.y + s.h / 2;
+  if (place.side === "top") y += nudge;
+  else if (place.side === "bottom") y -= nudge;
+  else if (place.side === "left") x += nudge;
+  else x -= nudge;
+  return { x, y, font, vertical: s.h > s.w + 0.5, text: showerSizeLabel(shower) };
+}
+
 function ShowerHeadAndGlass({ shower, room, layout, walls }) {
   const rot = showerRotOf(room);
   const parts = showerPlanParts(shower, rot, walls);
@@ -11447,6 +11688,7 @@ function BathroomFixtures({ room, layout, innerMetres, walls, showHandles = fals
   const toiletHidden = Boolean(toiletGeom?.hidden);
   const hs = fixtureGrabPx(layout);
   const drainR = s ? Math.max(2, Math.min(s.w, s.h) * 0.07) : 0;
+  const showerSize = shower ? showerSizeLabelAnchor(shower, room, layout, walls) : null;
   const waste = s ? { x: s.x + s.w / 2, y: s.y + s.h / 2 } : null;
   const wasteCorners = s
     ? [
@@ -11501,6 +11743,21 @@ function BathroomFixtures({ room, layout, innerMetres, walls, showHandles = fals
             fill={PLAN_CERAMIC_EDGE}
           />
           <ShowerHeadAndGlass shower={shower} room={room} layout={layout} walls={walls} />
+          <text
+            x={showerSize.x}
+            y={showerSize.y}
+            fill={PLAN_CERAMIC_EDGE}
+            fontSize={showerSize.font}
+            fontWeight="700"
+            textAnchor="middle"
+            dominantBaseline="middle"
+            transform={
+              showerSize.vertical ? `rotate(-90 ${showerSize.x} ${showerSize.y})` : undefined
+            }
+            style={{ pointerEvents: "none" }}
+          >
+            {showerSize.text}
+          </text>
         </>
       ) : null}
       {v ? (
@@ -12605,6 +12862,7 @@ function ShowerScreenModal({ room, walls, onChange, onClose }) {
   const base = mRectToPx(shower, layout);
   const waste = { x: base.x + base.w / 2, y: base.y + base.h / 2 };
   const drainR = Math.max(4, Math.min(base.w, base.h) * 0.07);
+  const editorSize = showerSizeLabelAnchor(shower, room, layout, walls);
 
   const beginDrag = (which, screen, e) => {
     e.preventDefault();
@@ -12808,6 +13066,21 @@ function ShowerScreenModal({ room, walls, onChange, onClose }) {
           <circle cx={waste.x} cy={waste.y} r={drainR} fill="none" stroke={PLAN_CERAMIC_EDGE} strokeWidth="1.6" />
           <circle cx={waste.x} cy={waste.y} r={Math.max(1.5, drainR * 0.35)} fill={PLAN_CERAMIC_EDGE} />
           <ShowerHeadAndGlass shower={shower} room={room} layout={layout} walls={walls} />
+          <text
+            x={editorSize.x}
+            y={editorSize.y}
+            fill={PLAN_CERAMIC_EDGE}
+            fontSize={editorSize.font}
+            fontWeight="700"
+            textAnchor="middle"
+            dominantBaseline="middle"
+            transform={
+              editorSize.vertical ? `rotate(-90 ${editorSize.x} ${editorSize.y})` : undefined
+            }
+            style={{ pointerEvents: "none" }}
+          >
+            {editorSize.text}
+          </text>
           {screenArrows(screens[0], 0, "#5d7e8c", 0)}
           {twoScreens && screens[1] ? screenArrows(screens[1], 1, "#b86a2d", 28) : null}
         </svg>
@@ -13690,6 +13963,40 @@ function DesignModal({
               setHover(hintAt({ id: room.id, kind: "rotate", type: "door-flip" }, raw));
               return;
             }
+            if (fixture.type === "bed-options") {
+              e.preventDefault();
+              const nextRoom = cycleBedStyle(room);
+              updateRoom(room.id, nextRoom);
+              setHover(
+                hintAt(
+                  {
+                    id: room.id,
+                    kind: "rotate",
+                    type: "bed-options",
+                    optionLabel: bedOptionLabel(nextRoom),
+                  },
+                  raw
+                )
+              );
+              return;
+            }
+            if (fixture.type === "robe-options") {
+              e.preventDefault();
+              const nextRoom = cycleRobeStyle(room, innerMetres);
+              updateRoom(room.id, nextRoom);
+              setHover(
+                hintAt(
+                  {
+                    id: room.id,
+                    kind: "rotate",
+                    type: "robe-options",
+                    optionLabel: robeOptionLabel(nextRoom),
+                  },
+                  raw
+                )
+              );
+              return;
+            }
             if (fixture.type === "robe-resize") {
               e.preventDefault();
               el.setPointerCapture(e.pointerId);
@@ -13838,6 +14145,27 @@ function DesignModal({
             raw
           )
         );
+        return;
+      }
+      if (hitDesignDragSurface(raw, layout, roomsRef.current, innerMetres)) {
+        e.preventDefault();
+        el.setPointerCapture(e.pointerId);
+        freezeLayoutRef.current = {
+          scale: layout.scale,
+          originX: layout.originX,
+          originY: layout.originY,
+          offsetX: layout.offsetX,
+          offsetY: layout.offsetY,
+        };
+        dragRef.current = {
+          mode: "design-move",
+          grab: pxToMetres(raw, layout),
+          startMetres: buildingMetres.map((p) => ({ x: p.x, y: p.y })),
+          startRooms: roomsRef.current.map((r) => ({ ...r })),
+          dx: 0,
+          dy: 0,
+        };
+        setHover(hintAt({ id: "design", kind: "move", type: "design-move" }, raw));
       }
     },
     [buildingMetres, innerMetres, layout, updateRoom, viewMode]
@@ -14313,7 +14641,12 @@ function DesignModal({
         if (roomKind(room) === "bedroom") {
           const fixture = hitBedroomFixtureHandle(room, layout, raw, innerMetres);
           if (fixture) {
-            nextHover = { id: room.id, kind: fixture.kind || "move", type: fixture.type };
+            nextHover = {
+              id: room.id,
+              kind: fixture.kind || "move",
+              type: fixture.type,
+              optionLabel: fixture.optionLabel,
+            };
             break;
           }
         }
@@ -14389,6 +14722,9 @@ function DesignModal({
             edgeIndex: buildingHit.index,
           };
         }
+      }
+      if (!nextHover && hitDesignDragSurface(raw, layout, roomsRef.current, innerMetres)) {
+        nextHover = { id: "design", kind: "move", type: "design-move" };
       }
       setHover(hintAt(nextHover, raw));
     },
@@ -14897,20 +15233,12 @@ function DesignModal({
                     <WalkPathOverlay layout={layout} markers={walkMarkersRef.current} />
                   ) : null}
                   {designHandles ? (
-                    <>
-                      <DesignMoveHandle
-                        cx={designHandles.move.cx}
-                        cy={designHandles.move.cy}
-                        size={designHandles.size}
-                        color={MONUMENT}
-                      />
-                      <RotateHandle
-                        cx={designHandles.rotate.cx}
-                        cy={designHandles.rotate.cy}
-                        size={designHandles.size}
-                        color={MONUMENT}
-                      />
-                    </>
+                    <RotateHandle
+                      cx={designHandles.rotate.cx}
+                      cy={designHandles.rotate.cy}
+                      size={designHandles.size}
+                      color={MONUMENT}
+                    />
                   ) : null}
                 </svg>
                 {layout?.areaM2 > 0 && areaAnchorM ? (

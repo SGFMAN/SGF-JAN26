@@ -1,0 +1,13 @@
+Moon surface textures for Little Planet
+
+Color (albedo):
+  NASA Scientific Visualization Studio — CGI Moon Kit
+  LROC color map (lroc_color_2k.jpg)
+  https://svs.gsfc.nasa.gov/4720/
+  Public domain (U.S. Government work). Credit requested: NASA's Scientific Visualization Studio.
+
+Elevation / bump:
+  Derived from NASA SVS CGI Moon Kit LDEM (LOLA) ldem_4_uint.tif
+  Converted locally to moon_bump.jpg for web use.
+  https://svs.gsfc.nasa.gov/4720/
+  Public domain. Credit: NASA's Scientific Visualization Studio / LOLA team.

@@ -1,0 +1,4 @@
+Blocky Astronaut — Rigged & Animated
+Source: https://brojekgames.com/glb/m/blocky-astronaut-rigged-animated/
+License: Commercial use OK (Brojek GLB)
+Includes built-in Idle, Walk, Run, Jump animations.

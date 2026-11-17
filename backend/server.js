@@ -423,6 +423,78 @@ function retargetStoredValue(value, oldFolder, newFolder, roots) {
   return retargetJobFilePath(s, oldFolder, newFolder, roots);
 }
 
+function pathValuesDiffer(before, after) {
+  return normalizeWinPath(before) !== normalizeWinPath(after);
+}
+
+/**
+ * Rewrite every projects.*_location / *_path / drawings_history value from oldFolder → newFolder.
+ * Optionally updates project_folder_path when it still pointed at the old job folder.
+ */
+async function retargetProjectPathColumns(db, projectId, oldFolder, newFolder, options = {}) {
+  const oldN = normalizeWinPath(oldFolder);
+  const newN = normalizeWinPath(newFolder);
+  if (!newN || !pathValuesDiffer(oldN, newN)) {
+    // Still allow a same-folder pass when stale paths use a different leaf under year\state
+    // (handled below via roots rewrite). Require at least a destination folder.
+    if (!newN) return { updatedPaths: 0 };
+  }
+  const roots = options.roots || (await configuredProjectRoots(db));
+  const colR = await db.query(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'projects'
+        AND data_type IN ('text', 'character varying')
+        AND (
+          column_name LIKE '%\\_location' ESCAPE '\\'
+          OR column_name LIKE '%\\_path' ESCAPE '\\'
+          OR column_name = 'drawings_history'
+        )
+        AND column_name <> 'project_folder_path'`
+  );
+  const columns = colR.rows
+    .map((r) => String(r.column_name || ""))
+    .filter((name) => /^[a-z0-9_]+$/.test(name));
+  if (!columns.length && !options.updateFolderPath) return { updatedPaths: 0 };
+
+  const current = await db.query(
+    `SELECT ${["project_folder_path", ...columns].map((c) => `"${c}"`).join(", ")} FROM projects WHERE id = $1`,
+    [projectId]
+  );
+  const row = current.rows[0] || {};
+  const sets = [];
+  const values = [];
+  let updatedPaths = 0;
+  for (const column of columns) {
+    const before = row[column];
+    if (before == null || before === "") continue;
+    const after = retargetStoredValue(before, oldN || newN, newN, roots);
+    if (pathValuesDiffer(before, after)) {
+      values.push(after);
+      sets.push(`"${column}" = $${values.length}`);
+      updatedPaths += 1;
+    }
+  }
+  if (options.updateFolderPath) {
+    const stored = normalizeWinPath(row.project_folder_path);
+    if (stored && oldN && !pathValuesDiffer(stored, oldN)) {
+      values.push(newN);
+      sets.push(`project_folder_path = $${values.length}`);
+    } else if (options.forceFolderPath) {
+      values.push(newN);
+      sets.push(`project_folder_path = $${values.length}`);
+    }
+  }
+  if (!sets.length) return { updatedPaths: 0 };
+  values.push(projectId);
+  await db.query(
+    `UPDATE projects SET ${sets.join(", ")}, updated_at = NOW() WHERE id = $${values.length}`,
+    values
+  );
+  return { updatedPaths };
+}
+
 /** Common street-type variants accepted for folder matching. */
 const STREET_TYPE_CANONICAL_MAP = {
   STREET: "STREET",
@@ -1623,12 +1695,33 @@ function mapStreamRow(row) {
   };
 }
 
+/**
+ * Contract Status - SGF is independent of the client status.
+ * Existing rows: Complete only when the client status is already Complete, otherwise Incomplete.
+ * Later edits stay independent. Empty values are filled again; set values are left alone.
+ */
+async function ensureContractStatusSgf(pool) {
+  await pool.query(`ALTER TABLE projects ADD COLUMN IF NOT EXISTS contract_status_sgf TEXT`);
+  const result = await pool.query(`
+    UPDATE projects
+    SET contract_status_sgf = CASE
+      WHEN TRIM(COALESCE(contract_status, '')) = 'Complete' THEN 'Complete'
+      ELSE 'Incomplete'
+    END
+    WHERE contract_status_sgf IS NULL OR BTRIM(COALESCE(contract_status_sgf, '')) = ''
+  `);
+  await pool.query(`ALTER TABLE projects ALTER COLUMN contract_status_sgf SET DEFAULT 'Incomplete'`);
+  if (result.rowCount > 0) {
+    console.log(`Set Contract Status - SGF on ${result.rowCount} project(s)`);
+  }
+}
+
 async function ensureSchema() {
   if (!pool) return;
   await ensureAppMeta(pool);
   // Always add this column even when schema_version is current, so project
   // GETs do not fail with "column project_folder_path does not exist".
-  await addMissingColumns(pool, "projects", ["project_folder_path"]);
+  await addMissingColumns(pool, "projects", ["project_folder_path", "contract_sgf_complete_date"]);
   if (await isSchemaUpToDate(pool)) {
     console.log(`Schema ${SCHEMA_VERSION} already applied — skipping migrations`);
     return;
@@ -1827,7 +1920,7 @@ async function ensureSchema() {
     'client_notes',
     'project_cost', 'salesperson', 'proposal_pdf_location',
     'site_visit_status', 'site_visit_date', 'site_visit_time', 'site_visit_notes', 'site_visit_scheduled_date', 'site_visit_scheduled_period',
-    'contract_status', 'contract_sent_date', 'contract_complete_date',
+    'contract_status', 'contract_status_sgf', 'contract_sent_date', 'contract_complete_date', 'contract_sgf_complete_date',
     'supporting_documents_status', 'supporting_documents_sent_date', 'supporting_documents_complete_date',
     'water_authority', 'water_declaration_status', 'water_declaration_sent_date', 'water_declaration_complete_date',
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
@@ -2426,6 +2519,7 @@ async function ensureSchema() {
   await ensureMaterialsTable(pool);
   await ensureQuotesTable(pool);
   await ensureBuildingPermitStatusWording(pool);
+  await ensureContractStatusSgf(pool);
   await markSchemaUpToDate(pool);
   console.log(`Schema ${SCHEMA_VERSION} applied`);
 }
@@ -2467,7 +2561,7 @@ app.get("/api/projects/:id", async (req, res) => {
     }
 
     const r = await pool.query(
-      "SELECT id, access_token, name, status, suburb, street, project_folder_path, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, drawings_concept_approved_date, drawings_working_approved_date, planning_jca_land_survey_sent_at, planning_jca_land_survey_received_at, planning_soil_test_melbourne_sent_at, planning_soil_test_melbourne_received_at, planning_site_visit_plans_updated_at, planning_mgr_tp_requested, planning_mgr_tp_received, planning_mgr_tp_needed, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, windowframes_colour, windowsurrounds_colour, door_colour, slidingdoor_colour, fascia_gutter_colour, balustrade_colour, hybrid_colour, tile1_colour, carpet_colour, benchtop_colour, cabinet1_colour, cabinet2_colour, tile2_colour, robe_door_colours, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, on_hold_reason, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_land_channel_zones_overlays_sent_at, planning_land_channel_zones_overlays_received_at, planning_land_data_title_covenants_sent_at, planning_land_data_title_covenants_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_septic, planning_septic_requested_at, planning_septic_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, planning_energy_specs_added_to_plans_at, planning_windows_requested_at, planning_windows_received_at, planning_sewer_septic_authority, planning_sewer_septic_application_requested_at, planning_sewer_septic_application_received_at, planning_warranty_insurance_at, planning_asset_protection_sent_at, planning_asset_protection_received_at, planning_bal_specs_added_to_plans, planning_building_permit_requested_at, planning_building_permit_received_at, planning_pic_requested_at, planning_pic_received_at, planning_sewer_connection, planning_sewer_septic_type, planning_sewer_septic_permit, construction_payments_paid, pre_engagement_required, pre_engagement_paid, deposit_type, deposit_required, deposit_paid, base_required, base_paid, frame_required, frame_paid, lock_up_required, lock_up_paid, fix_required, fix_paid, final_required, final_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
+      "SELECT id, access_token, name, status, suburb, street, project_folder_path, state, client_name, email, phone, stream, year, deposit, project_cost, salesperson, proposal_pdf_location, site_visit_status, site_visit_date, site_visit_time, site_visit_notes, site_visit_scheduled_date, site_visit_scheduled_period, contract_status, contract_status_sgf, contract_sent_date, contract_complete_date, contract_sgf_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, project_info_notes, specs, classification, project_log, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_status, drawings_pdf_location, drawings_history, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, drawings_concept_approved_date, drawings_working_approved_date, planning_jca_land_survey_sent_at, planning_jca_land_survey_received_at, planning_soil_test_melbourne_sent_at, planning_soil_test_melbourne_received_at, planning_site_visit_plans_updated_at, planning_mgr_tp_requested, planning_mgr_tp_received, planning_mgr_tp_needed, draftsperson, drawings_holder, drawing_manager_notes, colours_status, colours_notes, colours_pdf_location, colours_sent_date, colours_reminder_sent_date, colours_plan_trace_polygon, roof_colour, cladding_colour, baseboards_colour, roof_style, windowframes_colour, windowsurrounds_colour, door_colour, slidingdoor_colour, fascia_gutter_colour, balustrade_colour, hybrid_colour, tile1_colour, carpet_colour, benchtop_colour, cabinet1_colour, cabinet2_colour, tile2_colour, robe_door_colours, planning_status, energy_report_status, footing_certification_status, building_permit_status, septic_permit, septic_notes, septic_email_sent_date, pic, number_of_robes, robe_widths, robe_plan_pdf_location, robe_colours_pdf_location, substatus, substatus_detail, on_hold, on_hold_reason, survey_status, soil_status, qp_number, planning_jf_planning_property_report, planning_jf_title, planning_jf_covenant, planning_jf_section_173_agreement, planning_jf_plan_of_subdivision, planning_jf_ebyda_stormwater, planning_jf_byda_sewer_main, planning_jf_internal_sewer_plan, planning_jf_sewer_main_size_depth_offset, planning_jf_legal_point_discharge, planning_jf_property_info_report, planning_jf_planning_property_report_requested_at, planning_jf_planning_property_report_received_at, planning_jf_title_requested_at, planning_jf_title_received_at, planning_jf_covenant_requested_at, planning_jf_covenant_received_at, planning_jf_section_173_agreement_requested_at, planning_jf_section_173_agreement_received_at, planning_jf_plan_of_subdivision_requested_at, planning_jf_plan_of_subdivision_received_at, planning_jf_ebyda_stormwater_requested_at, planning_jf_ebyda_stormwater_received_at, planning_jf_byda_sewer_main_requested_at, planning_jf_byda_sewer_main_received_at, planning_jf_internal_sewer_plan_requested_at, planning_jf_internal_sewer_plan_received_at, planning_jf_sewer_main_size_depth_offset_requested_at, planning_jf_sewer_main_size_depth_offset_received_at, planning_jf_legal_point_discharge_requested_at, planning_jf_legal_point_discharge_received_at, planning_jf_property_info_report_requested_at, planning_jf_property_info_report_received_at, planning_land_channel_zones_overlays_sent_at, planning_land_channel_zones_overlays_received_at, planning_land_data_title_covenants_sent_at, planning_land_data_title_covenants_received_at, planning_jf_planning_property_report_path, planning_jf_title_path, planning_jf_covenant_path, planning_jf_section_173_agreement_path, planning_jf_plan_of_subdivision_path, planning_jf_ebyda_stormwater_path, planning_jf_byda_sewer_main_path, planning_jf_internal_sewer_plan_path, planning_jf_sewer_main_size_depth_offset_path, planning_jf_legal_point_discharge_path, planning_jf_property_info_report_path, planning_jf_job_file_pdf_path, planning_written_advice, planning_written_advice_requested_at, planning_written_advice_received_at, planning_town_planning, planning_town_planning_requested_at, planning_town_planning_received_at, planning_land_flooding_regulation, planning_land_flooding_fpa_requested_at, planning_land_flooding_fpa_received_at, planning_land_flooding_cc_requested_at, planning_land_flooding_cc_received_at, planning_bal, planning_bal_requested_at, planning_bal_received_at, planning_septic, planning_septic_requested_at, planning_septic_received_at, planning_footing_certification_requested_at, planning_footing_certification_received_at, planning_energy_report_requested_at, planning_energy_report_received_at, planning_energy_specs_added_to_plans, planning_energy_specs_added_to_plans_at, planning_windows_requested_at, planning_windows_received_at, planning_sewer_septic_authority, planning_sewer_septic_application_requested_at, planning_sewer_septic_application_received_at, planning_warranty_insurance_at, planning_asset_protection_sent_at, planning_asset_protection_received_at, planning_bal_specs_added_to_plans, planning_building_permit_requested_at, planning_building_permit_received_at, planning_pic_requested_at, planning_pic_received_at, planning_sewer_connection, planning_sewer_septic_type, planning_sewer_septic_permit, construction_payments_paid, pre_engagement_required, pre_engagement_paid, deposit_type, deposit_required, deposit_paid, base_required, base_paid, frame_required, frame_paid, lock_up_required, lock_up_paid, fix_required, fix_paid, final_required, final_paid, duplicate_source_project_id, project_lat, project_lng, project_geocoded_at, updated_at, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, client_notes FROM projects WHERE id = $1",
       [id]
     );
     
@@ -3012,7 +3106,7 @@ app.put("/api/projects/:id", async (req, res) => {
       client3_name, client3_email, client3_phone, client3_active,
       client_notes,
       site_visit_status, site_visit_date, site_visit_time, site_visit_notes,
-      contract_status, contract_sent_date, contract_complete_date,
+      contract_status, contract_status_sgf, contract_sent_date, contract_complete_date, contract_sgf_complete_date,
       supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date,
       water_authority, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date,
       notes, project_info_notes, specs, classification,
@@ -3160,6 +3254,14 @@ app.put("/api/projects/:id", async (req, res) => {
       if (typeof val === "string" && val.trim() === "Completed") return "Completed";
       return "Not Completed";
     };
+    /** Contract Status - SGF: Incomplete | Complete. Omitted or invalid values are left unchanged. */
+    const processContractStatusSgf = (val) => {
+      if (val === undefined || val === null) return null;
+      if (typeof val !== "string") return null;
+      const t = val.trim();
+      if (t === "Complete" || t === "Incomplete") return t;
+      return null;
+    };
     const processSewerConnection = (val) => {
       if (val === undefined || val === null) return null;
       if (typeof val !== "string") return "Not Selected";
@@ -3196,8 +3298,9 @@ app.put("/api/projects/:id", async (req, res) => {
     const onHoldValue = processBoolean(on_hold);
 
     const beforeRes = await pool.query(
-      `SELECT status, contract_status, supporting_documents_status, water_authority,
-              water_declaration_status, project_log, draftsperson, building_permit_status
+      `SELECT status, contract_status, contract_status_sgf, supporting_documents_status, water_authority,
+              water_declaration_status, project_log, draftsperson, building_permit_status,
+              suburb, street, state, year, project_folder_path, name
        FROM projects WHERE id = $1`,
       [id]
     );
@@ -3427,8 +3530,10 @@ app.put("/api/projects/:id", async (req, res) => {
         planning_pic_received_at = CASE $161 WHEN '__SKIP__' THEN planning_pic_received_at ELSE $161 END,
         planning_sewer_connection = COALESCE($162, planning_sewer_connection),
         salesperson = COALESCE($163, salesperson),
+        contract_status_sgf = COALESCE($164, contract_status_sgf),
+        contract_sgf_complete_date = COALESCE($165, contract_sgf_complete_date),
         updated_at = NOW()
-      WHERE id = $164
+      WHERE id = $166
       RETURNING *
       `,
       [
@@ -3596,6 +3701,8 @@ app.put("/api/projects/:id", async (req, res) => {
         processJfDocDate(planning_pic_received_at),
         processSewerConnection(planning_sewer_connection),
         processValue(salesperson),
+        processContractStatusSgf(contract_status_sgf),
+        processValue(contract_sgf_complete_date),
         id
       ]
     );
@@ -3698,7 +3805,8 @@ app.put("/api/projects/:id", async (req, res) => {
       const after = r.rows[0];
       const logLines = [
         projectLogChangeLine("Status", before.status, after.status),
-        projectLogChangeLine("Contract Status", before.contract_status, after.contract_status),
+        projectLogChangeLine("Contract Status - Client", before.contract_status, after.contract_status),
+        projectLogChangeLine("Contract Status - SGF", before.contract_status_sgf, after.contract_status_sgf),
         projectLogChangeLine(
           "Supporting Documents Status",
           before.supporting_documents_status,
@@ -3718,6 +3826,36 @@ app.put("/api/projects/:id", async (req, res) => {
       }
     } catch (logErr) {
       console.error("Error appending project log after PUT:", logErr.message || logErr);
+    }
+
+    // When street/suburb/state/year change, rewrite proposal/drawings/planning paths to the new job folder.
+    try {
+      const after = r.rows[0];
+      const addressChanged =
+        String(before.suburb || "").trim() !== String(after.suburb || "").trim() ||
+        String(before.street || "").trim() !== String(after.street || "").trim() ||
+        String(before.state || "").trim().toUpperCase() !== String(after.state || "").trim().toUpperCase() ||
+        String(before.year || "").trim() !== String(after.year || "").trim();
+      if (addressChanged) {
+        const oldFolder = await computedProjectJobFolder(pool, before);
+        const newFolder = await computedProjectJobFolder(pool, after);
+        if (newFolder && pathValuesDiffer(oldFolder, newFolder)) {
+          const roots = await configuredProjectRoots(pool);
+          const { updatedPaths } = await retargetProjectPathColumns(pool, id, oldFolder, newFolder, {
+            roots,
+            updateFolderPath: true,
+          });
+          if (updatedPaths > 0) {
+            const refreshed = await pool.query("SELECT * FROM projects WHERE id = $1", [id]);
+            if (refreshed.rows[0]) r.rows[0] = refreshed.rows[0];
+            console.log(
+              `project ${id}: retargeted ${updatedPaths} path(s) after address change (${oldFolder} → ${newFolder})`
+            );
+          }
+        }
+      }
+    } catch (pathErr) {
+      console.error("Error retargeting project paths after address change:", pathErr.message || pathErr);
     }
 
     console.log("Update successful. Row count:", r.rowCount);
@@ -4655,9 +4793,7 @@ app.post("/api/projects/:id/open-project-folder", async (req, res) => {
   }
 });
 
-async function effectiveProjectJobFolder(db, row) {
-  const stored = storedProjectFolderPath(row);
-  if (stored) return path.normalize(stored);
+async function computedProjectJobFolder(db, row) {
   const stateUpper = String(row?.state || "").trim().toUpperCase();
   if (!stateUpper) return "";
   const sr = await db.query("SELECT root_directory, root_directory_qld FROM settings WHERE id = 1");
@@ -4666,6 +4802,12 @@ async function effectiveProjectJobFolder(db, row) {
   return path.normalize(
     jobFolderForProject(row, rootDir, getProjectYearFolderSegment(row.year), stateUpper)
   );
+}
+
+async function effectiveProjectJobFolder(db, row) {
+  const stored = storedProjectFolderPath(row);
+  if (stored) return path.normalize(stored);
+  return computedProjectJobFolder(db, row);
 }
 
 async function configuredProjectRoots(db) {
@@ -4736,63 +4878,19 @@ app.put("/api/projects/:id/folder-path", async (req, res) => {
     const oldFolder = await effectiveProjectJobFolder(pool, pr.rows[0]);
     const newFolder = path.normalize(nextRaw);
 
-    const colR = await pool.query(
-      `SELECT column_name
-         FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'projects'
-          AND data_type IN ('text', 'character varying')
-          AND (
-            column_name LIKE '%\\_location' ESCAPE '\\'
-            OR column_name LIKE '%\\_path' ESCAPE '\\'
-            OR column_name = 'drawings_history'
-          )
-          AND column_name <> 'project_folder_path'`
-    );
-    const columns = colR.rows
-      .map((r) => String(r.column_name || ""))
-      .filter((name) => /^[a-z0-9_]+$/.test(name));
-
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      let updated = 0;
-      if (columns.length) {
-        const current = await client.query(
-          `SELECT ${columns.map((c) => `"${c}"`).join(", ")} FROM projects WHERE id = $1`,
-          [id]
-        );
-        const row = current.rows[0] || {};
-        const sets = [];
-        const values = [];
-        for (const column of columns) {
-          const before = row[column];
-          if (before == null || before === "") continue;
-          const after = retargetStoredValue(before, oldFolder, newFolder, roots);
-          const baseline = retargetStoredValue(before, oldFolder, oldFolder, roots);
-          if (after !== baseline) {
-            values.push(after);
-            sets.push(`"${column}" = $${values.length}`);
-            updated += 1;
-          }
-        }
-        values.push(newFolder);
-        const folderParam = values.length;
-        values.push(id);
-        await client.query(
-          `UPDATE projects
-              SET ${sets.length ? `${sets.join(", ")}, ` : ""}project_folder_path = $${folderParam}, updated_at = NOW()
-            WHERE id = $${values.length}`,
-          values
-        );
-      } else {
-        await client.query(
-          "UPDATE projects SET project_folder_path = $1, updated_at = NOW() WHERE id = $2",
-          [newFolder, id]
-        );
-      }
+      const { updatedPaths } = await retargetProjectPathColumns(client, id, oldFolder, newFolder, {
+        roots,
+        updateFolderPath: false,
+      });
+      await client.query(
+        "UPDATE projects SET project_folder_path = $1, updated_at = NOW() WHERE id = $2",
+        [newFolder, id]
+      );
       await client.query("COMMIT");
-      return res.json({ ok: true, path: newFolder, updatedPaths: updated });
+      return res.json({ ok: true, path: newFolder, updatedPaths });
     } catch (e) {
       await client.query("ROLLBACK");
       throw e;
@@ -14513,7 +14611,7 @@ app.post("/api/projects/:id/approve-concept", async (req, res) => {
   try {
     // Get current project data
     const projectResult = await pool.query(
-      "SELECT drawings_history, drawings_status, drawings_working_approved_date, drawings_concept_approved_date, name, status, stream, suburb, street, state, deposit, project_cost, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, site_visit_status, site_visit_date, site_visit_time, contract_status, contract_sent_date, contract_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_pdf_location, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, draftsperson, survey_status, soil_status FROM projects WHERE id = $1",
+      "SELECT drawings_history, drawings_status, drawings_working_approved_date, drawings_concept_approved_date, name, status, stream, suburb, street, state, deposit, project_cost, client_name, email, phone, client1_name, client1_email, client1_phone, client1_active, client2_name, client2_email, client2_phone, client2_active, client3_name, client3_email, client3_phone, client3_active, site_visit_status, site_visit_date, site_visit_time, contract_status, contract_status_sgf, contract_sent_date, contract_complete_date, contract_sgf_complete_date, supporting_documents_status, supporting_documents_sent_date, supporting_documents_complete_date, water_declaration_status, water_declaration_sent_date, water_declaration_complete_date, notes, window_status, window_colour, window_reveal, window_reveal_other, window_glazing, window_bal_rating, window_date_required, window_ordered_date, window_order_pdf_location, window_order_number, drawings_pdf_location, drawings_viewed_date, drawings_sent_to_client_date, drawings_holder_date, colours_status, planning_status, energy_report_status, footing_certification_status, building_permit_status, draftsperson, survey_status, soil_status FROM projects WHERE id = $1",
       [id]
     );
 

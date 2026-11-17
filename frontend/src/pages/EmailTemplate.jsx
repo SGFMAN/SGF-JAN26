@@ -28,7 +28,7 @@ const BODY_TOKEN_GROUPS = [
   { id: "sales", label: "SALES", tokens: ["DepositPaid", "DepositStatus", "DepositBalance", "Salesperson", "SalespersonPosition", "SalespersonPhone", "SalespersonEmail"] },
   { id: "user", label: "USER", tokens: ["UserName", "UserPosition", "UserEmail"] },
   { id: "site", label: "SITE VISIT", tokens: ["SiteVisitScheduledDate", "SiteVisitScheduledPeriod"] },
-  { id: "misc", label: "Misc", tokens: ["Draftsperson", "ColourConsultant", "Contract Status", "Color Status", "LINK"] },
+  { id: "misc", label: "Misc", tokens: ["Draftsperson", "ColourConsultant", "Contract Status - Client", "Color Status", "LINK"] },
 ];
 
 function bodyTokenButtonStyle(isLink) {

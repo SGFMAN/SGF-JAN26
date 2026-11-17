@@ -52,8 +52,10 @@ function deriveContractStatusText(row) {
   const waterDeclStatus =
     row.water_declaration_status != null ? String(row.water_declaration_status) : "Not Required";
 
+  const sgfStatus = row.contract_status_sgf != null ? String(row.contract_status_sgf).trim() : "Incomplete";
   if (
     contractStatus === "Complete" &&
+    sgfStatus === "Complete" &&
     supportingDocsStatus === "Complete" &&
     (waterDeclStatus === "Complete" || waterDeclStatus === "Not Required")
   ) {
@@ -107,6 +109,8 @@ function toClientProjectOverviewDto(row) {
     contractStatusText: deriveContractStatusText(row),
     contractStatus: pickString(row.contract_status) || "Not Sent",
     contract_status: pickString(row.contract_status) || "Not Sent",
+    contractStatusSgf: pickString(row.contract_status_sgf) || "Incomplete",
+    contract_status_sgf: pickString(row.contract_status_sgf) || "Incomplete",
     supportingDocumentsStatus: pickString(row.supporting_documents_status) || "Not Sent",
     supporting_documents_status: pickString(row.supporting_documents_status) || "Not Sent",
     waterDeclarationStatus: pickString(row.water_declaration_status) || "Not Required",
@@ -157,6 +161,7 @@ const CLIENT_PROJECT_SELECT = `
     colours_status,
     window_status,
     contract_status,
+    contract_status_sgf,
     supporting_documents_status,
     water_declaration_status,
     water_authority,

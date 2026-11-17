@@ -1,0 +1,2 @@
+﻿Mixamo-compatible locomotion clips (idle, walk, run, jump) used for retargeting onto the Grab3D astronaut.
+Source library: three.ws animation clip CDN (Mixamo-origin motion data).

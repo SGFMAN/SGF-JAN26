@@ -443,12 +443,14 @@ export default function Overview({ project }) {
   // Get contract status text
   function getContractStatusText() {
     const contractStatus = project?.contract_status || "Not Sent";
+    const sgfStatus = project?.contract_status_sgf || "Incomplete";
     const supportingDocsStatus = project?.supporting_documents_status || "Not Sent";
     const waterDeclStatus = project?.water_declaration_status;
     const waterAuthority = project?.water_authority || "Not Required";
 
     if (
       contractStatus === "Complete" &&
+      sgfStatus === "Complete" &&
       supportingDocsStatus === "Complete" &&
       (waterDeclStatus === "Complete" || waterAuthority === "Not Required")
     ) {
@@ -460,12 +462,14 @@ export default function Overview({ project }) {
 
   function getContractStatusIndicator() {
     const contractStatus = project?.contract_status || "Not Sent";
+    const sgfStatus = project?.contract_status_sgf || "Incomplete";
     const supportingDocsStatus = project?.supporting_documents_status || "Not Sent";
     const waterDeclStatus = project?.water_declaration_status;
     const waterAuthority = project?.water_authority || "Not Required";
 
     if (
       contractStatus === "Complete" &&
+      sgfStatus === "Complete" &&
       supportingDocsStatus === "Complete" &&
       (waterDeclStatus === "Complete" || waterAuthority === "Not Required")
     ) {
@@ -543,11 +547,13 @@ export default function Overview({ project }) {
 
     // Check contract status - all three must be complete
     const contractStatus = project?.contract_status || "Not Sent";
+    const sgfStatus = project?.contract_status_sgf || "Incomplete";
     const supportingDocsStatus = project?.supporting_documents_status || "Not Sent";
     const waterDeclStatus = project?.water_declaration_status;
     const waterAuthority = project?.water_authority || "Not Required";
     if (
       contractStatus !== "Complete" ||
+      sgfStatus !== "Complete" ||
       supportingDocsStatus !== "Complete" ||
       (waterDeclStatus !== "Complete" && waterAuthority !== "Not Required")
     ) {
@@ -877,6 +883,7 @@ export default function Overview({ project }) {
     
     // Check Contract Status
     const contractStatus = project.contract_status || "Not Sent";
+    const sgfStatus = project.contract_status_sgf || "Incomplete";
     if (contractStatus !== "Complete") {
       if (contractStatus === "Sent") {
         outstandingItems.push({
@@ -889,6 +896,11 @@ export default function Overview({ project }) {
           message: "Master Builder's Contract will be sent out soon if we haven't already."
         });
       }
+    } else if (sgfStatus !== "Complete") {
+      outstandingItems.push({
+        title: "Master Builder's Contract",
+        message: "The client has signed. SGF still needs to sign the contract."
+      });
     }
     
     // Check Supporting Documents Status

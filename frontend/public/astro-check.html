@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Astro check</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #eee; font: 14px monospace; }
+    #log { position: absolute; left: 8px; top: 8px; z-index: 2; white-space: pre-wrap; max-width: 50%; }
+    canvas { display: block; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="log">loading…</div>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/node_modules/three/build/three.module.js",
+        "three/addons/": "/node_modules/three/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
+
+    const logEl = document.getElementById("log");
+    const log = (msg) => { logEl.textContent += "\n" + msg; console.log(msg); };
+    logEl.textContent = "";
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x224466);
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 100);
+    camera.position.set(0, 1.2, 3.5);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+    const sun = new THREE.DirectionalLight(0xffffff, 2);
+    sun.position.set(3, 5, 2);
+    scene.add(sun);
+    scene.add(new THREE.GridHelper(4, 8));
+
+    const url = new URLSearchParams(location.search).get("m") || "/models/astronaut-hatch.glb";
+    log("URL " + url);
+
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    loader.load(
+      url,
+      (gltf) => {
+        const root = gltf.scene;
+        scene.add(root);
+        root.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(root);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        log("anims: " + (gltf.animations || []).map((a) => a.name).join(", "));
+        log("bbox size " + size.toArray().map((n) => n.toFixed(3)).join(", "));
+        log("bbox min " + box.min.toArray().map((n) => n.toFixed(3)).join(", "));
+        log("bbox max " + box.max.toArray().map((n) => n.toFixed(3)).join(", "));
+        log("center " + center.toArray().map((n) => n.toFixed(3)).join(", "));
+        let meshes = 0;
+        root.traverse((o) => { if (o.isMesh) meshes += 1; });
+        log("meshes " + meshes);
+
+        if (size.y > 0.0001) {
+          const s = 1.6 / size.y;
+          root.scale.setScalar(s);
+          root.updateMatrixWorld(true);
+          const box2 = new THREE.Box3().setFromObject(root);
+          root.position.y -= box2.min.y;
+          log("scaled by " + s.toFixed(4) + " planted");
+        }
+
+        const mixer = new THREE.AnimationMixer(root);
+        const idle = gltf.animations.find((a) => /idle/i.test(a.name));
+        if (idle) {
+          mixer.clipAction(idle).play();
+          log("playing " + idle.name);
+        }
+        const clock = new THREE.Clock();
+        function loop() {
+          mixer.update(clock.getDelta());
+          renderer.render(scene, camera);
+          requestAnimationFrame(loop);
+        }
+        loop();
+      },
+      undefined,
+      (err) => log("LOAD ERROR " + err)
+    );
+  </script>
+</body>
+</html>

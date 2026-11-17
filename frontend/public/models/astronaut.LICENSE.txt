@@ -1,0 +1,5 @@
+﻿Astronaut in Spacesuit (rigged) from Grab3D — realistic lunar EVA suit
+https://grab3d.com/models/characters/astronaut-in-spacesuit/
+Built-in clips: walk, run.
+Additional idle / walk / jump / run motion from Mixamo-compatible clip library (retargeted).
+License: CC0 1.0 Universal (public domain)

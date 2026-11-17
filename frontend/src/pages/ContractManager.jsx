@@ -24,6 +24,7 @@ const PAGE_TEXT = UI.pageText;
 const API_URL = "";
 
 const CONTRACT_FILTER_OPTIONS = FIELD_DEFINITIONS.contract_status.values;
+const CONTRACT_STATUS_SGF_OPTIONS = ["Incomplete", "Complete"];
 const DRAWINGS_FILTER_OPTIONS = FIELD_DEFINITIONS.drawings_status.values;
 const SUPPORTING_DOCS_FILTER_OPTIONS = FIELD_DEFINITIONS.supporting_documents_status.values;
 const WATER_AUTHORITY_OPTIONS = ["Not Required", "Barwon Water", "Greater Western Water", "South East Water"];
@@ -31,7 +32,7 @@ const CONTRACT_FILTER_DEFAULT = FIELD_DEFINITIONS.contract_status.defaultValue;
 const DRAWINGS_FILTER_DEFAULT = FIELD_DEFINITIONS.drawings_status.defaultValue;
 const SUPPORTING_DOCS_FILTER_DEFAULT = FIELD_DEFINITIONS.supporting_documents_status.defaultValue;
 const WATER_AUTHORITY_FILTER_DEFAULT = "Not Required";
-const GRID_COLUMNS = "2fr 1fr 1fr 1fr 1fr 1fr";
+const GRID_COLUMNS = "2fr 1fr 1fr 1fr 1fr 1fr 1fr";
 const GRID_LAYOUT = {
   display: "grid",
   gridTemplateColumns: GRID_COLUMNS,
@@ -66,6 +67,7 @@ export default function ContractManager() {
   const [sortMode, setSortMode] = useState("date"); // "date" or "stream"
   const [stateFilter, setStateFilter] = useState(getStateFilter());
   const [contractFilter, setContractFilter] = useState("");
+  const [contractSgfFilter, setContractSgfFilter] = useState("");
   const [drawingsFilter, setDrawingsFilter] = useState("");
   const [supportingDocsFilter, setSupportingDocsFilter] = useState("");
   const [waterAuthorityFilter, setWaterAuthorityFilter] = useState("");
@@ -631,7 +633,8 @@ export default function ContractManager() {
           >
             <div>Project</div>
             <div>Drawings Status</div>
-            <div>Contract</div>
+            <div>Contract Status - Client</div>
+            <div>Contract Status - SGF</div>
             <div>Supporting Docs</div>
             <div>Water Authority</div>
             <div>Water Declaration</div>
@@ -719,11 +722,24 @@ export default function ContractManager() {
             <select
               value={contractFilter}
               onChange={(e) => setContractFilter(e.target.value)}
-              aria-label="Filter by Contract"
+              aria-label="Filter by Contract Status - Client"
               style={headingFilterSelectStyle}
             >
               <option value="">All</option>
               {CONTRACT_FILTER_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+            <select
+              value={contractSgfFilter}
+              onChange={(e) => setContractSgfFilter(e.target.value)}
+              aria-label="Filter by Contract Status - SGF"
+              style={headingFilterSelectStyle}
+            >
+              <option value="">All</option>
+              {CONTRACT_STATUS_SGF_OPTIONS.map((value) => (
                 <option key={value} value={value}>
                   {value}
                 </option>
@@ -780,6 +796,11 @@ export default function ContractManager() {
                     getEffectiveValue(project, "contract_status", CONTRACT_FILTER_DEFAULT) === contractFilter
                   );
                 }
+                if (contractSgfFilter) {
+                  filteredProjects = filteredProjects.filter((project) =>
+                    getEffectiveValue(project, "contract_status_sgf", "Incomplete") === contractSgfFilter
+                  );
+                }
                 if (drawingsFilter) {
                   filteredProjects = filteredProjects.filter((project) =>
                     getEffectiveValue(project, "drawings_status", DRAWINGS_FILTER_DEFAULT) === drawingsFilter
@@ -808,6 +829,7 @@ export default function ContractManager() {
                 const projectName = project.name || `${project.street || ""}, ${project.suburb || ""}`.trim() || "Unknown Project";
                 const drawingsStatus = getEffectiveValue(project, "drawings_status", "Not Assigned");
                 const contractStatus = getEffectiveValue(project, "contract_status", "Not Sent");
+                const contractStatusSgf = getEffectiveValue(project, "contract_status_sgf", "Incomplete");
                 const supportingDocsStatus = getEffectiveValue(project, "supporting_documents_status", "Not Sent");
                 const waterAuthority = getEffectiveValue(project, "water_authority", "Not Required");
                 // For water declaration, if water authority is "Not Required", treat it as "Not Required" for display/color
@@ -898,6 +920,31 @@ export default function ContractManager() {
                       }}
                     >
                       {CONTRACT_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={contractStatusSgf}
+                      onChange={(e) => handleStatusChange(project.id, "contract_status_sgf", e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label="Contract Status - SGF"
+                      style={{
+                        width: "100%",
+                        padding: "4px 8px",
+                        borderRadius: "6px",
+                        border: "none",
+                        fontSize: "0.9rem",
+                        color: TEXT.dark,
+                        background: getStatusColor(contractStatusSgf),
+                        cursor: "pointer",
+                        fontWeight: 500,
+                        boxSizing: "border-box",
+                        textAlign: "center",
+                      }}
+                    >
+                      {CONTRACT_STATUS_SGF_OPTIONS.map((option) => (
                         <option key={option} value={option}>
                           {option}
                         </option>

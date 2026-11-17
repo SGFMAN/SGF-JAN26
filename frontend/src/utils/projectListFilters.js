@@ -28,7 +28,7 @@ export const FIELD_DEFINITIONS = {
     defaultValue: "Not Complete",
   },
   contract_status: {
-    label: "Contract",
+    label: "Contract Status - Client",
     values: ["Not Sent", "Sent", "Complete"],
     defaultValue: "Not Sent",
   },
