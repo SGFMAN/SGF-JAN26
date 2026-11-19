@@ -164,6 +164,7 @@ export default function Hotlist() {
     vic: false,
     qld: false,
     green: false,
+    ice: false,
   });
   const [notesModalItem, setNotesModalItem] = useState(null);
   const [notesModalText, setNotesModalText] = useState("");
@@ -986,6 +987,60 @@ export default function Hotlist() {
     return item.agreement_sent === "true" || item.agreement_sent === true || agreementSentItems.has(item.id);
   };
 
+  function isOnIce(item) {
+    return item?.hotlist_on_ice === "true" || item?.hotlist_on_ice === true;
+  }
+
+  function iceStreamFlagLabel(item) {
+    const group = hotlistStreamGroup(item);
+    if (group === "sgf_vic") return "SGF - VIC";
+    if (group === "sgf_qld") return "SGF - QLD";
+    if (group === "green") return "Investment Partners";
+    return "Unassigned";
+  }
+
+  function iceStreamFlagColors(item) {
+    const group = hotlistStreamGroup(item);
+    if (group === "sgf_vic") return getStreamGroupColors("vic");
+    if (group === "sgf_qld") return getStreamGroupColors("qld");
+    if (group === "green") return getStreamGroupColors("green");
+    return { darker: MONUMENT, lighter: SECTION_GREY };
+  }
+
+  async function handleIceClick(item) {
+    try {
+      const response = await fetch(`${API_URL}/api/hotlist/${item.id}/ice`, {
+        method: "POST",
+        headers: getApiHeaders(),
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        throw new Error(errorText);
+      }
+      await fetchHotlist();
+    } catch (err) {
+      console.error("Error icing hotlist item:", err);
+      alert("Error moving to On Ice: " + err.message);
+    }
+  }
+
+  async function handleDefrostClick(item) {
+    try {
+      const response = await fetch(`${API_URL}/api/hotlist/${item.id}/defrost`, {
+        method: "POST",
+        headers: getApiHeaders(),
+      });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText);
+        throw new Error(errorText);
+      }
+      await fetchHotlist();
+    } catch (err) {
+      console.error("Error defrosting hotlist item:", err);
+      alert("Error removing from On Ice: " + err.message);
+    }
+  }
+
   function getAgreementRowBackground(item) {
     if (!isAgreementSent(item)) return WHITE;
     return getHotlistAgreementRowBackground(item, { isGreenStream: isGreenStreamHotlistItem });
@@ -1005,24 +1060,56 @@ export default function Hotlist() {
     });
   }
 
+  function iceStreamSortRank(item) {
+    const group = hotlistStreamGroup(item);
+    if (group === "sgf_vic") return 0;
+    if (group === "sgf_qld") return 1;
+    if (group === "green") return 2;
+    return 3;
+  }
+
+  function sortOnIceItems(items) {
+    return [...items].sort((a, b) => {
+      const rankDiff = iceStreamSortRank(a) - iceStreamSortRank(b);
+      if (rankDiff !== 0) return rankDiff;
+      const suburbA = (a.suburb || "").toLowerCase();
+      const suburbB = (b.suburb || "").toLowerCase();
+      if (suburbA !== suburbB) return suburbA.localeCompare(suburbB);
+      const streetA = (a.street || "").toLowerCase();
+      const streetB = (b.street || "").toLowerCase();
+      return streetA.localeCompare(streetB);
+    });
+  }
+
+  const activeHotlistItems = React.useMemo(
+    () => hotlistItems.filter((item) => !isOnIce(item)),
+    [hotlistItems]
+  );
+
+  const onIceItems = React.useMemo(
+    () => sortOnIceItems(hotlistItems.filter((item) => isOnIce(item))),
+    [hotlistItems]
+  );
+
   const unassignedItems = React.useMemo(
-    () => sortHotlistItems(hotlistItems.filter((item) => hotlistStreamGroup(item) === "unassigned")),
-    [hotlistItems, agreementSentItems]
+    () =>
+      sortHotlistItems(activeHotlistItems.filter((item) => hotlistStreamGroup(item) === "unassigned")),
+    [activeHotlistItems, agreementSentItems]
   );
 
   const sgfVicItems = React.useMemo(
-    () => sortHotlistItems(hotlistItems.filter((item) => hotlistStreamGroup(item) === "sgf_vic")),
-    [hotlistItems, agreementSentItems]
+    () => sortHotlistItems(activeHotlistItems.filter((item) => hotlistStreamGroup(item) === "sgf_vic")),
+    [activeHotlistItems, agreementSentItems]
   );
 
   const sgfQldItems = React.useMemo(
-    () => sortHotlistItems(hotlistItems.filter((item) => hotlistStreamGroup(item) === "sgf_qld")),
-    [hotlistItems, agreementSentItems]
+    () => sortHotlistItems(activeHotlistItems.filter((item) => hotlistStreamGroup(item) === "sgf_qld")),
+    [activeHotlistItems, agreementSentItems]
   );
 
   const greenStreamItems = React.useMemo(
-    () => sortHotlistItems(hotlistItems.filter((item) => hotlistStreamGroup(item) === "green")),
-    [hotlistItems, agreementSentItems]
+    () => sortHotlistItems(activeHotlistItems.filter((item) => hotlistStreamGroup(item) === "green")),
+    [activeHotlistItems, agreementSentItems]
   );
 
   function renderHotlistFlyoutSection(sectionKey, itemCount, children) {
@@ -1057,6 +1144,77 @@ export default function Hotlist() {
               overflowY: "auto",
               overflowX: "hidden",
               background: panelBg,
+            }}
+          >
+            {children}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderOnIceSection(itemCount, children) {
+    const open = hotlistSectionOpen.ice;
+    return (
+      <div
+        style={{
+          border: outlineBorder,
+          borderRadius: "10px",
+          overflow: "hidden",
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+          flex: open ? "1 1 0" : "0 0 auto",
+          minHeight: 0,
+          background: WHITE,
+        }}
+      >
+        <button
+          type="button"
+          className="hotlist-flyout-header"
+          onClick={() => toggleHotlistSection("ice")}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            padding: "12px 16px",
+            margin: 0,
+            background: WHITE,
+            border: "none",
+            borderBottom: open ? outlineBorder : "none",
+            borderRadius: 0,
+            cursor: "pointer",
+            textAlign: "left",
+            boxSizing: "border-box",
+            fontFamily: "inherit",
+            flexShrink: 0,
+            outline: "none",
+          }}
+        >
+          <span style={{ flex: 1, fontSize: "1.15rem", fontWeight: 700, color: MONUMENT }}>
+            On Ice
+            <span style={{ fontWeight: 500, color: MONUMENT, fontSize: "0.9rem", marginLeft: "8px" }}>
+              ({itemCount})
+            </span>
+          </span>
+          <span style={{ fontSize: "0.85rem", fontWeight: 700, color: MONUMENT, flexShrink: 0 }}>
+            {open ? "▼" : "▶"}
+          </span>
+        </button>
+        {open ? (
+          <div
+            style={{
+              padding: "8px 0",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              boxSizing: "border-box",
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              overflowX: "hidden",
+              background: WHITE,
             }}
           >
             {children}
@@ -1104,15 +1262,16 @@ export default function Hotlist() {
     );
   }
 
-  function renderHotlistRow(item, columnAccent) {
+  function renderHotlistRow(item, columnAccent, options = {}) {
+    const onIce = Boolean(options.onIce);
     const suburbLabel = (item.suburb || "").trim().toUpperCase();
     const streetLabel = (item.street || "").trim();
     const displayName =
       suburbLabel && streetLabel
         ? `${suburbLabel} - ${streetLabel}`
         : suburbLabel || streetLabel || "Unnamed Address";
-    const itemIsAgreementSent = isAgreementSent(item);
-    const rowBg = getAgreementRowBackground(item);
+    const itemIsAgreementSent = !onIce && isAgreementSent(item);
+    const rowBg = onIce ? WHITE : getAgreementRowBackground(item);
     const useLightText = itemIsAgreementSent;
     const accent =
       columnAccent === "qld"
@@ -1125,6 +1284,7 @@ export default function Hotlist() {
                 agreementHover: `color-mix(in srgb, ${MONUMENT} 82%, black)`,
               }
             : getHotlistStreamAccent("vic");
+    const iceFlagColors = onIce ? iceStreamFlagColors(item) : null;
 
     const streamVal = item.stream || "";
     const streamKnown = hotlistProjectStreamOptions.includes(streamVal);
@@ -1171,6 +1331,25 @@ export default function Hotlist() {
             >
               {displayName}
             </span>
+            {onIce ? (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "2px 8px",
+                  borderRadius: "999px",
+                  border: outlineBorder,
+                  background: iceFlagColors.darker,
+                  color: PAGE_TEXT,
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.02em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {iceStreamFlagLabel(item)}
+              </span>
+            ) : null}
             {item.state ? (
               <>
                 <span style={{ color: useLightText ? PAGE_TEXT : MONUMENT, opacity: 0.55 }}>|</span>
@@ -1309,12 +1488,56 @@ export default function Hotlist() {
               />
             ) : null}
           </button>
-          {!itemIsAgreementSent ? (
+          {!onIce ? (
+            !itemIsAgreementSent ? (
+              <button
+                type="button"
+                onClick={() => handleAgreementSentClick(item)}
+                style={{
+                  background: accent.agreementBg,
+                  color: PAGE_TEXT,
+                  border: outlineBorder,
+                  borderRadius: "8px",
+                  padding: "8px 16px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = accent.agreementHover)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = accent.agreementBg)}
+              >
+                Agreement Sent
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleUnsendAgreementClick(item)}
+                style={{
+                  background: accent.agreementBg,
+                  color: PAGE_TEXT,
+                  border: outlineBorder,
+                  borderRadius: "8px",
+                  padding: "8px 16px",
+                  fontSize: "0.9rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  transition: "background 0.2s",
+                  whiteSpace: "nowrap",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = accent.agreementHover)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = accent.agreementBg)}
+              >
+                Unsend Agreement
+              </button>
+            )
+          ) : null}
+          {!onIce ? (
             <button
               type="button"
-              onClick={() => handleAgreementSentClick(item)}
+              onClick={() => handleSoldClick(item)}
               style={{
-                background: accent.agreementBg,
+                background: STREAM.streamGreen,
                 color: PAGE_TEXT,
                 border: outlineBorder,
                 borderRadius: "8px",
@@ -1324,17 +1547,18 @@ export default function Hotlist() {
                 cursor: "pointer",
                 transition: "background 0.2s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = accent.agreementHover)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = accent.agreementBg)}
+              onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.streamGreen))}
+              onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.streamGreen)}
             >
-              Agreement Sent
+              Sold
             </button>
-          ) : (
+          ) : null}
+          {!onIce ? (
             <button
               type="button"
-              onClick={() => handleUnsendAgreementClick(item)}
+              onClick={() => handleMakeJobFileClick(item)}
               style={{
-                background: accent.agreementBg,
+                background: PURPLE,
                 color: PAGE_TEXT,
                 border: outlineBorder,
                 borderRadius: "8px",
@@ -1343,52 +1567,13 @@ export default function Hotlist() {
                 fontWeight: 500,
                 cursor: "pointer",
                 transition: "background 0.2s",
-                whiteSpace: "nowrap",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = accent.agreementHover)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = accent.agreementBg)}
+              onMouseEnter={(e) => (e.currentTarget.style.background = PURPLE_HOVER)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = PURPLE)}
             >
-              Unsend Agreement
+              Make Job File
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => handleSoldClick(item)}
-            style={{
-              background: STREAM.streamGreen,
-              color: PAGE_TEXT,
-              border: outlineBorder,
-              borderRadius: "8px",
-              padding: "8px 16px",
-              fontSize: "0.9rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = streamColorHover(STREAM.streamGreen))}
-            onMouseLeave={(e) => (e.currentTarget.style.background = STREAM.streamGreen)}
-          >
-            Sold
-          </button>
-          <button
-            type="button"
-            onClick={() => handleMakeJobFileClick(item)}
-            style={{
-              background: PURPLE,
-              color: PAGE_TEXT,
-              border: outlineBorder,
-              borderRadius: "8px",
-              padding: "8px 16px",
-              fontSize: "0.9rem",
-              fontWeight: 500,
-              cursor: "pointer",
-              transition: "background 0.2s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = PURPLE_HOVER)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = PURPLE)}
-          >
-            Make Job File
-          </button>
+          ) : null}
           <button
             type="button"
             onClick={() => handleEmailClick(item)}
@@ -1427,6 +1612,27 @@ export default function Hotlist() {
           >
             Edit
           </button>
+          {!onIce ? (
+            <button
+              type="button"
+              onClick={() => handleIceClick(item)}
+              style={{
+                background: "#7EB6D9",
+                color: PAGE_TEXT,
+                border: outlineBorder,
+                borderRadius: "8px",
+                padding: "8px 16px",
+                fontSize: "0.9rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#5A9BC4")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#7EB6D9")}
+            >
+              Ice
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => handleDeleteItem(item.id)}
@@ -1446,6 +1652,27 @@ export default function Hotlist() {
           >
             Delete
           </button>
+          {onIce ? (
+            <button
+              type="button"
+              onClick={() => handleDefrostClick(item)}
+              style={{
+                background: WHITE,
+                color: MONUMENT,
+                border: outlineBorder,
+                borderRadius: "8px",
+                padding: "8px 16px",
+                fontSize: "0.9rem",
+                fontWeight: 500,
+                cursor: "pointer",
+                transition: "background 0.2s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#f0f0f0")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = WHITE)}
+            >
+              Defrost
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -1753,6 +1980,14 @@ export default function Hotlist() {
                     {unassignedItems.map((item) => renderHotlistRow(item, "neutral"))}
                     {greenStreamItems.map((item) => renderHotlistRow(item, "green"))}
                   </>
+                )
+              )}
+              {renderOnIceSection(
+                onIceItems.length,
+                onIceItems.length === 0 ? (
+                  <div style={{ color: MONUMENT, fontSize: "0.9rem", fontStyle: "italic" }}>No items</div>
+                ) : (
+                  onIceItems.map((item) => renderHotlistRow(item, "neutral", { onIce: true }))
                 )
               )}
             </div>

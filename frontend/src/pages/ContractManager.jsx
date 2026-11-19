@@ -6,6 +6,7 @@ import {
   isExcludedFromProjectLists,
   isCancelledStatus,
   isCompleteStatus,
+  isOnHoldFlag,
 } from "../utils/projectStatus";
 import { useDrawingAccess } from "../hooks/useDrawingAccess";
 import useAppLogo from "../hooks/useAppLogo.js";
@@ -13,7 +14,7 @@ import { projectPath } from "../utils/projectUrl";
 import { FIELD_DEFINITIONS, STREAM_SORT_ORDER } from "../utils/projectListFilters";
 
 import StateFilterButtons from "../components/StateFilterButtons";
-import { UI, STREAM, TEXT, outlineBorder } from "../utils/uiThemeTokens.js";
+import { UI, STREAM, TEXT, BANNER, outlineBorder } from "../utils/uiThemeTokens.js";
 import { getStreamColorGroup, getStreamGroupColors } from "../utils/streamColors.js";
 import { INDICATOR } from "../utils/managerStatusColors.js";
 const MONUMENT = UI.textPrimary;
@@ -40,6 +41,26 @@ const GRID_LAYOUT = {
   padding: "4px 10px",
   boxSizing: "border-box",
 };
+
+function modeToggleStyle(active) {
+  return {
+    padding: "8px 16px",
+    fontSize: "0.9rem",
+    fontWeight: 500,
+    color: active ? WHITE : MONUMENT,
+    background: active ? MONUMENT : WHITE,
+    border: active ? "none" : outlineBorder,
+    borderRadius: "8px",
+    cursor: "pointer",
+    height: "36px",
+    boxSizing: "border-box",
+  };
+}
+
+function hasFootingCertification(project) {
+  const received = project?.planning_footing_certification_received_at;
+  return received != null && String(received).trim() !== "";
+}
 
 const headingFilterSelectStyle = {
   height: "36px",
@@ -71,6 +92,8 @@ export default function ContractManager() {
   const [drawingsFilter, setDrawingsFilter] = useState("");
   const [supportingDocsFilter, setSupportingDocsFilter] = useState("");
   const [waterAuthorityFilter, setWaterAuthorityFilter] = useState("");
+  const [hideBothComplete, setHideBothComplete] = useState(false);
+  const [footingCertOnly, setFootingCertOnly] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const { hasDrawing } = useDrawingAccess();
 
@@ -648,6 +671,7 @@ export default function ContractManager() {
               alignItems: "center",
             }}
           >
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: 0 }}>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", minWidth: 0 }}>
               <button
                 type="button"
@@ -705,6 +729,25 @@ export default function ContractManager() {
               >
                 Sort by Stream
               </button>
+            </div>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", minWidth: 0 }}>
+              <button
+                type="button"
+                onClick={() => setHideBothComplete((current) => !current)}
+                aria-pressed={hideBothComplete}
+                style={modeToggleStyle(hideBothComplete)}
+              >
+                {hideBothComplete ? "Hide Complete" : "Show Complete"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFootingCertOnly((current) => !current)}
+                aria-pressed={footingCertOnly}
+                style={modeToggleStyle(footingCertOnly)}
+              >
+                {footingCertOnly ? "Footing Cert" : "All"}
+              </button>
+            </div>
             </div>
             <select
               value={drawingsFilter}
@@ -816,6 +859,16 @@ export default function ContractManager() {
                     getEffectiveValue(project, "water_authority", WATER_AUTHORITY_FILTER_DEFAULT) === waterAuthorityFilter
                   );
                 }
+                if (hideBothComplete) {
+                  filteredProjects = filteredProjects.filter((project) => {
+                    const clientStatus = getEffectiveValue(project, "contract_status", CONTRACT_FILTER_DEFAULT);
+                    const sgfStatus = getEffectiveValue(project, "contract_status_sgf", "Incomplete");
+                    return !(clientStatus === "Complete" && sgfStatus === "Complete");
+                  });
+                }
+                if (footingCertOnly) {
+                  filteredProjects = filteredProjects.filter((project) => hasFootingCertification(project));
+                }
                 
                 if (filteredProjects.length === 0) {
                   return (
@@ -885,6 +938,23 @@ export default function ContractManager() {
                       <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {projectName}
                       </span>
+                      {isOnHoldFlag(project) ? (
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            padding: "1px 5px",
+                            background: BANNER.onHold,
+                            color: BANNER.onHoldText,
+                            borderRadius: "3px",
+                            fontSize: "0.65rem",
+                            fontWeight: 700,
+                            whiteSpace: "nowrap",
+                            lineHeight: 1.3,
+                          }}
+                        >
+                          ON HOLD
+                        </span>
+                      ) : null}
                     </Link>
                     <div
                       style={{

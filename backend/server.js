@@ -1721,7 +1721,11 @@ async function ensureSchema() {
   await ensureAppMeta(pool);
   // Always add this column even when schema_version is current, so project
   // GETs do not fail with "column project_folder_path does not exist".
-  await addMissingColumns(pool, "projects", ["project_folder_path", "contract_sgf_complete_date"]);
+  await addMissingColumns(pool, "projects", [
+    "project_folder_path",
+    "contract_sgf_complete_date",
+    "hotlist_on_ice",
+  ]);
   if (await isSchemaUpToDate(pool)) {
     console.log(`Schema ${SCHEMA_VERSION} already applied — skipping migrations`);
     return;
@@ -1926,7 +1930,7 @@ async function ensureSchema() {
     'notes', 'project_info_notes', 'specs', 'classification', 'project_log',
     'window_status', 'window_colour', 'window_reveal', 'window_reveal_other', 'window_glazing', 'window_bal_rating', 'window_date_required', 'window_ordered_date', 'window_order_pdf_location', 'window_order_number',
     'drawings_status', 'drawings_pdf_location', 'drawings_history', 'drawings_viewed_date', 'drawings_sent_to_client_date', 'drawings_holder_date', 'drawings_concept_approved_date', 'drawings_working_approved_date', 'draftsperson', 'drawings_holder', 'drawing_manager_notes', 'colours_status', 'colours_notes', 'colours_pdf_location', 'colours_sent_date', 'colours_reminder_sent_date', 'colours_plan_trace_polygon', 'roof_colour', 'cladding_colour', 'baseboards_colour', 'roof_style', 'windowframes_colour', 'windowsurrounds_colour', 'door_colour', 'slidingdoor_colour', 'fascia_gutter_colour', 'balustrade_colour', 'hybrid_colour', 'tile1_colour', 'carpet_colour', 'benchtop_colour', 'cabinet1_colour', 'cabinet2_colour', 'tile2_colour', 'robe_door_colours', 'planning_status', 'energy_report_status', 'footing_certification_status', 'building_permit_status', 'septic_permit', 'septic_notes', 'septic_email_sent_date', 'pic',
-    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'on_hold_reason', 'survey_status', 'soil_status', 'agreement_sent', 'hotlist_notes', 'qp_number',
+    'number_of_robes', 'robe_widths', 'robe_plan_pdf_location', 'robe_colours_pdf_location', 'substatus', 'substatus_detail', 'on_hold', 'on_hold_reason', 'survey_status', 'soil_status', 'agreement_sent', 'hotlist_notes', 'hotlist_on_ice', 'qp_number',
     'planning_jf_planning_property_report_path', 'planning_jf_title_covenant_subdivision_path', 'planning_jf_title_path', 'planning_jf_covenant_path', 'planning_jf_section_173_agreement_path', 'planning_jf_plan_of_subdivision_path', 'planning_jf_ebyda_stormwater_path', 'planning_jf_byda_sewer_main_path', 'planning_jf_internal_sewer_plan_path', 'planning_jf_sewer_main_size_depth_offset_path', 'planning_jf_legal_point_discharge_path', 'planning_jf_property_info_report_path',
     'planning_jf_job_file_pdf_path',
     'project_folder_path',
@@ -14286,7 +14290,7 @@ app.get("/api/hotlist", async (req, res) => {
   if (!(await requireHotlistSalesAccess(req, res))) return;
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, stream, salesperson, client_name, email, phone, agreement_sent, hotlist_notes, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
+      "SELECT id, name, status, suburb, street, state, stream, salesperson, client_name, email, phone, agreement_sent, hotlist_notes, hotlist_on_ice, updated_at FROM projects WHERE status = $1 ORDER BY updated_at DESC, id DESC",
       ["Hotlist"]
     );
     res.json(r.rows);
@@ -14307,7 +14311,7 @@ app.get("/api/hotlist/:id", async (req, res) => {
 
   try {
     const r = await pool.query(
-      "SELECT id, name, status, suburb, street, state, stream, salesperson, client_name, email, phone, agreement_sent, hotlist_notes, updated_at FROM projects WHERE id = $1 AND status = $2",
+      "SELECT id, name, status, suburb, street, state, stream, salesperson, client_name, email, phone, agreement_sent, hotlist_notes, hotlist_on_ice, updated_at FROM projects WHERE id = $1 AND status = $2",
       [id, "Hotlist"]
     );
     
@@ -14563,6 +14567,64 @@ app.post("/api/hotlist/:id/agreement-unsent", async (req, res) => {
        SET agreement_sent = NULL, updated_at = NOW()
        WHERE id = $1 AND status = $2
        RETURNING id, name, status, suburb, street, state, stream, client_name, email, phone, agreement_sent, updated_at`,
+      [id, "Hotlist"]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Move hotlist item onto the On Ice list
+app.post("/api/hotlist/:id/ice", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  try {
+    const r = await pool.query(
+      `UPDATE projects
+       SET hotlist_on_ice = 'true', updated_at = NOW()
+       WHERE id = $1 AND status = $2
+       RETURNING id, name, status, suburb, street, state, stream, salesperson, client_name, email, phone, agreement_sent, hotlist_notes, hotlist_on_ice, updated_at`,
+      [id, "Hotlist"]
+    );
+
+    if (r.rowCount === 0) {
+      return res.status(404).json({ error: "not found" });
+    }
+
+    res.json(r.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Return On Ice item to the active Hot List (same stream)
+app.post("/api/hotlist/:id/defrost", async (req, res) => {
+  if (!pool) return res.status(500).json({ error: "DATABASE_URL not set" });
+  if (!(await requireHotlistSalesAccess(req, res))) return;
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    return res.status(400).json({ error: "invalid id" });
+  }
+
+  try {
+    const r = await pool.query(
+      `UPDATE projects
+       SET hotlist_on_ice = NULL, updated_at = NOW()
+       WHERE id = $1 AND status = $2
+       RETURNING id, name, status, suburb, street, state, stream, salesperson, client_name, email, phone, agreement_sent, hotlist_notes, hotlist_on_ice, updated_at`,
       [id, "Hotlist"]
     );
 
